@@ -1,8 +1,11 @@
 # author hgh
 # version 1.0
+import sys
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from exception import ConfigurationError
 
 
 class BankLoanAgentConfig(BaseSettings):
@@ -52,13 +55,16 @@ class BankLoanAgentConfig(BaseSettings):
 
     def __str__(self):
         infos = []
-        for name,value in self.model_dump().items():
+        for name, value in self.model_dump().items():
             infos.append(f"{name}:{value}")
         return "\n".join(infos)
 
 
-
-config = BankLoanAgentConfig()
+try:
+    config = BankLoanAgentConfig()
+except ConfigurationError as e:
+    print("❌ 配置错误：{e}")
+    sys.exit(1)
 
 if __name__ == '__main__':
     print(config)
