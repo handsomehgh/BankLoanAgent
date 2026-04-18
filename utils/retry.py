@@ -12,11 +12,11 @@ from typing import Tuple, Type, Callable, Any
 logger = logging.getLogger(__name__)
 
 
-def retry_on_failure2(
+def retry_on_failure(
         max_retries: int = 3,
         initial_delay: float = 0.5,
         backoff_factor: float = 2.0,
-        exceptions: Tuple[Type[Exception], ...] = [Exception, ],
+        exceptions: Tuple[Type[Exception], ...] = (Exception, ),
         on_retry: Callable[[Exception, int], None] = None
 ) -> Callable:
     def decorator(func: Callable) -> Callable:
