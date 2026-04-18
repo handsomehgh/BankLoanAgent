@@ -15,7 +15,15 @@
 - **自我评估闭环**：生成回答后自动评分，不达标触发重写。
 - **生产级工程实践**：依赖倒置、配置分离、Docker 就绪、结构化日志。
 
-## 🧠 记忆系统架构
-用户输入 → [检索多源上下文] → [生成回答] → [自我评估] → [提取新画像] → 结束
-↑ ↓
-长期记忆存储 (Chroma) 冲突检测 + 衰减更新
+## 🚀 快速开始
+
+### 环境要求
+- Python 3.11+
+- Docker (可选)
+
+### 安装
+
+```bash
+git clone https://github.com/你的用户名/BankLoanAgent.git
+cd BankLoanAgent
+make install
