@@ -11,6 +11,7 @@ import chromadb
 import numpy as np
 from chromadb import Settings
 from chromadb.errors import ChromaError
+from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 
 from config import config
 from exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
@@ -41,14 +42,22 @@ class ChromaMemoryStore(BaseMemoryStore):
             settings=Settings(anonymized_telemetry=False)
         )
 
-        self._get_or_create_collection()
+        try:
+            self._get_or_create_collection()
+        except Exception as e:
+            logger.error(f"Failed to initialize Chroma collection: {e}")
+            raise
         logger.info(f"chroma initial at {persist_dir}")
 
     @retry_on_failure(max_retries=3, initial_delay=0.3, exceptions=(ChromaError,))
     def _get_or_create_collection(self):
         self.collection = self.client.get_or_create_collection(
             name=self.collection_name,
-            metadata={"hnsw:space": "consine"}
+            metadata={"hnsw:space": "cosine"},
+            embedding_function=OpenAIEmbeddingFunction(api_key=config.alibaba_api_key,
+                                                       model_name=config.qwen_emb_name,
+                                                       api_base=config.alibaba_base_url,
+                                                       dimensions=1024)
         )
 
     def _write_to_dlq(self, user_id: str, content: str, meta: Dict, permanent: bool, entity_key: Optional[str] = None):
@@ -96,9 +105,9 @@ class ChromaMemoryStore(BaseMemoryStore):
 
         # update the memory status to superseded
         for old in existing:
-            if meta["confidence"] > old["metadata"].get("confidence", 0) + 0.1:
+            if float(meta["confidence"]) > float(old["metadata"].get("confidence", 0)) + 0.1:
                 try:
-                    self.update_memory_status(user_id, "superseded", {"superseded": None})
+                    self.update_memory_status(old["id"], "superseded", {"superseded": None})
                 except Exception as e:
                     logger.warning(f"Failed to superseded {old['id']: {e}}")
 
@@ -137,13 +146,13 @@ class ChromaMemoryStore(BaseMemoryStore):
         """search memory by query"""
         # build query conditions
         where = {
-            "and$": [
+            "$and": [
                 {"user_id": {"$eq": user_id}},
                 {"status": {"$eq": "active"}}
             ]
         }
         if memory_type:
-            where["and$"].append({"type": {"$eq": memory_type}})
+            where["$and"].append({"type": {"$eq": memory_type}})
         if min_confidence:
             where["$and"].append({"confidence": {"$gte": min_confidence}})
 
@@ -173,7 +182,7 @@ class ChromaMemoryStore(BaseMemoryStore):
                     "similarity": 1 - results["distances"][0][i],
                 }
 
-                if apply_decay and not mem["metadata"].get["permanent"]:
+                if apply_decay and not mem["metadata"].get("permanent"):
                     mem["decayed_similarity"] = self._apply_decay(mem)
                 else:
                     mem["decayed_similarity"] = mem["similarity"]
@@ -218,7 +227,7 @@ class ChromaMemoryStore(BaseMemoryStore):
                 memories.append({
                     "id": results["ids"][i],
                     "content": doc,
-                    "metadata": results["metadata"][i]
+                    "metadata": results["metadatas"][i]
                 })
         return memories
 
@@ -248,14 +257,14 @@ class ChromaMemoryStore(BaseMemoryStore):
             threshold: Optional[float] = None
     ) -> int:
         """apply forgetting"""
-        threshold = threshold or config.decay_threshold
-        where = {"status": {"$eq": "active"}}
+        threshold = threshold if threshold else config.decay_threshold
+        where = {"$and": [{"status": {"$eq": "active"}}]}
         if user_id:
-            where["user_id"] = {"$eq": user_id}
+            where["$and"].append({"user_id": {"$eq": user_id}})
 
         # query the memories that need to be forgotten
         try:
-            res = self.collection.query(
+            res = self.collection.get(
                 where=where,
                 include=["metadatas"]
             )
@@ -269,9 +278,9 @@ class ChromaMemoryStore(BaseMemoryStore):
             if meta.get("permanent"):
                 continue
             mem = {"metadata": meta, "similarity": 1.0}
-            if self._apply_decay(mem) < threshold:
+            if self._apply_decay(mem) < float(threshold):
                 try:
-                    self.update_memory_status(mem["id"], "forgotten")
+                    self.update_memory_status(mem_id, "forgotten")
                     count += 1
                 except:
                     pass
@@ -289,7 +298,7 @@ class ChromaMemoryStore(BaseMemoryStore):
 
     def _apply_decay(self, mem: Dict) -> float:
         """apply decay(original similarity * e ** (-decay_factor * (now()-last_accessed)))"""
-        last = mem["metadate"].get("last_accessed_at")
+        last = mem["metadata"].get("last_accessed_at")
         if not last:
             return mem["similarity"]
         try:
@@ -310,6 +319,10 @@ class ChromaMemoryStore(BaseMemoryStore):
 
 
 if __name__ == '__main__':
-    now = datetime.now().isoformat()
-    print(now)
-    print(type(now))
+    store = ChromaMemoryStore("./test", "test")
+    # store.add_memory("hgh001","这是测试文件替换文件","preference",{"type": "user_profile","source": "test","confidence": "0.5"},False)
+    # result = store.search_memory("hgh001","测试",2)
+    store.apply_forgetting("hgh001", "1.2")
+    result = store.get_memory_by_entity("hgh001", "preference", "forgotten")
+    # store.delete_user_memories("hgh001")
+    print(result)

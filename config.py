@@ -1,8 +1,10 @@
 # author hgh
 # version 1.0
+import os
 import sys
 
 from pydantic import Field
+from pydantic_core import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from exception import ConfigurationError
@@ -10,7 +12,7 @@ from exception import ConfigurationError
 
 class BankLoanAgentConfig(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",  # 修正拼写
+        env_file=os.path.join(os.path.dirname(__file__), ".env"),  # 修正拼写
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False
@@ -42,7 +44,7 @@ class BankLoanAgentConfig(BaseSettings):
     max_context_messages: int = 20
 
     # memory decay
-    decay_lambda: float = Field(0.01, validation_alias="DECAY_LAMBDA")
+    decay_factor: float = Field(0.01, validation_alias="DECAY_LAMBDA")
     decay_threshold: float = Field(0.3, validation_alias="DECAY_THRESHOLD")
     cleanup_interval_hours: int = Field(24, validation_alias="CLEANUP_INTERVAL_HOURS")
 
@@ -62,8 +64,9 @@ class BankLoanAgentConfig(BaseSettings):
 
 try:
     config = BankLoanAgentConfig()
-except ConfigurationError as e:
-    print("❌ 配置错误：{e}")
+except ValidationError as e:
+    print("❌ 配置验证失败，请检查 .env 文件是否存在且包含以下必填项：")
+    print(e)
     sys.exit(1)
 
 if __name__ == '__main__':
