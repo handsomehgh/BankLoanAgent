@@ -31,6 +31,7 @@ class BankLoanAgentConfig(BaseSettings):
     deepseek_llm_name: str = Field(..., validation_alias="DEEPSEEK_LLM_NAME")
 
     # llm provider
+    llm_provider: str = Field(..., validation_alias="LLM_PROVIDER")
     openai_provider: str = Field("openai", validation_alias="OPENAI_PROVIDER")
     deepseek_provider: str = Field("deepseek", validation_alias="deepseek")
 
