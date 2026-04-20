@@ -16,13 +16,15 @@ from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 from config import config
 from exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
 from memory.base import BaseMemoryStore
+from models.constant.constants import MetadataFields, MemoryType, MemorySource, MemoryStatus, MemoryModelFields, \
+    ChromaOperator, ChromaResFields
 from utils.retry import retry_on_failure
 
 logger = logging.Logger(__name__)
 
 
 class ChromaMemoryStore(BaseMemoryStore):
-    def __init__(self, persist_dir: str, collection_name: str = "user_profile"):
+    def __init__(self, persist_dir: str, collection_name: str = MemoryType.USER_PROFILE.value):
         """
         initial chroma client and collection 
         
@@ -62,13 +64,13 @@ class ChromaMemoryStore(BaseMemoryStore):
 
     def _write_to_dlq(self, user_id: str, content: str, meta: Dict, permanent: bool, entity_key: Optional[str] = None):
         entry = {
-            "user_id": user_id,
-            "content": content,
-            "entity_key": entity_key,
-            "metadata": meta,
-            "permanent": permanent,
-            "timestamp": datetime.now().isoformat(),
-            "retry_count": 0
+            MetadataFields.USER_ID.value: user_id,
+            MemoryModelFields.CONTENT.value: content,
+            MetadataFields.ENTITY_KEY.value: entity_key,
+            MemoryModelFields.METADATA.value: meta,
+            MetadataFields.PERMANENT.value: permanent,
+            MetadataFields.TIMESTAMP.value: datetime.now().isoformat(),
+            MetadataFields.RETRY_COUNT.value: 0
         }
         with open(self.dlq_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -84,32 +86,34 @@ class ChromaMemoryStore(BaseMemoryStore):
         now = datetime.now().isoformat()
         meta = metadata.copy() if metadata else {}
         meta = {
-            "user_id": user_id,
-            "type": metadata.get("type", "user_profile"),
-            "source": metadata.get("source", "extracted"),
-            "confidence": metadata.get("confidence", 0.8),
-            "status": metadata.get("status", "active"),
-            "permanent": permanent,
-            "created_at": now,
-            "lass_access_at": now,
+            MetadataFields.USER_ID.value: user_id,
+            MetadataFields.TYPE.value: metadata.get(MetadataFields.TYPE.value, MemoryType.USER_PROFILE.value),
+            MetadataFields.SOURCE.value: metadata.get(MetadataFields.SOURCE.value, MemorySource.CHAT_EXTRACTION.value),
+            MetadataFields.CONFIDENCE.value: metadata.get(MetadataFields.CONFIDENCE.value, 0.8),
+            MetadataFields.STATUS.value: metadata.get(MetadataFields.STATUS.value, MemoryStatus.ACTIVE.value),
+            MetadataFields.PERMANENT.value: permanent,
+            MetadataFields.CREATE_AT.value: now,
+            MetadataFields.LAST_ACCESS_AT.value: now,
         }
         if entity_key:
-            meta["entity_key"] = entity_key
+            meta[MetadataFields.ENTITY_KEY.value] = entity_key
 
         existing = []
         if entity_key and not permanent:
             try:
-                existing = self.get_memory_by_entity(user_id, entity_key, "active")
+                existing = self.get_memory_by_entity(user_id, entity_key, MemoryStatus.ACTIVE.value)
             except Exception as e:
                 logger.warning(f"Conflict check failed,proceeding: {e}")
 
         # update the memory status to superseded
         for old in existing:
-            if float(meta["confidence"]) > float(old["metadata"].get("confidence", 0)) + 0.1:
+            if float(meta[MetadataFields.CONFIDENCE.value]) > float(
+                    old[MemoryModelFields.METADATA.value].get(MetadataFields.CONFIDENCE.value, 0)) + 0.1:
                 try:
-                    self.update_memory_status(old["id"], "superseded", {"superseded": None})
+                    self.update_memory_status(old[MemoryModelFields.ID.value], MemoryStatus.SUPERSEDED.value,
+                                              {MemoryStatus.SUPERSEDED.value: None})
                 except Exception as e:
-                    logger.warning(f"Failed to superseded {old['id']: {e}}")
+                    logger.warning(f"Failed to superseded {old[MemoryModelFields.ID.value]: {e}}")
 
         # add memory
         memory_id = str(uuid.uuid4())
@@ -124,11 +128,13 @@ class ChromaMemoryStore(BaseMemoryStore):
         # update the superseded_by of the memory to the new memory ID
         if entity_key:
             for old in existing:
-                if old["metadata"].get("status") == "superseded":
+                if old[MemoryModelFields.METADATA.value].get(
+                        MetadataFields.STATUS.value) == MemoryStatus.SUPERSEDED.value:
                     try:
-                        self.update_memory_status(old["id"], "superseded", {"superseded_by": memory_id})
+                        self.update_memory_status(old[MemoryModelFields.ID.value], MemoryStatus.SUPERSEDED.value,
+                                                  {MetadataFields.SUPERSEDED_BY.value: memory_id})
                     except Exception as e:
-                        logger.error(f"Failed to update superseded_by for {old['id']}: {e}")
+                        logger.error(f"Failed to update superseded_by for {old[MemoryModelFields.ID.value]}: {e}")
 
         logger.debug(f"Added memory {memory_id}")
         return memory_id
@@ -146,15 +152,16 @@ class ChromaMemoryStore(BaseMemoryStore):
         """search memory by query"""
         # build query conditions
         where = {
-            "$and": [
-                {"user_id": {"$eq": user_id}},
-                {"status": {"$eq": "active"}}
+            ChromaOperator.AND.value: [
+                {MetadataFields.USER_ID.value: {ChromaOperator.EQ.value: user_id}},
+                {MetadataFields.STATUS.value: {ChromaOperator.EQ.value: MemoryStatus.ACTIVE.value}}
             ]
         }
         if memory_type:
-            where["$and"].append({"type": {"$eq": memory_type}})
+            where[ChromaOperator.AND.value].append({MetadataFields.TYPE.value: {ChromaOperator.EQ.value: memory_type}})
         if min_confidence:
-            where["$and"].append({"confidence": {"$gte": min_confidence}})
+            where[ChromaOperator.AND.value].append(
+                {MetadataFields.CONFIDENCE.value: {ChromaOperator.GTE.value: min_confidence}})
 
         # the number of result
         fetch_limit = limit * 2 if apply_decay else limit
@@ -165,36 +172,37 @@ class ChromaMemoryStore(BaseMemoryStore):
                 query_texts=query,
                 where=where,
                 n_results=fetch_limit,
-                include=["documents", "metadatas", "distances"]
+                include=[ChromaResFields.DOCUMENTS.value, ChromaResFields.METADATAS.value,
+                         ChromaResFields.DISTANCES.value]
             )
         except Exception as e:
             raise MemoryRetrievalError(f"Search failed: {e}") from e
 
         # organize output and apply time decay
         memories = []
-        if results["ids"][0]:
-            for i, doc in enumerate(results["documents"][0]):
+        if results[ChromaResFields.IDS.value][0]:
+            for i, doc in enumerate(results[ChromaResFields.DOCUMENTS.value][0]):
                 mem = {
-                    "id": results["ids"][0][i],
-                    "content": doc,
-                    "metadata": results["metadatas"][0][i],
-                    "distance": results["distances"][0][i],
-                    "similarity": 1 - results["distances"][0][i],
+                    MemoryModelFields.ID.value: results[ChromaResFields.IDS.value][0][i],
+                    MemoryModelFields.CONTENT.value: doc,
+                    MemoryModelFields.METADATA.value: results[ChromaResFields.METADATAS.value][0][i],
+                    MemoryModelFields.DISTANCE.value: results[ChromaResFields.DISTANCES.value][0][i],
+                    MemoryModelFields.SIMILARITY.value: 1 - results[ChromaResFields.DISTANCES.value][0][i],
                 }
 
-                if apply_decay and not mem["metadata"].get("permanent"):
-                    mem["decayed_similarity"] = self._apply_decay(mem)
+                if apply_decay and not mem[MemoryModelFields.METADATA.value].get(MetadataFields.PERMANENT.value):
+                    mem[MemoryModelFields.DECAYED_SIMILARITY.value] = self._apply_decay(mem)
                 else:
-                    mem["decayed_similarity"] = mem["similarity"]
+                    mem[MemoryModelFields.DECAYED_SIMILARITY.value] = mem[MemoryModelFields.SIMILARITY.value]
                 memories.append(mem)
 
         # reordering the memories after time decay
         if apply_decay:
-            memories.sort(key=lambda x: x["decayed_similarity"], reverse=True)
+            memories.sort(key=lambda x: x[MemoryModelFields.DECAYED_SIMILARITY], reverse=True)
 
         # update last accessed
         for m in memories[:limit]:
-            self._update_last_accessed(m["id"])
+            self._update_last_accessed(m[MemoryModelFields.ID.value])
         return memories[:limit]
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
@@ -202,32 +210,32 @@ class ChromaMemoryStore(BaseMemoryStore):
             self,
             user_id: str,
             entity_key: str,
-            status: str = "active"
+            status: str = MemoryStatus.ACTIVE.value
     ) -> List[Dict[str, Any]]:
         """get memory by entity key"""
         where_filter = {
-            "$and": [
-                {"user_id": {"$eq": user_id}},
-                {"entity_key": {"$eq": entity_key}},
-                {"status": {"$eq": status}}
+            ChromaOperator.AND.value: [
+                {MetadataFields.USER_ID.value: {ChromaOperator.EQ.value: user_id}},
+                {MetadataFields.ENTITY_KEY.value: {ChromaOperator.EQ.value: entity_key}},
+                {MetadataFields.STATUS.value: {ChromaOperator.EQ.value: status}}
             ]
         }
         try:
             results = self.collection.get(
                 where=where_filter,
-                include=["documents", "metadatas"]
+                include=[ChromaResFields.DOCUMENTS.value, ChromaResFields.METADATAS.value]
             )
         except Exception as e:
             logger.error(f"get by entity failed:{e}")
             return []
 
         memories = []
-        if results["ids"]:
-            for i, doc in enumerate(results["documents"]):
+        if results[ChromaResFields.IDS.value]:
+            for i, doc in enumerate(results[ChromaResFields.DOCUMENTS.value]):
                 memories.append({
-                    "id": results["ids"][i],
-                    "content": doc,
-                    "metadata": results["metadatas"][i]
+                    MemoryModelFields.ID.value: results[ChromaResFields.IDS.value][i],
+                    MemoryModelFields.CONTENT.value: doc,
+                    MemoryModelFields.METADATA.value: results[ChromaResFields.METADATAS.value][i]
                 })
         return memories
 
@@ -239,11 +247,11 @@ class ChromaMemoryStore(BaseMemoryStore):
             metadata_updates: Optional[Dict[str, Any]] = None) -> bool:
         """update memory status"""
         try:
-            current = self.collection.get(ids=[memory_id], include=["metadatas"])
-            if not current["metadatas"]:
+            current = self.collection.get(ids=[memory_id], include=[ChromaResFields.METADATAS.value])
+            if not current[ChromaResFields.METADATAS.value]:
                 return False
-            new_meta = current["metadatas"][0].copy()
-            new_meta["status"] = new_status
+            new_meta = current[ChromaResFields.METADATAS.value][0].copy()
+            new_meta[MetadataFields.STATUS.value] = new_status
             if metadata_updates:
                 new_meta.update(metadata_updates)
             self.collection.update(ids=[memory_id], metadatas=[new_meta])
@@ -258,29 +266,30 @@ class ChromaMemoryStore(BaseMemoryStore):
     ) -> int:
         """apply forgetting"""
         threshold = threshold if threshold else config.decay_threshold
-        where = {"$and": [{"status": {"$eq": "active"}}]}
+        where = {ChromaOperator.AND.value: [
+            {MetadataFields.STATUS.value: {ChromaOperator.EQ.value: MemoryStatus.ACTIVE.value}}]}
         if user_id:
-            where["$and"].append({"user_id": {"$eq": user_id}})
+            where[ChromaOperator.AND.value].append({MetadataFields.USER_ID.value: {ChromaOperator.EQ.value: user_id}})
 
         # query the memories that need to be forgotten
         try:
             res = self.collection.get(
                 where=where,
-                include=["metadatas"]
+                include=[ChromaResFields.METADATAS.value]
             )
         except Exception as e:
             logger.error(f"Forgetting scan failed: {e}")
             return 0
 
         count = 0
-        for i, mem_id in enumerate(res["ids"]):
-            meta = res["metadatas"][i]
-            if meta.get("permanent"):
+        for i, mem_id in enumerate(res[ChromaResFields.IDS.value]):
+            meta = res[ChromaResFields.METADATAS.value][i]
+            if meta.get(MetadataFields.PERMANENT.value):
                 continue
-            mem = {"metadata": meta, "similarity": 1.0}
+            mem = {MemoryModelFields.METADATA.value: meta, MemoryModelFields.SIMILARITY.value: 1.0}
             if self._apply_decay(mem) < float(threshold):
                 try:
-                    self.update_memory_status(mem_id, "forgotten")
+                    self.update_memory_status(mem_id, MemoryStatus.FORGOTTEN.value)
                     count += 1
                 except:
                     pass
@@ -290,7 +299,7 @@ class ChromaMemoryStore(BaseMemoryStore):
     def delete_user_memories(self, user_id: str) -> bool:
         """delete user memory"""
         try:
-            self.collection.delete(where={"user_id": {"$eq": user_id}})
+            self.collection.delete(where={MetadataFields.USER_ID.value: {ChromaOperator.EQ.value: user_id}})
             return True
         except Exception as e:
             logger.error(f"Delete failed: {e}")
@@ -298,21 +307,21 @@ class ChromaMemoryStore(BaseMemoryStore):
 
     def _apply_decay(self, mem: Dict) -> float:
         """apply decay(original similarity * e ** (-decay_factor * (now()-last_accessed)))"""
-        last = mem["metadata"].get("last_accessed_at")
+        last = mem[MemoryModelFields.METADATA.value].get(MetadataFields.LAST_ACCESS_AT.value)
         if not last:
-            return mem["similarity"]
+            return mem[MemoryModelFields.SIMILARITY.value]
         try:
             days = (datetime.now() - datetime.fromisoformat(last)).days
         except:
             days = 0
-        return mem["similarity"] * np.exp(-config.decay_factor * days)
+        return mem[MemoryModelFields.SIMILARITY.value] * np.exp(-config.decay_factor * days)
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
     def _update_last_accessed(self, memory_id: str):
         try:
             self.collection.update(
                 ids=[memory_id],
-                metadatas=[{"last_accessed_at": datetime.now().isoformat()}]
+                metadatas=[{MetadataFields.LAST_ACCESS_AT.value: datetime.now().isoformat()}]
             )
         except Exception as e:
             logger.warning(f"Failed to update access time for {memory_id}: {e}")
