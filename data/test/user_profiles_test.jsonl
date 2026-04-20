@@ -1,0 +1,11 @@
+{"user_id": "test_user_001", "entity_key": "income", "content": "客户年收入约40万元", "confidence": 0.6, "source": "chat_extraction", "timestamp": "2026-04-10T09:00:00Z"}
+{"user_id": "test_user_001", "entity_key": "income", "content": "客户提供工资流水，年收入确认为55万元", "confidence": 0.95, "source": "bank_statement", "timestamp": "2026-04-15T14:30:00Z"}
+{"user_id": "test_user_001", "entity_key": "occupation", "content": "客户是互联网公司产品经理", "confidence": 0.8, "source": "chat_extraction", "timestamp": "2026-04-10T09:05:00Z"}
+{"user_id": "test_user_001", "entity_key": "loan_purpose", "content": "客户计划申请200万元房贷用于购买首套住房", "confidence": 0.85, "source": "explicit_statement", "timestamp": "2026-04-10T09:10:00Z"}
+{"user_id": "test_user_001", "entity_key": "credit_score", "content": "客户央行征信评分735分", "confidence": 0.95, "source": "credit_report", "timestamp": "2026-04-12T11:00:00Z", "permanent": true}
+{"user_id": "test_user_002", "entity_key": "income", "content": "客户年收入约80万元（含年终奖）", "confidence": 0.7, "source": "chat_extraction", "timestamp": "2026-04-11T10:00:00Z"}
+{"user_id": "test_user_002", "entity_key": "asset", "content": "客户名下有一套无贷房产，估值约500万元", "confidence": 0.8, "source": "chat_extraction", "timestamp": "2026-04-11T10:05:00Z"}
+{"user_id": "test_user_002", "entity_key": "preference", "content": "客户强烈偏好固定利率产品", "confidence": 0.9, "source": "explicit_statement", "timestamp": "2026-04-11T10:15:00Z"}
+
+
+
