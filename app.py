@@ -1,5 +1,7 @@
 # author hgh
 # version 1.0
+# author hgh
+# version 1.0
 import streamlit as st
 import logging
 import uuid
@@ -8,6 +10,7 @@ from agent.graph import build_graph
 from memory.chroma_store import ChromaMemoryStore
 from retriever.vector_retriever import VectorRetriever
 from config import config
+from models.constant.constants import MemoryType
 
 logging.basicConfig(level=config.log_level)
 logger = logging.getLogger(__name__)
@@ -15,7 +18,7 @@ logger = logging.getLogger(__name__)
 st.set_page_config(page_title="银行贷款助手", page_icon="🏦")
 st.title("🏦 银行贷款顾问助手（生产级错误处理）")
 
-# 初始化
+# ==================== 初始化 ====================
 if "memory_store" not in st.session_state:
     try:
         st.session_state.memory_store = ChromaMemoryStore(persist_dir=config.chroma_persist_dir)
@@ -32,7 +35,10 @@ if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 if "agent" not in st.session_state:
     try:
-        st.session_state.agent = build_graph(st.session_state.memory_store, st.session_state.retriever)
+        st.session_state.agent = build_graph(
+            st.session_state.memory_store,
+            st.session_state.retriever
+        )
     except Exception as e:
         st.error(f"Agent 初始化失败: {e}")
         st.stop()
@@ -54,40 +60,56 @@ with st.sidebar:
     st.divider()
     st.subheader("📝 长期画像记忆")
 
-    # 获取当前用户的所有 active 记忆
+    # 获取当前用户的所有用户画像记忆（仅 USER_PROFILE 类型）
     try:
-        all_memories = []
-        results = st.session_state.memory_store.collection.get(
-            where={"user_id": st.session_state.user_id, "status": "active"},
-            include=["documents", "metadatas"]
+        # 使用新的抽象方法获取用户画像
+        profile_memories = st.session_state.memory_store.get_all_user_profile_memories(
+            user_id=st.session_state.user_id,
+            status="active"
         )
-        for i, doc in enumerate(results["documents"]):
-            all_memories.append({
-                "content": doc,
-                "metadata": results["metadatas"][i]
-            })
-    except Exception:
-        all_memories = []
+    except Exception as e:
+        logger.error(f"获取用户画像失败: {e}")
+        profile_memories = []
 
-    if all_memories:
-        for mem in all_memories:
-            with st.expander(f"{mem['content'][:40]}...", expanded=False):
-                st.write(mem["content"])
-                meta = mem["metadata"]
-                st.caption(f"置信度: {meta.get('confidence', 'N/A')} | 实体: {meta.get('entity_key', 'N/A')}")
+    if profile_memories:
+        for mem in profile_memories:
+            content = mem.get("content", "")
+            metadata = mem.get("metadata", {})
+            with st.expander(f"{content[:40]}...", expanded=False):
+                st.write(content)
+                st.caption(
+                    f"置信度: {metadata.get('confidence', 'N/A')} | "
+                    f"实体: {metadata.get('entity_key', 'N/A')}"
+                )
     else:
         st.info("暂无画像记忆，开始对话后自动提取。")
 
-    # 遗忘清理按钮
+    # 遗忘清理按钮（仅对用户画像生效）
     if st.button("🧹 执行遗忘清理", type="secondary"):
-        count = st.session_state.memory_store.apply_forgetting(user_id=st.session_state.user_id)
-        st.success(f"已遗忘 {count} 条记忆")
+        try:
+            count = st.session_state.memory_store.apply_forgetting(
+                memory_type=MemoryType.USER_PROFILE,
+                user_id=st.session_state.user_id
+            )
+            st.success(f"已遗忘 {count} 条画像记忆")
+        except Exception as e:
+            st.error(f"遗忘清理失败: {e}")
         st.rerun()
 
-    # 清空记忆按钮
+    # 清空记忆按钮（清空该用户的所有记忆，包括画像和交互日志）
     if st.button("🗑️ 清空当前用户记忆", type="secondary"):
-        st.session_state.memory_store.delete_user_memories(st.session_state.user_id)
-        st.success("已清空")
+        try:
+            # 可选择只清空某类型，此处清空全部用户相关记忆
+            success = st.session_state.memory_store.delete_user_memories(
+                user_id=st.session_state.user_id,
+                memory_type=None  # None 表示清空所有类型
+            )
+            if success:
+                st.success("已清空")
+            else:
+                st.error("清空失败")
+        except Exception as e:
+            st.error(f"清空失败: {e}")
         st.rerun()
 
 # ==================== 加载并显示对话历史 ====================
@@ -109,25 +131,32 @@ for msg in messages:
         with st.chat_message("assistant"):
             st.write(msg.content)
 
-# 对话逻辑
+# ==================== 对话逻辑 ====================
 if prompt := st.chat_input("请输入您的问题..."):
     with st.chat_message("user"):
         st.write(prompt)
     with st.chat_message("assistant"):
         with st.spinner("思考中..."):
-            input_state = {"messages": [HumanMessage(content=prompt)], "user_id": st.session_state.user_id}
+            input_state = {
+                "messages": [HumanMessage(content=prompt)],
+                "user_id": st.session_state.user_id,
+            }
             try:
-                result = st.session_state.agent.invoke(input_state, config={"configurable": {"thread_id": st.session_state.thread_id}})
+                result = st.session_state.agent.invoke(
+                    input_state,
+                    config={"configurable": {"thread_id": st.session_state.thread_id}}
+                )
                 assistant_reply = result["messages"][-1].content
                 st.write(assistant_reply)
+
                 if result.get("error"):
                     st.caption(f"⚠️ 处理过程中出现非致命错误: {result['error']}")
-                if result.get("eval_score"):
-                    score = result["eval_score"]
-                    color = "green" if score >= 0.8 else "orange" if score >= 0.6 else "red"
-                    st.caption(f"自评: :{color}[{score:.2f}]")
+
+                # 注意：评估节点已移除，eval_score 不再存在，可删除或保留为占位
                 if result.get("profile_updated"):
                     st.caption("✅ 已更新长期画像记忆")
             except Exception as e:
                 st.error(f"系统错误: {e}")
                 logger.exception("Agent invocation failed")
+
+    st.rerun()

@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, List
 
+from models.constant.constants import MemoryType
+
 
 class BaseMemoryStore(ABC):
     @abstractmethod
@@ -10,6 +12,7 @@ class BaseMemoryStore(ABC):
             self,
             user_id: str,
             content: str,
+            memory_type: MemoryType,
             entity_key: Optional[str] = None,
             metadata: Optional[Dict[str,Any]] = None,
             permanent: bool = False
@@ -20,6 +23,7 @@ class BaseMemoryStore(ABC):
         Args:
             user_id: user unique id
             content: memory content
+            memory_type: memory type
             entity_key: entity type key(such as "income","occupation"),used for conflict detection
             metadata: additional metadata dictionary(such as type,confidence,source,etc.)
             permanent: whether this memory is permanent(not affected by decay or forgetting)
@@ -34,8 +38,8 @@ class BaseMemoryStore(ABC):
             self,
             user_id: str,
             query: str,
+            memory_type: MemoryType,
             limit: int = 3,
-            memory_type: Optional[str] = None,
             min_confidence: Optional[float] = None,
             apply_decay: bool=True
     ) -> List[Dict[str,Any]]:
@@ -94,6 +98,7 @@ class BaseMemoryStore(ABC):
     @abstractmethod
     def apply_forgetting(
             self,
+            memory_type: Optional[MemoryType] = None,
             user_id: Optional[str] = None,
             threshold: Optional[float] = None
     ) -> int:
@@ -101,6 +106,7 @@ class BaseMemoryStore(ABC):
         apply forgetting rules to mark memories with weights that have decayed below the threshold as forgotten
 
         Args:
+            memory_type: memory type
             user_id: specify user,None means all users
             threshold: forgetting threshold,None means using global configuration
 
@@ -110,15 +116,48 @@ class BaseMemoryStore(ABC):
         pass
 
     @abstractmethod
-    def delete_user_memories(self,user_id: str) -> bool:
+    def delete_user_memories(self,user_id: str,memory_type: Optional[MemoryType] = None) -> bool:
         """
         delete all user's memories(permanent deletion,use with caution)
 
         Args:
+            memory_type: memory type
             user_id: user unique id
 
         Returns:
             True if delete was successful, False otherwise
         """
+        pass
+    
+    @abstractmethod
+    def get_recent_interactions(self,user_id: str,limit: int = 5) -> List[Dict[str,Any]]:
+        """
+        retrieve the user's recent interaction logs,sorted in reverse chronological order
+
+        Args:
+            user_id: user unique id
+            limit: number of results to return
+
+        Returns:
+            list of interaction logs
+        """
+        pass
+
+    @abstractmethod
+    def get_active_compliance_rules(self,limit: int = 10) -> List[Dict[str,Any]]:
+        """
+        get all active compliance rules,sorted by severity
+
+        Args:
+            limit: number of results to return
+
+        Returns:
+            list of compliance rules
+        """
+        pass
+
+    @abstractmethod
+    def get_all_user_profile_memories(self, user_id: str, status: str = "active") -> List[Dict[str, Any]]:
+        """obtain all user's profile memories(used for interface display)"""
         pass
 

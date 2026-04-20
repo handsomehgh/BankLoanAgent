@@ -2,6 +2,9 @@
 # version 1.0
 from enum import Enum
 
+from mpmath.libmp.libmpf import mpf_round_int
+
+
 #========================= memory type ================================
 class MemoryType(str,Enum):
     """Long-term memory type enumeration,used for the metadata[type] filed"""
@@ -57,7 +60,6 @@ class MemoryModelFields(str,Enum):
 #============================ memory metadata fields =============================
 class MetadataFields(str,Enum):
     USER_ID = "user_id"
-    TYPE = "type"
     SOURCE = "source"
     CONFIDENCE = "confidence"
     STATUS = "status"
@@ -70,6 +72,7 @@ class MetadataFields(str,Enum):
     TIMESTAMP = "timestamp"
     SESSION_ID = "session_id"
     RETRY_COUNT = "retry_count"
+    MEMORY_TYPE = "memory_type"
 
 #========================== compliance rule action type ========================
 class ComplianceAction(str, Enum):
@@ -176,6 +179,15 @@ class VectorIndexType(str,Enum):
     HNSW = "HNSW"
     IVF = "IVF"
     FLAT = "FLAT"
+
+#======================= config fields ==================================
+class ConfigFields(str,Enum):
+    CONFIGURABLE = "configurable"
+    THREAD_ID = "thread_id"
+
+
+if __name__ == '__main__':
+    print(type(VectorIndexType.HNSW.value))
 
 
 

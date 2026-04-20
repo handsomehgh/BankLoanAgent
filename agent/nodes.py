@@ -2,7 +2,6 @@
 # version 1.0
 import logging
 import re
-from datetime import datetime
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.output_parsers import StrOutputParser
@@ -12,7 +11,7 @@ from agent.state import AgentState
 from exception import MemoryWriteFailedError
 from memory.base import BaseMemoryStore
 from models.constant.constants import MemoryType, StateFields, MetadataFields, MemoryModelFields, MemoryStatus, \
-    MemorySource, ComplianceSeverity, ComplianceAction, ComplianceRuleFields, PromptKeys
+    MemorySource, ComplianceSeverity, ComplianceAction, ComplianceRuleFields, PromptKeys, ConfigFields
 from prompt.extract_prompt import EXTRACT_PROMPT
 from prompt.system_prompt import SYSTEM_TEMPLATE
 from retriever.base import BaseRetriever
@@ -38,7 +37,7 @@ def call_model_node(state: AgentState, config: RunnableConfig) -> dict:
     except Exception as e:
         logger.error(f"LLM call failed: {e}")
         from langchain_core.messages import AIMessage
-        response = AIMessage(content="抱歉，服务暂时不可用，请稍后再试。")
+        response = AIMessage(content="Sorry,service is unavailable,please try again later.")
     return {StateFields.MESSAGES.value: [response]}
 
 
@@ -59,18 +58,21 @@ def extract_profile_node(state: AgentState, config: RunnableConfig, memory_store
         if item.get(MemoryModelFields.CONTENT.value) and item.get(MetadataFields.ENTITY_KEY.value):
             try:
                 memory_store.add_memory(
-                    user_id=state[MetadataFields.USER_ID.value], content=item.get(MemoryModelFields.CONTENT.value),
+                    user_id=state[MetadataFields.USER_ID.value],
+                    content=item.get(MemoryModelFields.CONTENT.value),
+                    memory_type=MemoryType.USER_PROFILE,
                     entity_key=item.get(MetadataFields.ENTITY_KEY.value),
-                    metadata={MetadataFields.TYPE.value: MemoryType.USER_PROFILE.value,
-                              MetadataFields.SOURCE.value: MemorySource.CHAT_EXTRACTION.value,
-                              MetadataFields.CONFIDENCE.value: items.get(MetadataFields.CONFIDENCE.value, 0.7)}
+                    metadata={
+                        MetadataFields.SOURCE.value: MemorySource.CHAT_EXTRACTION.value,
+                        MetadataFields.CONFIDENCE.value: item.get(MetadataFields.CONFIDENCE.value, 0.7)
+                    }
                 )
                 updated = True
             except MemoryWriteFailedError as e:
                 logger.error(f"Memory write failed (DLQ): {e}")
             except Exception as e:
                 logger.error(f"Unexpected error during profile extraction: {e}")
-    return {"profile_updated": updated}
+    return {StateFields.PROFILE_UPDATED.value: updated}
 
 
 def retrieve_memory_node(state: AgentState, retrieval: BaseRetriever) -> dict:
@@ -120,10 +122,9 @@ def log_interaction_node(state: AgentState, config: RunnableConfig, memory_store
         user_id=state[MetadataFields.USER_ID.value],
         content=summary,
         metadata={
-            MetadataFields.TYPE.value: MemoryType.INTERACTION_LOG.value,
             MetadataFields.SOURCE.value: MemorySource.AUTO_SUMMARY.value,
-            MetadataFields.TIMESTAMP.value: datetime.now().isoformat(),
-            MetadataFields.SESSION_ID.value: state.get("thread_id", "unknown"),
+            MetadataFields.SESSION_ID.value: config[ConfigFields.CONFIGURABLE.value].get(ConfigFields.THREAD_ID.value,
+                                                                                         None),
             MetadataFields.STATUS.value: MemoryStatus.ACTIVE.value
         }
     )
@@ -192,5 +193,5 @@ def compliance_guard_node(state: AgentState, Config: RunnableConfig, memory_stor
         StateFields.COMPLIANCE_BLOCKED.value: False,
         StateFields.COMPLIANCE_WARNINGS.value: warnings,
         StateFields.MANDATORY_APPENDS.value: mandatory_appends,
-        StateFields.MANDATORY_APPENDS.value: False
+        StateFields.SHOULD_SKIP_LLM.value: False
     }
