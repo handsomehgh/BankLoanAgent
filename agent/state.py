@@ -11,9 +11,11 @@ class AgentState(TypedDict):
     user_id: str
     retrieved_context: Dict[str, Any]
     formatted_context: Dict[str, Any]
-    eval_score: Optional[float]
-    eval_feed_back: Optional[str]
-    needs_rewrite: bool
     profile_updated: bool
+    interaction_logged: bool
     error: Optional[str]
+    compliance_blocked: bool  # 新增
+    compliance_warnings: List[str]  # 新增
+    mandatory_appends: List[str]  # 新增
+    should_skip_llm: bool
 
