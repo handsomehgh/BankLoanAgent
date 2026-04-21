@@ -5,15 +5,16 @@ from enum import Enum
 from mpmath.libmp.libmpf import mpf_round_int
 
 
-#========================= memory type ================================
-class MemoryType(str,Enum):
+# ========================= memory type ================================
+class MemoryType(str, Enum):
     """Long-term memory type enumeration,used for the metadata[type] filed"""
-    USER_PROFILE = "user_profile" #the user info
-    COMPLIANCE_RULE = "compliance_rule"#compliance and safety memory
-    INTERACTION_LOG = "interaction_log"#interactive trajectory memory
+    USER_PROFILE = "user_profile"  # the user info
+    COMPLIANCE_RULE = "compliance_rule"  # compliance and safety memory
+    INTERACTION_LOG = "interaction_log"  # interactive trajectory memory
 
-#========================== entity type of user profile ===========================
-class ProfileEntityKey(str,Enum):
+
+# ========================== entity type of user profile ===========================
+class ProfileEntityKey(str, Enum):
     """Profile entity key enumeration,used for extract prompt and metadata['entity_key'] field"""
     OCCUPATION = "occupation"
     INCOME = "income"
@@ -30,15 +31,26 @@ class ProfileEntityKey(str,Enum):
     def to_list(cls) -> list:
         return [e.value for e in cls]
 
-#=========================== memory status ====================================
-class MemoryStatus(str,Enum):
-    ACTIVE = "active"
-    SUPERSEDED = "superseded"#overwritte by higher-confidence memory
-    FORGOTTEN = "forgotten"#forgotten due to decay
-    DELETE = "delete"#soft delete
 
-#=========================== the source of memory =============================
-class MemorySource(str,Enum):
+# ======================= evidence type(user_profile) =================================
+class EvidenceType(str, Enum):
+    EXPLICIT_STATEMENT = "explicit_statement"  # custom clearly described
+    BANK_STATEMENT = "bank_statement"  # bank transaction statement
+    CREDIT_REPORT = "credit_report"
+    TAX_DOCUMENT = "tax_document"  # tax bill
+    INFERRED = "inferred"  # infer from context
+
+
+# =========================== memory status ====================================
+class MemoryStatus(str, Enum):
+    ACTIVE = "active"
+    SUPERSEDED = "superseded"  # overwritte by higher-confidence memory
+    FORGOTTEN = "forgotten"  # forgotten due to decay
+    DELETE = "delete"  # soft delete
+
+
+# =========================== the source of memory =============================
+class MemorySource(str, Enum):
     CHAT_EXTRACTION = "chat_extraction"
     EXPLICIT_CORRECTION = "explicit_correction"
     BANK_STATEMENT = "bank_statement"
@@ -46,10 +58,11 @@ class MemorySource(str,Enum):
     TAX_DOCUMENT = "tax_document"
     FORM_SUBMISSION = "form_submission"
     AUTO_SUMMARY = "auto_summary"  # interactive log automatic summary
-    ADMIN_IMPORT = "admin_import"#offline import
+    ADMIN_IMPORT = "admin_import"  # offline import
 
-#============================= memory model fields ==============================
-class MemoryModelFields(str,Enum):
+
+# ============================= memory model fields ==============================
+class MemoryModelFields(str, Enum):
     ID = "id"
     CONTENT = "content"
     METADATA = "metadata"
@@ -57,8 +70,9 @@ class MemoryModelFields(str,Enum):
     SIMILARITY = "similarity"
     DECAYED_SIMILARITY = "decayed_similarity"
 
-#============================ memory metadata fields =============================
-class MetadataFields(str,Enum):
+
+# ============================ memory metadata fields =============================
+class MetadataFields(str, Enum):
     USER_ID = "user_id"
     SOURCE = "source"
     CONFIDENCE = "confidence"
@@ -74,16 +88,18 @@ class MetadataFields(str,Enum):
     RETRY_COUNT = "retry_count"
     MEMORY_TYPE = "memory_type"
 
-#========================== compliance rule action type ========================
+
+# ========================== compliance rule action type ========================
 class ComplianceAction(str, Enum):
     """executions actions after compliance rules are triggered"""
-    BLOCK = "block"         # directly intercept,don't invoke llm
-    WARN = "warn"           # log warning,but continue execution
-    APPEND = "append"       # append a disclaimer at the end of the answer
-    REMIND = "remind"       # inject system prompt reminder
-    MASK = "mask"           # desensitization
+    BLOCK = "block"  # directly intercept,don't invoke llm
+    WARN = "warn"  # log warning,but continue execution
+    APPEND = "append"  # append a disclaimer at the end of the answer
+    REMIND = "remind"  # inject system prompt reminder
+    MASK = "mask"  # desensitization
 
-#========================= severity of compliance rules =========================
+
+# ========================= severity of compliance rules =========================
 class ComplianceSeverity(str, Enum):
     CRITICAL = "critical"
     HIGH = "high"
@@ -91,12 +107,14 @@ class ComplianceSeverity(str, Enum):
     LOW = "low"
     MANDATORY = "mandatory"  # mandatory enforcement,cannot be bypassed
 
-#========================== special user id =====================================
+
+# ========================== special user id =====================================
 class SpecialUserID(str, Enum):
     """special identifier for non-real user"""
     GLOBAL = "GLOBAL"  # used for global shared data(business knowledge,compliance rules)
 
-#============================ agent node name =====================================
+
+# ============================ agent node name =====================================
 class AgentNodeName(str, Enum):
     RETRIEVE = "retrieve"
     COMPLIANCE_GUARD = "compliance_guard"
@@ -104,7 +122,8 @@ class AgentNodeName(str, Enum):
     EXTRACT_PROFILE = "extract_profile"
     LOG_INTERACTION = "log_interaction"
 
-#============================= compliance rule metadata ==========================
+
+# ============================= compliance rule metadata ==========================
 class ComplianceRuleFields(str, Enum):
     RULE_ID = "rule_id"
     RULE_NAME = "rule_name"
@@ -118,15 +137,16 @@ class ComplianceRuleFields(str, Enum):
     SOURCE = "source"
 
 
-#============================ confidence threshold =================================
-class ConfidenceThreshold(float,Enum):
+# ============================ confidence threshold =================================
+class ConfidenceThreshold(float, Enum):
     """Confidence boundary for memory retrieval and conflict resolution"""
-    HIGH_CONFIDENCE = 0.8   # values above this are considered highly reliable
+    HIGH_CONFIDENCE = 0.8  # values above this are considered highly reliable
     MEDIUM_CONFIDENCE = 0.5
-    OVERRIDE_MARGIN = 0.1   # confidence advantage difference required to overwrite old memories
+    OVERRIDE_MARGIN = 0.1  # confidence advantage difference required to overwrite old memories
 
-#============================= agent state fields =================================
-class StateFields(str,Enum):
+
+# ============================= agent state fields =================================
+class StateFields(str, Enum):
     MESSAGES = "messages"
     RETRIEVED_CONTEXT = "retrieved_context"
     FORMATTED_CONTEXT = "formatted_context"
@@ -138,6 +158,7 @@ class StateFields(str,Enum):
     MANDATORY_APPENDS = "mandatory_appends"
     SHOULD_SKIP_LLM = "should_skip_llm"
     ERROR = "error"
+
 
 # ==================== interaction trajectory event type ====================
 class InteractionEventType(str, Enum):
@@ -156,50 +177,39 @@ class InteractionSentiment(str, Enum):
     ANXIOUS = "anxious"
     FRUSTRATED = "frustrated"
 
-#======================= chroma result field ===============================
-class ChromaResFields(str,Enum):
+
+# ======================= chroma result field ===============================
+class ChromaResFields(str, Enum):
     IDS = "ids"
     METADATAS = "metadatas"
     DOCUMENTS = "documents"
     DISTANCES = "distances"
 
-#===================== chroma operator ===================================
+
+# ===================== chroma operator ===================================
 class ChromaOperator(str, Enum):
     AND = "$and"
     EQ = "$eq"
     GTE = "$gte"
 
-#======================= prompt key =======================================
+
+# ======================= prompt key =======================================
 class PromptKeys(str, Enum):
     CONVERSATION = "conversation"
 
 
-#======================= index type =====================================
-class VectorIndexType(str,Enum):
+# ======================= index type =====================================
+class VectorIndexType(str, Enum):
     HNSW = "HNSW"
     IVF = "IVF"
     FLAT = "FLAT"
 
-#======================= config fields ==================================
-class ConfigFields(str,Enum):
+
+# ======================= config fields ==================================
+class ConfigFields(str, Enum):
     CONFIGURABLE = "configurable"
     THREAD_ID = "thread_id"
 
 
 if __name__ == '__main__':
     print(type(VectorIndexType.HNSW.value))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
