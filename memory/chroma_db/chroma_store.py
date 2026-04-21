@@ -255,7 +255,8 @@ class ChromaMemoryStore(BaseMemoryStore):
                 }
 
                 if apply_decay and not mem[MemoryModelFields.METADATA.value].get(MetadataFields.PERMANENT.value):
-                    mem[MemoryModelFields.DECAYED_SIMILARITY.value] = self._apply_decay(model)
+                    decay_factor = self._calculate_decay_factor(model)
+                    mem[MemoryModelFields.DECAYED_SIMILARITY.value] = mem[MemoryModelFields.SIMILARITY.value] * decay_factor
                 else:
                     mem[MemoryModelFields.DECAYED_SIMILARITY.value] = mem[MemoryModelFields.SIMILARITY.value]
                 memories.append(mem)
@@ -368,7 +369,9 @@ class ChromaMemoryStore(BaseMemoryStore):
                 model = UserProfileMetadata.from_chroma_dict(meta)
             except Exception:
                 continue
-            if self._apply_decay(model) < float(threshold):
+
+            decay_factor = self._calculate_decay_factor(model)
+            if decay_factor < threshold:
                 try:
                     self.update_memory_status(mem_id, MemoryType.USER_PROFILE, MemoryStatus.FORGOTTEN.value)
                     count += 1
@@ -390,7 +393,7 @@ class ChromaMemoryStore(BaseMemoryStore):
                 return False
         return True
 
-    def _apply_decay(self, model) -> float:
+    def _calculate_decay_factor(self, model) -> float:
         """apply decay(original similarity * e ** (-decay_factor * (now()-last_accessed)))"""
         last = model.lass_accessed_at
         if not last:
@@ -399,8 +402,8 @@ class ChromaMemoryStore(BaseMemoryStore):
             days = (datetime.now() - datetime.fromisoformat(last)).days
         except:
             days = 0
-        decay = np.exp(-config.decay_lambda * days)
-        return 1.0 * decay
+        return np.exp(-config.decay_lambda * days)
+
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
     def _update_last_accessed(self, memory_type: MemoryType, memory_id: str):
