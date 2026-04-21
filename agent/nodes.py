@@ -2,6 +2,7 @@
 # version 1.0
 import logging
 import re
+from datetime import datetime
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.output_parsers import StrOutputParser
@@ -11,7 +12,8 @@ from agent.state import AgentState
 from exception import MemoryWriteFailedError
 from memory.base import BaseMemoryStore
 from memory.constant.constants import MemoryType, StateFields, MetadataFields, MemoryModelFields, MemoryStatus, \
-    MemorySource, ComplianceSeverity, ComplianceAction, ComplianceRuleFields, PromptKeys, ConfigFields
+    MemorySource, ComplianceSeverity, ComplianceAction, ComplianceRuleFields, PromptKeys, ConfigFields, EvidenceType, \
+    InteractionEventType, InteractionSentiment
 from prompt.extract_prompt import EXTRACT_PROMPT
 from prompt.system_prompt import SYSTEM_TEMPLATE
 from retriever.base import BaseRetriever
@@ -56,16 +58,22 @@ def extract_profile_node(state: AgentState, config: RunnableConfig, memory_store
     updated = False
     for item in items:
         if item.get(MemoryModelFields.CONTENT.value) and item.get(MetadataFields.ENTITY_KEY.value):
+            metadata = {
+                MetadataFields.TYPE.value: MemoryType.USER_PROFILE.value,
+                MetadataFields.SOURCE.value: MemorySource.CHAT_EXTRACTION.value,
+                MetadataFields.CONFIDENCE.value: item.get(MetadataFields.CONFIDENCE.value, 0.7),
+                MetadataFields.STATUS.value: MemoryStatus.ACTIVE.value,
+                MetadataFields.EVIDENCE_TYPE.value: EvidenceType.EXPLICIT_STATEMENT.value,
+                MetadataFields.EFFECTIVE_DATE.value: datetime.now().isoformat(),
+                MetadataFields.EXPIRES_AT.value: None,
+            }
             try:
                 memory_store.add_memory(
                     user_id=state[MetadataFields.USER_ID.value],
                     content=item.get(MemoryModelFields.CONTENT.value),
                     memory_type=MemoryType.USER_PROFILE,
                     entity_key=item.get(MetadataFields.ENTITY_KEY.value),
-                    metadata={
-                        MetadataFields.SOURCE.value: MemorySource.CHAT_EXTRACTION.value,
-                        MetadataFields.CONFIDENCE.value: item.get(MetadataFields.CONFIDENCE.value, 0.7)
-                    }
+                    metadata=metadata
                 )
                 updated = True
             except MemoryWriteFailedError as e:
@@ -118,15 +126,24 @@ def log_interaction_node(state: AgentState, config: RunnableConfig, memory_store
     summary_prompt = f"请用一句话总结以下对话核心内容，不要包含冗余信息:\n{conversation}\n\n摘要:"
     summary = llm.invoke([HumanMessage(content=summary_prompt)]).content
 
+    session_id = config.get(ConfigFields.CONFIGURABLE.value)[ConfigFields.THREAD_ID.value]
+    metadata = {
+        MetadataFields.TYPE.value: MemoryType.INTERACTION_LOG.value,
+        MetadataFields.SOURCE.value: MemorySource.AUTO_SUMMARY.value,
+        MetadataFields.STATUS.value: MemoryStatus.ACTIVE.value,
+        MetadataFields.CONFIDENCE.value: 1.0,
+        MetadataFields.EVENT_TYPE.value: InteractionEventType.INQUIRY.value,
+        MetadataFields.SESSION_ID.value: session_id,
+        MetadataFields.SENTIMENT.value: InteractionSentiment.NEUTRAL.value,
+        MetadataFields.KEY_ENTITIES.value: [],  # 暂留空，后续可 NLP 提取
+        MetadataFields.TIMESTAMP.value: datetime.now().isoformat(),
+    }
+
     memory_store.add_memory(
         user_id=state[MetadataFields.USER_ID.value],
         content=summary,
-        metadata={
-            MetadataFields.SOURCE.value: MemorySource.AUTO_SUMMARY.value,
-            MetadataFields.SESSION_ID.value: config[ConfigFields.CONFIGURABLE.value].get(ConfigFields.THREAD_ID.value,
-                                                                                         None),
-            MetadataFields.STATUS.value: MemoryStatus.ACTIVE.value
-        }
+        memory_type=MemoryType.INTERACTION_LOG,
+        metadata=metadata
     )
 
     return {StateFields.INTERACTION_LOGGED.value: True}
