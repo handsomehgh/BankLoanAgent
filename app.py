@@ -7,7 +7,8 @@ import logging
 import uuid
 from langchain_core.messages import HumanMessage, AIMessage
 from agent.graph import build_graph
-from memory.chroma_store import ChromaMemoryStore
+from memory.chroma_db.chroma_store import ChromaMemoryStore
+from memory.chroma_db.chroma_vector_store import ChromaVectorStore
 from retriever.vector_retriever import VectorRetriever
 from config import config
 from memory.constant.constants import MemoryType
@@ -21,7 +22,10 @@ st.title("🏦 银行贷款顾问助手（生产级错误处理）")
 # ==================== 初始化 ====================
 if "memory_store" not in st.session_state:
     try:
-        st.session_state.memory_store = ChromaMemoryStore(persist_dir=config.chroma_persist_dir)
+        # 1. 创建 Chroma 向量存储实例
+        vector_store = ChromaVectorStore(persist_dir=config.chroma_persist_dir)
+        # 2. 创建记忆存储实例（注入向量存储）
+        st.session_state.memory_store = ChromaMemoryStore(vector_store=vector_store)
     except Exception as e:
         st.error(f"记忆存储初始化失败: {e}")
         st.stop()

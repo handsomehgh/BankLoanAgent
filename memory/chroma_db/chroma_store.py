@@ -7,11 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-import chromadb
 import numpy as np
-from chromadb import Settings
 from chromadb.errors import ChromaError
-from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 
 from config import config
 from exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
@@ -19,6 +16,7 @@ from memory.base import BaseMemoryStore
 from memory.constant.constants import MetadataFields, MemoryType, MemorySource, MemoryStatus, MemoryModelFields, \
     ChromaOperator, ChromaResFields, ComplianceSeverity, EvidenceType, InteractionSentiment, ComplianceRuleFields
 from memory.models.schema import ComplianceRuleMetadata, UserProfileMetadata, InteractionLogMetadata
+from memory.vector_store import BaseVectorStore
 from utils.retry import retry_on_failure
 
 logger = logging.Logger(__name__)
@@ -31,52 +29,24 @@ class ChromaMemoryStore(BaseMemoryStore):
         MemoryType.COMPLIANCE_RULE: "compliance_rules",
     }
 
-    def __init__(self, persist_dir: str):
+    def __init__(self, vector_store: BaseVectorStore):
         """
         initial chroma client and collection 
         
         Args:
-            persist_dir: data persistence folder
+            vector_store: vector databases
         """
-        self.persist_dir = persist_dir
+        self.vector_store = vector_store
 
         # dead letter queue
-        self.dlq_path = Path(persist_dir) / "memory_dlq.jsonl"
+        self.dlq_path = Path(config.memory_dlq_path)
         self.dlq_path.parent.mkdir(parents=True, exist_ok=True)
+        logger.info("ChromaMemoryStore initialized with vector_store")
 
-        self.client = chromadb.PersistentClient(
-            path=persist_dir,
-            settings=Settings(anonymized_telemetry=False)
-        )
-
-        # get or create collections
-        self.collections = {}
-        try:
-            for mem_type, coll_name in self.COLLECTION_NAMES.items():
-                self.collections[mem_type] = self._get_or_create_collection(coll_name)
-                logger.info(f"Collection '{coll_name}' initialized for {mem_type.value}")
-        except Exception as e:
-            logger.error(f"Failed to initialize Chroma collection: {e}")
-            raise
-
-        logger.info(f"chroma initial at {persist_dir}")
-
-    def _get_collection(self, memory_type: MemoryType):
-        """get collection by memory type"""
-        if memory_type not in self.collections:
+    def _get_collection_name(self, memory_type: MemoryType) -> str:
+        if memory_type not in self.COLLECTION_NAMES:
             raise ValueError(f"Unsupported memory type: {memory_type}")
-        return self.collections[memory_type]
-
-    @retry_on_failure(max_retries=3, initial_delay=0.3, exceptions=(ChromaError,))
-    def _get_or_create_collection(self, collection_name: str):
-        return self.client.get_or_create_collection(
-            name=collection_name,
-            metadata={"hnsw:space": "cosine"},
-            embedding_function=OpenAIEmbeddingFunction(api_key=config.alibaba_api_key,
-                                                       model_name=config.qwen_emb_name,
-                                                       api_base=config.alibaba_base_url,
-                                                       dimensions=1024)
-        )
+        return self.COLLECTION_NAMES[memory_type]
 
     def _write_to_dlq(self, user_id: str, content: str, meta: Dict, memory_type: MemoryType, permanent: bool):
         entry = {
@@ -201,8 +171,8 @@ class ChromaMemoryStore(BaseMemoryStore):
         # add memory
         memory_id = str(uuid.uuid4())
         try:
-            collection = self._get_collection(memory_type)
-            collection.add(ids=[memory_id], documents=[content], metadatas=model.to_chroma_dict())
+            collection_name = self._get_collection_name(memory_type)
+            self.vector_store.add(collection_name=collection_name,texts=[content],metadatas=model.model_dump(),ids=[memory_id])
         except Exception as e:
             # write to dlq
             logger.error(f"Write failed for user {user_id}: {e}")
@@ -234,7 +204,7 @@ class ChromaMemoryStore(BaseMemoryStore):
     ) -> List[Dict[str, Any]]:
         """search memory by query"""
 
-        collection = self._get_collection(memory_type)
+        collection_name = self._get_collection_name(memory_type)
 
         # build query conditions
         conditions = [{MetadataFields.USER_ID.value: {ChromaOperator.EQ.value: user_id}},
@@ -248,10 +218,11 @@ class ChromaMemoryStore(BaseMemoryStore):
 
         # execute query
         try:
-            results = collection.query(
-                query_texts=[query],
+            results = self.vector_store.search(
+                collection_name=collection_name,
+                query=query,
                 where=where,
-                n_results=fetch_limit,
+                limit=fetch_limit,
                 include=[ChromaResFields.DOCUMENTS.value, ChromaResFields.METADATAS.value,
                          ChromaResFields.DISTANCES.value]
             )
@@ -306,7 +277,7 @@ class ChromaMemoryStore(BaseMemoryStore):
             status: str = MemoryStatus.ACTIVE.value
     ) -> List[Dict[str, Any]]:
         """get memory by entity key"""
-        collection = self._get_collection(MemoryType.USER_PROFILE)
+        collection_name = self._get_collection_name(MemoryType.USER_PROFILE)
 
         where_filter = {ChromaOperator.AND.value:
             [
@@ -317,7 +288,8 @@ class ChromaMemoryStore(BaseMemoryStore):
         }
 
         try:
-            results = collection.get(
+            results = self.vector_store.get(
+                collection_name=collection_name,
                 where=where_filter,
                 include=[ChromaResFields.DOCUMENTS.value, ChromaResFields.METADATAS.value]
             )
@@ -343,9 +315,9 @@ class ChromaMemoryStore(BaseMemoryStore):
             new_status: str,
             metadata_updates: Optional[Dict[str, Any]] = None) -> bool:
         """update memory status"""
-        collection = self._get_collection(memory_type)
+        collection_name = self._get_collection_name(memory_type)
         try:
-            current = collection.get(ids=[memory_id], include=[ChromaResFields.METADATAS.value])
+            current = self.vector_store.get(collection_name=collection_name,ids=[memory_id], include=[ChromaResFields.METADATAS.value])
             if not current[ChromaResFields.METADATAS.value]:
                 return False
 
@@ -353,7 +325,7 @@ class ChromaMemoryStore(BaseMemoryStore):
             new_meta[MetadataFields.STATUS.value] = new_status
             if metadata_updates:
                 new_meta.update(metadata_updates)
-            collection.update(ids=[memory_id], metadatas=[new_meta])
+            self.vector_store.update(collection_name=collection_name,ids=[memory_id], metadatas=[new_meta])
             return True
         except Exception as e:
             raise MemoryUpdateError(f"Update failed: {e}") from e
@@ -369,8 +341,6 @@ class ChromaMemoryStore(BaseMemoryStore):
             logger.info(f"Skipping forgetting for {memory_type.value} (not supported)")
             return 0
 
-        collection = self._get_collection(MemoryType.USER_PROFILE)
-
         threshold = threshold if threshold else config.decay_threshold
         conditions = [{MetadataFields.STATUS.value: {ChromaOperator.EQ.value: MemoryStatus.ACTIVE.value}}]
         if user_id:
@@ -378,8 +348,10 @@ class ChromaMemoryStore(BaseMemoryStore):
         where = conditions if len(conditions) == 1 else {ChromaOperator.AND.value: conditions}
 
         # query the memories that need to be forgotten
+        collection_name = self._get_collection_name(MemoryType.USER_PROFILE)
         try:
-            res = collection.get(
+            res = self.vector_store.get(
+                collection_name=collection_name,
                 where=where,
                 include=[ChromaResFields.METADATAS.value]
             )
@@ -409,9 +381,9 @@ class ChromaMemoryStore(BaseMemoryStore):
         """delete user memory"""
         types = [memory_type] if memory_type else list(self.collections.keys())
         for mem_type in types:
-            collection = self._get_collection(mem_type)
+            collection_name = self._get_collection_name(mem_type)
             try:
-                collection.delete(where={MetadataFields.USER_ID.value: {ChromaOperator.EQ.value: user_id}})
+                self.vector_store.delete(collection_name=collection_name,where={MetadataFields.USER_ID.value: {ChromaOperator.EQ.value: user_id}})
                 return True
             except Exception as e:
                 logger.error(f"Delete failed: {e}")
@@ -432,9 +404,10 @@ class ChromaMemoryStore(BaseMemoryStore):
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
     def _update_last_accessed(self, memory_type: MemoryType, memory_id: str):
-        collection = self._get_collection(memory_type)
+        collection_name = self._get_collection_name(memory_type)
         try:
-            collection.update(
+            self.vector_store.update(
+                collection_name=collection_name,
                 ids=[memory_id],
                 metadatas=[{MetadataFields.LAST_ACCESS_AT.value: datetime.now().isoformat()}]
             )
@@ -442,7 +415,7 @@ class ChromaMemoryStore(BaseMemoryStore):
             logger.warning(f"Failed to update access time for {memory_id}: {e}")
 
     def get_recent_interactions(self, user_id: str, limit: int = 5) -> List[Dict[str, Any]]:
-        collection = self._get_collection(MemoryType.COMPLIANCE_RULE)
+        collection_name = self._get_collection_name(MemoryType.INTERACTION_LOG)
 
         # build query condition
         where = {
@@ -455,7 +428,8 @@ class ChromaMemoryStore(BaseMemoryStore):
 
         # execute query
         try:
-            results = collection.get(
+            results = self.vector_store.get(
+                collection_name=collection_name,
                 where=where,
                 limit=limit * 3,
                 include=[ChromaResFields.METADATAS.value, ChromaResFields.DOCUMENTS.value]
@@ -494,11 +468,12 @@ class ChromaMemoryStore(BaseMemoryStore):
         return memories[:limit]
 
     def get_active_compliance_rules(self, limit: int = 10) -> List[Dict[str, Any]]:
-        collection = self._get_collection(MemoryType.COMPLIANCE_RULE)
+        collection_name = self._get_collection_name(MemoryType.COMPLIANCE_RULE)
         where = {MetadataFields.STATUS.value: {ChromaOperator.EQ.value: MemoryStatus.ACTIVE.value}}
 
         try:
-            results = collection.get(
+            results = self.vector_store.get(
+                collection_name=collection_name,
                 where=where,
                 include=[ChromaResFields.METADATAS.value, ChromaResFields.DOCUMENTS.value]
             )
@@ -534,7 +509,7 @@ class ChromaMemoryStore(BaseMemoryStore):
         return rules[:limit]
 
     def get_all_user_profile_memories(self, user_id: str, status: str = "active") -> List[Dict[str, Any]]:
-        collection = self._get_collection(MemoryType.USER_PROFILE)
+        collection_name = self._get_collection_name(MemoryType.USER_PROFILE)
 
         # build condition
         where = {ChromaOperator.AND.value:
@@ -546,7 +521,8 @@ class ChromaMemoryStore(BaseMemoryStore):
 
         # execute query
         try:
-            results = collection.get(
+            results = self.vector_store.get(
+                collection_name=collection_name,
                 where=where,
                 include=[ChromaResFields.METADATAS.value, ChromaResFields.DOCUMENTS.value]
             )
@@ -570,7 +546,7 @@ class ChromaMemoryStore(BaseMemoryStore):
 
 
 if __name__ == '__main__':
-    store = ChromaMemoryStore("../test")
+    store = ChromaMemoryStore("../../test")
     # store.add_memory(user_id="hgh001",content="这是测试文件2",memory_type=MemoryType.USER_PROFILE,entity_key="test",metadata={"type": "user_profile","source": "test","confidence": 0.6},permanent=False)
 
     # result = store.search_memory("hgh001","测试",MemoryType.USER_PROFILE,2)

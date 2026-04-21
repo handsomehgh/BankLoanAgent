@@ -5,16 +5,18 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
+from memory.chroma_db.chroma_vector_store import ChromaVectorStore
 from memory.constant.constants import MemoryType, MemoryStatus, SpecialUserID
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from memory.chroma_store import ChromaMemoryStore
+from memory.chroma_db.chroma_store import ChromaMemoryStore
 from config import config
 
 def import_compliance_rules(json_path: str):
     """导入合规规则到长期记忆"""
-    store = ChromaMemoryStore(persist_dir=config.chroma_persist_dir)
+    vector_store = ChromaVectorStore(persist_dir=config.chroma_persist_dir)
+    store = ChromaMemoryStore(vector_store=vector_store)
 
     with open(json_path, "r", encoding="utf-8") as f:
         rules = json.load(f)
