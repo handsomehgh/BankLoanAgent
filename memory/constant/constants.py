@@ -74,22 +74,50 @@ class MemoryModelFields(str, Enum):
 # ============================ memory metadata fields =============================
 class MetadataFields(str, Enum):
     USER_ID = "user_id"
+    TYPE = "type"
+    MEMORY_TYPE = "memory_type"
     SOURCE = "source"
     CONFIDENCE = "confidence"
     STATUS = "status"
     PERMANENT = "permanent"
     CREATE_AT = "create_at"
     LAST_ACCESS_AT = "last_access_at"
-    ENTITY_KEY = "entity_key"
     SUPERSEDED_BY = "superseded_by"
-    SEVERITY = "severity"
-    TIMESTAMP = "timestamp"
     SESSION_ID = "session_id"
+
+    ENTITY_KEY = "entity_key"
+    EVIDENCE_TYPE = "evidence_type"
+    EFFECTIVE_DATE = "effective_date"
+    EXPIRES_AT = "expires_at"
+
+    SENTIMENT = "sentiment"
+    KEY_ENTITIES = "key_entities"
+    EVENT_TYPE = "event_type"
+    TIMESTAMP = "timestamp"
+
+    SEVERITY = "severity"
     RETRY_COUNT = "retry_count"
-    MEMORY_TYPE = "memory_type"
 
 
-# ========================== compliance rule action type ========================
+    EXTRA = "extra"
+
+# ============================= compliance rule metadata ==========================
+class ComplianceRuleFields(str, Enum):
+    RULE_ID = "rule_id"
+    RULE_NAME = "rule_name"
+    RULE_TYPE = "rule_type"
+    PATTERN = "pattern"
+    SEVERITY = "severity"
+    ACTION = "action"
+    PRIORITY = "priority"
+    VERSION = "version"
+    EFFECTIVE_FROM = "effective_from"
+    EFFECTIVE_TO = "effective_to"
+    TEMPLATE = "template"
+    DESCRIPTION = "description"
+    SOURCE = "source"
+
+# ========================== compliance rule action type ==========================
 class ComplianceAction(str, Enum):
     """executions actions after compliance rules are triggered"""
     BLOCK = "block"  # directly intercept,don't invoke llm
@@ -121,21 +149,6 @@ class AgentNodeName(str, Enum):
     CALL_MODEL = "call_model"
     EXTRACT_PROFILE = "extract_profile"
     LOG_INTERACTION = "log_interaction"
-
-
-# ============================= compliance rule metadata ==========================
-class ComplianceRuleFields(str, Enum):
-    RULE_ID = "rule_id"
-    RULE_NAME = "rule_name"
-    RULE_TYPE = "rule_type"
-    TYPE = "type"
-    PATTERN = "pattern"
-    SEVERITY = "severity"
-    ACTION = "action"
-    TEMPLATE = "template"
-    DESCRIPTION = "description"
-    SOURCE = "source"
-
 
 # ============================ confidence threshold =================================
 class ConfidenceThreshold(float, Enum):

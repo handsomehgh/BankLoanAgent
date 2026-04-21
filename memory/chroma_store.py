@@ -82,7 +82,7 @@ class ChromaMemoryStore(BaseMemoryStore):
         entry = {
             MetadataFields.USER_ID.value: user_id,
             MemoryModelFields.CONTENT.value: content,
-            MetadataFields.MEMORY_TYPE.value: memory_type.value,
+            MetadataFields.TYPE.value: memory_type.value,
             MemoryModelFields.METADATA.value: meta,
             MetadataFields.TIMESTAMP.value: datetime.now().isoformat(),
             MetadataFields.RETRY_COUNT.value: 0
