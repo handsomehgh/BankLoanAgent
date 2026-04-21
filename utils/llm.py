@@ -24,6 +24,7 @@ def _create_llm_instance(api_key: str, base_url: str, model: str, temperature: f
         model=model,
         temperature=temperature,
         model_provider=model_provider,
+        timeout=60.0,
         max_retries=0
     )
 
@@ -54,7 +55,7 @@ class RobustLLM:
     LLM wrapper with retries and fallback
     """
 
-    def __init__(self, temperature: float = 0.4):
+    def __init__(self, temperature: float = 0.6):
         self.temperature = temperature
         self.llm = self._create_llm()
 
@@ -87,11 +88,11 @@ class RobustLLM:
         except LLMError as e:
             logger.error(f"LLM invocation failed, using fallback: {e}")
             from langchain_core.messages import AIMessage
-            fallback = fallback_response or "抱歉，我暂时无法处理您的请求，请稍后再试。"
+            fallback = fallback_response if fallback_response else "Sorry, I am temporarily unable to handle your request. Please try again later."
             return AIMessage(content=fallback)
 
 
-def get_llm(temperature: float = 0.4):
+def get_llm(temperature: float = 0.7):
     return RobustLLM(temperature=temperature)
 
 if __name__ == '__main__':

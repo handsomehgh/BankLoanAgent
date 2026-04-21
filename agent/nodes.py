@@ -34,24 +34,32 @@ def call_model_node(state: AgentState, config: RunnableConfig) -> dict:
     )
     recent = state[StateFields.MESSAGES.value][-config.max_context_messages:]
     messages = [SystemMessage(content=system)] + recent
-    try:
-        response = llm.invoke(messages)
-    except Exception as e:
-        logger.error(f"LLM call failed: {e}")
-        from langchain_core.messages import AIMessage
-        response = AIMessage(content="Sorry,service is unavailable,please try again later.")
+    response = llm.invoke_with_fallback(messages,fallback_response="Sorry, I am temporarily unable to handle your request. Please try again later.")
     return {StateFields.MESSAGES.value: [response]}
 
 
 def extract_profile_node(state: AgentState, config: RunnableConfig, memory_store: BaseMemoryStore) -> dict:
     """extract user profile and save to store"""
-    # add history messages
+    # get user id
+    user_id = state.get(MetadataFields.USER_ID.value)
+    if not user_id:
+        logger.warning("No user_id found in state, skipping profile extraction")
+        return {StateFields.PROFILE_UPDATED.value: False}
+
+    #get history message
     messages = state.get(StateFields.MESSAGES.value, [])
+    if not messages:
+        logger.debug("No messages to extract profile from")
+        return {StateFields.PROFILE_UPDATED.value: False}
     recent = messages[-6:]
     conversation = "\n".join(f"{'用户' if isinstance(m, HumanMessage) else '助手'}: {m.content}" for m in recent)
 
-    chain = EXTRACT_PROMPT | llm | StrOutputParser()
-    extract_str = chain.invoke({PromptKeys.CONVERSATION.value: conversation})
+    try:
+        chain = EXTRACT_PROMPT | llm | StrOutputParser()
+        extract_str = chain.invoke({PromptKeys.CONVERSATION.value: conversation})
+    except Exception as e:
+        logger.error(f"LLM profile extraction failed: {e}")
+        return {StateFields.PROFILE_UPDATED.value: False}
 
     # analyze the information that extracted by llm
     items = safe_parse_extraction_output(extract_str)
@@ -81,7 +89,7 @@ def extract_profile_node(state: AgentState, config: RunnableConfig, memory_store
             }
             try:
                 memory_store.add_memory(
-                    user_id=state[MetadataFields.USER_ID.value],
+                    user_id=user_id,
                     content=item.get(MemoryModelFields.CONTENT.value),
                     memory_type=MemoryType.USER_PROFILE,
                     entity_key=item.get(MetadataFields.ENTITY_KEY.value),
@@ -151,11 +159,7 @@ def log_interaction_node(state: AgentState, config: RunnableConfig, memory_store
     )
 
     summary_prompt = f"请用一句话总结以下对话核心内容，不要包含冗余信息:\n{conversation}\n\n摘要:"
-    try:
-        summary = llm.invoke([HumanMessage(content=summary_prompt)]).content
-    except Exception as e:
-        logger.error(f"Failed to generate interaction summary: {e}")
-        summary = "对话摘要生成失败"
+    summary = llm.invoke_with_fallback([HumanMessage(content=summary_prompt)],fallback_response="Failed to generate conversation summary").content
 
     metadata = {
         MetadataFields.TYPE.value: MemoryType.INTERACTION_LOG.value,
