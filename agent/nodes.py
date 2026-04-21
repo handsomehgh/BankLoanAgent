@@ -33,9 +33,13 @@ def call_model_node(state: AgentState, agent_config: RunnableConfig) -> dict:
         compliance_rule=formatted.get(MemoryType.COMPLIANCE_RULE.value, "暂无"),
         interaction_log=formatted.get(MemoryType.INTERACTION_LOG.value, "暂无")
     )
-    recent = state[StateFields.MESSAGES.value][-config.max_context_messages:]
-    messages = [SystemMessage(content=system)] + recent
-    response = llm.invoke_with_fallback(messages,fallback_response="Sorry, I am temporarily unable to handle your request. Please try again later.")
+
+    messages = state.get(StateFields.MESSAGES.value, [])
+    recent = messages
+    if len(messages) > config.max_context_messages:
+        recent = messages[-config.max_context_messages:]
+    full_messages = [SystemMessage(content=system)] + recent
+    response = llm.invoke_with_fallback(full_messages,fallback_response="Sorry, I am temporarily unable to handle your request. Please try again later.")
     return {StateFields.MESSAGES.value: [response]}
 
 
