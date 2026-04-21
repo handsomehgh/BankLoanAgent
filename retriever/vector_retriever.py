@@ -15,7 +15,7 @@ class VectorRetriever(BaseRetriever):
     def __init__(self, memory_store: BaseMemoryStore):
         self.memory_store = memory_store
 
-    def retriever(
+    def retrieve(
             self,
             query: str,
             user_id: str,
@@ -34,23 +34,28 @@ class VectorRetriever(BaseRetriever):
 
         results = {}
         for mem_type in types:
-            if mem_type == MemoryType.INTERACTION_LOG:
-                # interaction memory
-                results[mem_type.value] = self.memory_store.get_recent_interactions(user_id, limit=top_k)
-            elif mem_type == MemoryType.COMPLIANCE_RULE:
-                # compliance_rule memory
-                results[mem_type.value] = self.memory_store.get_active_compliance_rules(limit=top_k * 2)
-            else:
-                # business_knowledge memory or user profile memory
-                try:
+            try:
+                if mem_type == MemoryType.USER_PROFILE:
                     results[mem_type.value] = self.memory_store.search_memory(
                         user_id=user_id,
                         query=query,
                         memory_type=mem_type,
                         limit=top_k,
-                        apply_decay=(mem_type == MemoryType.USER_PROFILE)
+                        apply_decay=True
                     )
-                except Exception as e:
-                    logger.error(f"Memory retrieval failed for {mem_type.value}: {e}")
+                elif mem_type == MemoryType.INTERACTION_LOG:
+                    results[mem_type.value] = self.memory_store.get_recent_interactions(
+                        user_id=user_id,
+                        limit=top_k
+                    )
+                elif mem_type == MemoryType.COMPLIANCE_RULE:
+                    results[mem_type.value] = self.memory_store.get_active_compliance_rules(
+                        limit=top_k * 2
+                    )
+                else:
+                    logger.warning(f"Unsupported memory type: {mem_type}, skipped")
                     results[mem_type.value] = []
+            except Exception as e:
+                logger.error(f"Retrieval failed for {mem_type.value}: {e}")
+                results[mem_type.value] = []  # degrade: return an empty list, do not block the overall process
         return results

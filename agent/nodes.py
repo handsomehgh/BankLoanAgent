@@ -13,7 +13,7 @@ from exception import MemoryWriteFailedError
 from memory.base import BaseMemoryStore
 from memory.constant.constants import MemoryType, StateFields, MetadataFields, MemoryModelFields, MemoryStatus, \
     MemorySource, ComplianceSeverity, ComplianceAction, ComplianceRuleFields, PromptKeys, ConfigFields, EvidenceType, \
-    InteractionEventType, InteractionSentiment
+    InteractionEventType, InteractionSentiment, ProfileEntityKey
 from prompt.extract_prompt import EXTRACT_PROMPT
 from prompt.system_prompt import SYSTEM_TEMPLATE
 from retriever.base import BaseRetriever
@@ -46,18 +46,30 @@ def call_model_node(state: AgentState, config: RunnableConfig) -> dict:
 def extract_profile_node(state: AgentState, config: RunnableConfig, memory_store: BaseMemoryStore) -> dict:
     """extract user profile and save to store"""
     # add history messages
-    recent = state[StateFields.MESSAGES.value][-6:]
+    messages = state.get(StateFields.MESSAGES.value, [])
+    recent = messages[-6:]
     conversation = "\n".join(f"{'用户' if isinstance(m, HumanMessage) else '助手'}: {m.content}" for m in recent)
 
-    chain = EXTRACT_PROMPT | llm.llm | StrOutputParser()
+    chain = EXTRACT_PROMPT | llm | StrOutputParser()
     extract_str = chain.invoke({PromptKeys.CONVERSATION.value: conversation})
 
     # analyze the information that extracted by llm
     items = safe_parse_extraction_output(extract_str)
+    allowed_entity_keys = {e.value for e in ProfileEntityKey}
 
     updated = False
     for item in items:
         if item.get(MemoryModelFields.CONTENT.value) and item.get(MetadataFields.ENTITY_KEY.value):
+            content = item.get(MemoryModelFields.CONTENT.value)
+            entity_key_raw = item.get(MetadataFields.ENTITY_KEY.value)
+
+            # 校验必要字段及 entity_key 合法性
+            if not content or not entity_key_raw:
+                continue
+            if entity_key_raw not in allowed_entity_keys:
+                logger.warning(f"Ignored invalid entity_key '{entity_key_raw}' from LLM extraction")
+                continue
+
             metadata = {
                 MetadataFields.TYPE.value: MemoryType.USER_PROFILE.value,
                 MetadataFields.SOURCE.value: MemorySource.CHAT_EXTRACTION.value,
@@ -85,23 +97,35 @@ def extract_profile_node(state: AgentState, config: RunnableConfig, memory_store
 
 def retrieve_memory_node(state: AgentState, retrieval: BaseRetriever) -> dict:
     """retrieve memory and add content to the context"""
-    user_id = state[MetadataFields.USER_ID.value]
+    user_id = state.get(StateFields.USER_ID.value, "unknown")
+    messages = state.get(StateFields.MESSAGES.value, [])
+
     user_query = ""
-    for msg in reversed(state[StateFields.MESSAGES.value]):
+    for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             user_query = msg.content
             break
 
+    memory_types = [
+        MemoryType.USER_PROFILE,
+        MemoryType.COMPLIANCE_RULE,
+        MemoryType.INTERACTION_LOG
+    ]
     try:
-        context = retrieval.retriever(query=user_query, user_id=user_id,
-                                      memory_types=[MemoryType.USER_PROFILE.value,
-                                                    MemoryType.COMPLIANCE_RULE.value,
-                                                    MemoryType.INTERACTION_LOG.value])
+        context = retrieval.retrieve(query=user_query, user_id=user_id,memory_types=memory_types)
     except Exception as e:
         logger.error(f"Retrieval failed, using empty context: {e}")
         context = {MemoryType.USER_PROFILE.value: [], MemoryType.COMPLIANCE_RULE.value: [],
                    MemoryType.INTERACTION_LOG.value: []}
-        state[StateFields.ERROR.value] = f"Retrieval error: {e}"
+        return {
+            StateFields.RETRIEVED_CONTEXT.value: context,
+            StateFields.FORMATTED_CONTEXT.value: {
+                MemoryType.USER_PROFILE.value: "暂无相关信息",
+                MemoryType.COMPLIANCE_RULE.value: "暂无相关信息",
+                MemoryType.INTERACTION_LOG.value: "暂无相关信息"
+            },
+            StateFields.ERROR.value: f"Retrieval error: {e}"
+        }
 
     def fmt(mems):
         return "\n".join(f"- {m[MemoryModelFields.CONTENT.value]}" for m in mems) if mems else "暂无相关信息"
@@ -111,12 +135,15 @@ def retrieve_memory_node(state: AgentState, retrieval: BaseRetriever) -> dict:
         MemoryType.COMPLIANCE_RULE.value: fmt(context.get(MemoryType.COMPLIANCE_RULE.value, [])),
         MemoryType.INTERACTION_LOG.value: fmt(context.get(MemoryType.INTERACTION_LOG.value, []))
     }
-    return {StateFields.RETRIEVED_CONTEXT.value: context, StateFields.FORMATTED_CONTEXT.value: formatted,
-            StateFields.PROFILE_UPDATED.value: False, StateFields.ERROR.value: None}
+    return {StateFields.RETRIEVED_CONTEXT.value: context, StateFields.FORMATTED_CONTEXT.value: formatted, StateFields.ERROR.value: None}
 
 
 def log_interaction_node(state: AgentState, config: RunnableConfig, memory_store: BaseMemoryStore):
     """generate a conversation summary and store it in the interaction memory"""
+    # 获取 session_id
+    configurable = config.get(ConfigFields.CONFIGURABLE.value, {})
+    session_id = configurable.get(ConfigFields.THREAD_ID.value, "unknown")
+
     recent = state[StateFields.MESSAGES.value][-4:]
     conversation = "\n".join(
         f"{'用户' if isinstance(m, HumanMessage) else '助手'}: {m.content}"
@@ -124,9 +151,12 @@ def log_interaction_node(state: AgentState, config: RunnableConfig, memory_store
     )
 
     summary_prompt = f"请用一句话总结以下对话核心内容，不要包含冗余信息:\n{conversation}\n\n摘要:"
-    summary = llm.invoke([HumanMessage(content=summary_prompt)]).content
+    try:
+        summary = llm.invoke([HumanMessage(content=summary_prompt)]).content
+    except Exception as e:
+        logger.error(f"Failed to generate interaction summary: {e}")
+        summary = "对话摘要生成失败"
 
-    session_id = config.get(ConfigFields.CONFIGURABLE.value)[ConfigFields.THREAD_ID.value]
     metadata = {
         MetadataFields.TYPE.value: MemoryType.INTERACTION_LOG.value,
         MetadataFields.SOURCE.value: MemorySource.AUTO_SUMMARY.value,
@@ -139,14 +169,17 @@ def log_interaction_node(state: AgentState, config: RunnableConfig, memory_store
         MetadataFields.TIMESTAMP.value: datetime.now().isoformat(),
     }
 
-    memory_store.add_memory(
-        user_id=state[MetadataFields.USER_ID.value],
-        content=summary,
-        memory_type=MemoryType.INTERACTION_LOG,
-        metadata=metadata
-    )
-
-    return {StateFields.INTERACTION_LOGGED.value: True}
+    try:
+        memory_store.add_memory(
+            user_id=state[MetadataFields.USER_ID.value],
+            content=summary,
+            memory_type=MemoryType.INTERACTION_LOG,
+            metadata=metadata
+        )
+        logger.info(f"Logged interaction for session {session_id}")
+    except Exception as e:
+        logger.error(f"Failed to write interaction log: {e}")
+    return {"interaction_logged": True}
 
 
 def compliance_guard_node(state: AgentState, Config: RunnableConfig, memory_store: BaseMemoryStore) -> dict:

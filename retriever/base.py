@@ -3,14 +3,17 @@
 from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any
 
+from memory.constant.constants import MemoryType
+
+
 class BaseRetriever(ABC):
     @abstractmethod
-    def retriever(
+    def retrieve(
             self,
             query: str,
             user_id: str,
             top_k: int = 5,
-            memory_types: Optional[List[str]] = None,
+            memory_types:  Optional[List[MemoryType]] = None,
             **kwargs
     ) -> Dict[str,List[Dict[str,Any]]]:
         """
