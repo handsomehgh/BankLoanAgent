@@ -9,6 +9,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableConfig
 
 from agent.state import AgentState
+from config import config
 from exception import MemoryWriteFailedError
 from memory.base import BaseMemoryStore
 from memory.constant.constants import MemoryType, StateFields, MetadataFields, MemoryModelFields, MemoryStatus, \
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 llm = get_llm()
 
 
-def call_model_node(state: AgentState, config: RunnableConfig) -> dict:
+def call_model_node(state: AgentState, agent_config: RunnableConfig) -> dict:
     """call llm"""
     formatted = state.get(StateFields.FORMATTED_CONTEXT.value, {})
     system = SYSTEM_TEMPLATE.format(
@@ -38,7 +39,7 @@ def call_model_node(state: AgentState, config: RunnableConfig) -> dict:
     return {StateFields.MESSAGES.value: [response]}
 
 
-def extract_profile_node(state: AgentState, config: RunnableConfig, memory_store: BaseMemoryStore) -> dict:
+def extract_profile_node(state: AgentState, agent_config: RunnableConfig, memory_store: BaseMemoryStore) -> dict:
     """extract user profile and save to store"""
     # get user id
     user_id = state.get(MetadataFields.USER_ID.value)
@@ -146,13 +147,15 @@ def retrieve_memory_node(state: AgentState, retrieval: BaseRetriever) -> dict:
     return {StateFields.RETRIEVED_CONTEXT.value: context, StateFields.FORMATTED_CONTEXT.value: formatted, StateFields.ERROR.value: None}
 
 
-def log_interaction_node(state: AgentState, config: RunnableConfig, memory_store: BaseMemoryStore):
+def log_interaction_node(state: AgentState, agent_config: RunnableConfig, memory_store: BaseMemoryStore):
     """generate a conversation summary and store it in the interaction memory"""
     # 获取 session_id
-    configurable = config.get(ConfigFields.CONFIGURABLE.value, {})
+    configurable = agent_config.get(ConfigFields.CONFIGURABLE.value, {})
     session_id = configurable.get(ConfigFields.THREAD_ID.value, "unknown")
 
-    recent = state[StateFields.MESSAGES.value][-4:]
+    recent = state.get(StateFields.MESSAGES.value,[])
+    if len(recent) > config.interaction_recent_num:
+        recent = recent[config.interaction_recent_num:]
     conversation = "\n".join(
         f"{'用户' if isinstance(m, HumanMessage) else '助手'}: {m.content}"
         for m in recent
@@ -186,7 +189,7 @@ def log_interaction_node(state: AgentState, config: RunnableConfig, memory_store
     return {"interaction_logged": True}
 
 
-def compliance_guard_node(state: AgentState, Config: RunnableConfig, memory_store: BaseMemoryStore) -> dict:
+def compliance_guard_node(state: AgentState, agent_config: RunnableConfig, memory_store: BaseMemoryStore) -> dict:
     """
     compliance check node:
     scan user input and draft response before generating answers to intercept non-compliant content
@@ -196,7 +199,7 @@ def compliance_guard_node(state: AgentState, Config: RunnableConfig, memory_stor
 
     # find user input
     user_query = ""
-    for msg in reversed(state[StateFields.MESSAGES.value]):
+    for msg in reversed(state.get(StateFields.MESSAGES.value,[])):
         if isinstance(msg, HumanMessage):
             user_query = msg.content
             break

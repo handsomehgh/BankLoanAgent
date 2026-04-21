@@ -53,6 +53,9 @@ class BankLoanAgentConfig(BaseSettings):
     retrieval_top_k: int = Field(5, validation_alias="RETRIEVAL_TOP_K")
     retrieval_fetch_k: int = Field(10, validation_alias="RETRIEVAL_FETCH_K")
 
+    #interaction recent message number
+    interaction_recent_num: int = Field(4, validation_alias="INTERACTION_RECENT_NUM")
+
     #memory dlq path
     memory_dlq_path: str = Field(...,validation_alias="MEMORY_DLQ_PATH")
 
