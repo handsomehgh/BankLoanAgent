@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from models.constant.constants import MetadataFields, MemoryType, ComplianceRuleFields, MemoryStatus
+from memory.constant.constants import MetadataFields, MemoryType, ComplianceRuleFields, MemoryStatus
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

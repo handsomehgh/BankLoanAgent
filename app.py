@@ -10,7 +10,7 @@ from agent.graph import build_graph
 from memory.chroma_store import ChromaMemoryStore
 from retriever.vector_retriever import VectorRetriever
 from config import config
-from models.constant.constants import MemoryType
+from memory.constant.constants import MemoryType
 
 logging.basicConfig(level=config.log_level)
 logger = logging.getLogger(__name__)

@@ -10,7 +10,7 @@ from langchain_core.runnables import RunnableConfig
 from agent.state import AgentState
 from exception import MemoryWriteFailedError
 from memory.base import BaseMemoryStore
-from models.constant.constants import MemoryType, StateFields, MetadataFields, MemoryModelFields, MemoryStatus, \
+from memory.constant.constants import MemoryType, StateFields, MetadataFields, MemoryModelFields, MemoryStatus, \
     MemorySource, ComplianceSeverity, ComplianceAction, ComplianceRuleFields, PromptKeys, ConfigFields
 from prompt.extract_prompt import EXTRACT_PROMPT
 from prompt.system_prompt import SYSTEM_TEMPLATE

@@ -16,7 +16,7 @@ from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 from config import config
 from exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
 from memory.base import BaseMemoryStore
-from models.constant.constants import MetadataFields, MemoryType, MemorySource, MemoryStatus, MemoryModelFields, \
+from memory.constant.constants import MetadataFields, MemoryType, MemorySource, MemoryStatus, MemoryModelFields, \
     ChromaOperator, ChromaResFields, ComplianceSeverity
 from utils.retry import retry_on_failure
 

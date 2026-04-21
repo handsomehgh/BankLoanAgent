@@ -10,7 +10,7 @@ from agent.nodes import retrieve_memory_node, compliance_guard_node, call_model_
     log_interaction_node
 from agent.state import AgentState
 from memory.base import BaseMemoryStore
-from models.constant.constants import AgentNodeName, StateFields
+from memory.constant.constants import AgentNodeName, StateFields
 from retriever.base import BaseRetriever
 
 
