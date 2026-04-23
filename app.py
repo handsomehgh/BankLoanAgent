@@ -7,7 +7,7 @@ import logging
 import uuid
 from langchain_core.messages import HumanMessage, AIMessage
 from agent.graph import build_graph
-from memory.chroma_db.chroma_store import ChromaMemoryStore
+from memory.chroma_db.chroma_memory_store import ChromaMemoryStore
 from memory.chroma_db.chroma_vector_store import ChromaVectorStore
 from retriever.vector_retriever import VectorRetriever
 from config import config

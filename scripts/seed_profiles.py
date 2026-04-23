@@ -14,7 +14,7 @@ from memory.constant.constants import MemoryType, MemorySource, MemoryStatus, Ev
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from memory.chroma_db.chroma_store import ChromaMemoryStore
+from memory.chroma_db.chroma_memory_store import ChromaMemoryStore
 from config import config
 
 logging.basicConfig(level=logging.INFO)

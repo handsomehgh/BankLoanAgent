@@ -12,7 +12,8 @@ from chromadb.errors import ChromaError
 
 from config import config
 from exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
-from memory.base import BaseMemoryStore
+from memory.classifiers.rules.rules_loader import get_evidence_loader
+from memory.memory_base import BaseMemoryStore
 from memory.constant.constants import MetadataFields, MemoryType, MemorySource, MemoryStatus, MemoryModelFields, \
     ChromaOperator, ChromaResFields, ComplianceSeverity, EvidenceType, InteractionSentiment, ComplianceRuleFields
 from memory.models.schema import ComplianceRuleMetadata, UserProfileMetadata, InteractionLogMetadata
@@ -155,10 +156,28 @@ class ChromaMemoryStore(BaseMemoryStore):
             except Exception as e:
                 logger.warning(f"Conflict check failed,proceeding: {e}")
 
+            try:
+                loader = get_evidence_loader()
+                evidence_weights = loader.get_evidence_weights()
+            except Exception as e:
+                logger.warning(f"Failed to load evidence weights,user default: {e}")
+                evidence_weights = {}
+
             # update the memory status to superseded
             for old in existing:
-                if float(meta_input[MetadataFields.CONFIDENCE.value]) > float(
-                        old[MemoryModelFields.METADATA.value].get(MetadataFields.CONFIDENCE.value, 0.0)) + 0.1:
+                old_meta = old[MemoryModelFields.METADATA.value]
+                old_conf = float(old.get(MetadataFields.CONFIDENCE.value, 0.0))
+                old_evidence = old.get(MetadataFields.EVIDENCE_TYPE.value, EvidenceType.EXPLICIT_STATEMENT.value)
+                old_weight = evidence_weights.get(old_evidence,50)
+
+                new_conf = model.confidence
+                new_evidence = model.evidence_type if hasattr(model, MetadataFields.EVIDENCE_TYPE.value) else EvidenceType.EXPLICIT_STATEMENT.value
+                new_weight = evidence_weights.get(new_evidence,50)
+
+                # Overriding Conditions:
+                # 1. The new confidence is significantly higher (> old_conf + 0.1)
+                # 2. Confidence difference is not large (≤ 0.1) but the new evidence is more authoritative
+                if new_conf > old_conf + 0.1 or (abs(new_conf - old_conf) <= 0,1) and new_weight > old_weight:
                     try:
                         self.update_memory_status(old[MemoryModelFields.ID.value], memory_type,
                                                   MemoryStatus.SUPERSEDED.value,

@@ -9,7 +9,7 @@ from agent.checkpointer import get_checkpointer
 from agent.nodes import retrieve_memory_node, compliance_guard_node, call_model_node, extract_profile_node, \
     log_interaction_node
 from agent.state import AgentState
-from memory.base import BaseMemoryStore
+from memory.memory_base import BaseMemoryStore
 from memory.constant.constants import AgentNodeName, StateFields
 from retriever.base import BaseRetriever
 
