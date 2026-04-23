@@ -59,6 +59,9 @@ class BankLoanAgentConfig(BaseSettings):
     #memory dlq path
     memory_dlq_path: str = Field(...,validation_alias="MEMORY_DLQ_PATH")
 
+    #milvus
+    milvus_uri: str = Field(..., validation_alias="milvus uri")
+
     # Logging
     log_level: str = Field("INFO", validation_alias="LOG_LEVEL")
 
