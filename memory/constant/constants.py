@@ -225,4 +225,4 @@ class ConfigFields(str, Enum):
 
 
 if __name__ == '__main__':
-    print(type(VectorIndexType.HNSW.value))
+    print(MemoryType.__members__.values())

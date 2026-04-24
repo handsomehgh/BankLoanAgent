@@ -8,7 +8,7 @@ from chromadb import Settings
 from chromadb.errors import ChromaError
 
 from memory.constant.constants import ChromaResFields
-from memory.vector_store import BaseVectorStore
+from memory.memory_vector_store.vector_store import BaseVectorStore
 from utils.retry import retry_on_failure
 
 logger = logging.getLogger(__name__)
@@ -48,9 +48,9 @@ class ChromaVectorStore(BaseVectorStore):
             self,
             collection_name: str,
             query: str,
-            where: Dict[str, Any],
-            limit: int,
-            include: List[str]
+            where: Optional[Any] = None,
+            limit: int = 5,
+            include: List[str] = None,
     ) -> Dict[str, Any]:
         collection = self._get_collection(collection_name)
         return collection.query(query=[query], where=where, limit=limit, include=include)
@@ -59,7 +59,7 @@ class ChromaVectorStore(BaseVectorStore):
     def get(
             self,
             collection_name: str,
-            where: Optional[Dict[str, Any]] = None,
+            where: Optional[Any] = None,
             ids: Optional[List[str]] = None,
             limit: Optional[int] = None,
             include: List[str] = None
@@ -92,7 +92,7 @@ class ChromaVectorStore(BaseVectorStore):
     def delete(
             self,
             collection_name: str,
-            where: List[Dict[str, Any]]
+            where: Optional[Any]
     ) -> None:
         collection = self._get_collection(collection_name)
         collection.delete(where=where)

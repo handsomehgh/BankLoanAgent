@@ -13,31 +13,35 @@ from chromadb.errors import ChromaError
 from config import config
 from exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
 from memory.classifiers.rules.rules_loader import get_evidence_loader
-from memory.memory_base import BaseMemoryStore
+from memory.db_adpter.adpter_model.query_model import Condition, Query
+from memory.db_adpter.query_builder import QueryBuilder
+from memory.memory_store.memory_base import BaseMemoryStore
 from memory.constant.constants import MetadataFields, MemoryType, MemorySource, MemoryStatus, MemoryModelFields, \
     ChromaOperator, ChromaResFields, ComplianceSeverity, EvidenceType, InteractionSentiment, ComplianceRuleFields
 from memory.models.schema import ComplianceRuleMetadata, UserProfileMetadata, InteractionLogMetadata
-from memory.vector_store import BaseVectorStore
+from memory.memory_vector_store.vector_store import BaseVectorStore
 from utils.retry import retry_on_failure
 
 logger = logging.Logger(__name__)
 
 
-class ChromaMemoryStore(BaseMemoryStore):
+class LongTermMemoryStore(BaseMemoryStore):
     COLLECTION_NAMES = {
         MemoryType.USER_PROFILE: "user_profile_memories",
         MemoryType.INTERACTION_LOG: "interaction_logs",
         MemoryType.COMPLIANCE_RULE: "compliance_rules",
     }
 
-    def __init__(self, vector_store: BaseVectorStore):
+    def __init__(self, vector_store: BaseVectorStore,query_builder: QueryBuilder):
         """
         initial chroma client and collection 
         
         Args:
             vector_store: vector databases
+            query_builder: builder query
         """
         self.vector_store = vector_store
+        self.query_builder = query_builder
 
         # dead letter queue
         self.dlq_path = Path(config.memory_dlq_path)
@@ -191,7 +195,7 @@ class ChromaMemoryStore(BaseMemoryStore):
         memory_id = str(uuid.uuid4())
         try:
             collection_name = self._get_collection_name(memory_type)
-            self.vector_store.add(collection_name=collection_name,texts=[content],metadatas=model.model_dump(),ids=[memory_id])
+            self.vector_store.add(collection_name=collection_name,ids=[memory_id],texts=[content],metadatas=model.model_dump())
         except Exception as e:
             # write to dlq
             logger.error(f"Write failed for user {user_id}: {e}")
@@ -226,11 +230,14 @@ class ChromaMemoryStore(BaseMemoryStore):
         collection_name = self._get_collection_name(memory_type)
 
         # build query conditions
-        conditions = [{MetadataFields.USER_ID.value: {ChromaOperator.EQ.value: user_id}},
-                      {MetadataFields.STATUS.value: {ChromaOperator.EQ.value: MemoryStatus.ACTIVE.value}}]
+        conditions = [
+            Condition(field=MetadataFields.USER_ID.value,op="==",value=user_id),
+            Condition(field=MetadataFields.STATUS.value,op="==",value=MemoryStatus.ACTIVE.value)
+        ]
         if min_confidence:
-            conditions.append({MetadataFields.CONFIDENCE.value: {ChromaOperator.GTE.value: min_confidence}})
-        where = conditions[0] if len(conditions) == 1 else {ChromaOperator.AND.value: conditions}
+            conditions.append(Condition(field=MetadataFields.CONFIDENCE.value,op=">=",value=min_confidence))
+        query_obj = Query(conditions=conditions,logic="AND")
+        where = self.query_builder.build(query_obj)
 
         # the number of result
         fetch_limit = limit * 2 if apply_decay else limit
@@ -299,18 +306,18 @@ class ChromaMemoryStore(BaseMemoryStore):
         """get memory by entity key"""
         collection_name = self._get_collection_name(MemoryType.USER_PROFILE)
 
-        where_filter = {ChromaOperator.AND.value:
-            [
-                {MetadataFields.USER_ID.value: {ChromaOperator.EQ.value: user_id}},
-                {MetadataFields.ENTITY_KEY.value: {ChromaOperator.EQ.value: entity_key}},
-                {MetadataFields.STATUS.value: {ChromaOperator.EQ.value: status}}
-            ]
-        }
+        #build query conditions
+        query_obj = Query(conditions=[
+            Condition(field=MetadataFields.USER_ID.value,op="==",value=user_id),
+            Condition(field=MetadataFields.ENTITY_KEY.value,op="==",value=entity_key),
+            Condition(field=MetadataFields.STATUS.value,op="==",value=status)
+        ])
+        where = self.query_builder.build(query_obj)
 
         try:
             results = self.vector_store.get(
                 collection_name=collection_name,
-                where=where_filter,
+                where=where,
                 include=[ChromaResFields.DOCUMENTS.value, ChromaResFields.METADATAS.value]
             )
         except Exception as e:
@@ -361,11 +368,13 @@ class ChromaMemoryStore(BaseMemoryStore):
             logger.info(f"Skipping forgetting for {memory_type.value} (not supported)")
             return 0
 
-        threshold = threshold if threshold else config.decay_threshold
-        conditions = [{MetadataFields.STATUS.value: {ChromaOperator.EQ.value: MemoryStatus.ACTIVE.value}}]
+        conditions = [
+            Condition(field=MetadataFields.STATUS.value,op="==",value=MemoryStatus.ACTIVE.value),
+        ]
         if user_id:
-            conditions.append({MetadataFields.USER_ID.value: {ChromaOperator.EQ.value: user_id}})
-        where = conditions if len(conditions) == 1 else {ChromaOperator.AND.value: conditions}
+            conditions.append(Condition(field=MetadataFields.USER_ID.value,op="==",value=user_id))
+        query_obj = Query(conditions=conditions,logic="AND")
+        where = self.query_builder.build(query_obj)
 
         # query the memories that need to be forgotten
         collection_name = self._get_collection_name(MemoryType.USER_PROFILE)
@@ -389,6 +398,7 @@ class ChromaMemoryStore(BaseMemoryStore):
             except Exception:
                 continue
 
+            threshold = threshold if threshold else config.decay_threshold
             decay_factor = self._calculate_decay_factor(model)
             if decay_factor < threshold:
                 try:
@@ -401,11 +411,13 @@ class ChromaMemoryStore(BaseMemoryStore):
 
     def delete_user_memories(self, user_id: str, memory_type: Optional[MemoryType] = None) -> bool:
         """delete user memory"""
-        types = [memory_type] if memory_type else list(self.collections.keys())
+        types = [memory_type] if memory_type else [v.value for v in MemoryType]
         for mem_type in types:
             collection_name = self._get_collection_name(mem_type)
+            query_obj = Query(conditions=[Condition(field=MetadataFields.USER_ID.value,op="==",value=user_id)])
+            where = self.query_builder.build(query_obj)
             try:
-                self.vector_store.delete(collection_name=collection_name,where={MetadataFields.USER_ID.value: {ChromaOperator.EQ.value: user_id}})
+                self.vector_store.delete(collection_name=collection_name,where=where)
                 return True
             except Exception as e:
                 logger.error(f"Delete failed: {e}")
@@ -440,13 +452,10 @@ class ChromaMemoryStore(BaseMemoryStore):
         collection_name = self._get_collection_name(MemoryType.INTERACTION_LOG)
 
         # build query condition
-        where = {
-            ChromaOperator.AND.value:
-                [
-                    {MetadataFields.USER_ID.value: {ChromaOperator.EQ.value: user_id}},
-                    {MetadataFields.STATUS.value: {ChromaOperator.EQ.value, MemoryStatus.ACTIVE.value}}
-                ]
-        }
+        where = self.query_builder.build(Query(conditions=[
+            Condition(field=MetadataFields.USER_ID.value,op="==",value=user_id),
+            Condition(field=MetadataFields.STATUS.value,op="==",value=MemoryStatus.ACTIVE.value)
+        ]))
 
         # execute query
         try:
@@ -491,7 +500,7 @@ class ChromaMemoryStore(BaseMemoryStore):
 
     def get_active_compliance_rules(self, limit: int = 10) -> List[Dict[str, Any]]:
         collection_name = self._get_collection_name(MemoryType.COMPLIANCE_RULE)
-        where = {MetadataFields.STATUS.value: {ChromaOperator.EQ.value: MemoryStatus.ACTIVE.value}}
+        where = self.query_builder.build(Query(conditions=[Condition(field=MetadataFields.STATUS.value,op="==",value=MemoryStatus.ACTIVE.value)]))
 
         try:
             results = self.vector_store.get(
@@ -534,12 +543,10 @@ class ChromaMemoryStore(BaseMemoryStore):
         collection_name = self._get_collection_name(MemoryType.USER_PROFILE)
 
         # build condition
-        where = {ChromaOperator.AND.value:
-            [
-                {MetadataFields.USER_ID.value: {ChromaOperator.EQ.value: user_id}},
-                {MetadataFields.STATUS.value: {ChromaOperator.EQ.value, MemoryStatus.ACTIVE.value}}
-            ]
-        }
+        where = self.query_builder.build(Query(conditions=[
+            Condition(field=MetadataFields.USER_ID.value,op="==",value=user_id),
+            Condition(field=MetadataFields.STATUS.value,op="==",value=MemoryStatus.ACTIVE.value),
+        ]))
 
         # execute query
         try:
@@ -568,7 +575,7 @@ class ChromaMemoryStore(BaseMemoryStore):
 
 
 if __name__ == '__main__':
-    store = ChromaMemoryStore("../../test")
+    store = LongTermMemoryStore("../../test")
     # store.add_memory(user_id="hgh001",content="这是测试文件2",memory_type=MemoryType.USER_PROFILE,entity_key="test",metadata={"type": "user_profile","source": "test","confidence": 0.6},permanent=False)
 
     # result = store.search_memory("hgh001","测试",MemoryType.USER_PROFILE,2)

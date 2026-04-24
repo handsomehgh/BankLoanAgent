@@ -7,8 +7,11 @@ import logging
 import uuid
 from langchain_core.messages import HumanMessage, AIMessage
 from agent.graph import build_graph
-from memory.chroma_db.chroma_memory_store import ChromaMemoryStore
-from memory.chroma_db.chroma_vector_store import ChromaVectorStore
+from memory.db_adpter.adpter_builder.chroma_query_builder import ChromaQueryBuilder
+from memory.db_adpter.adpter_builder.milvus_query_builder import MilvusQueryBuilder
+from memory.memory_store.long_term_memory_store import LongTermMemoryStore
+from memory.memory_vector_store.chroma_db.chroma_vector_store import ChromaVectorStore
+from memory.memory_vector_store.milvus_db.milvus_vector_store import MilvusVectorStore
 from retriever.vector_retriever import VectorRetriever
 from config import config
 from memory.constant.constants import MemoryType
@@ -16,16 +19,23 @@ from memory.constant.constants import MemoryType
 logging.basicConfig(level=config.log_level)
 logger = logging.getLogger(__name__)
 
+
+if config.vector_backend == "chroma":
+    query_builder = ChromaQueryBuilder()
+    vector_store = ChromaVectorStore(persist_dir=config.chroma_persist_dir)
+else:
+    # 预留 Milvus
+    query_builder = MilvusQueryBuilder()
+    vector_store = MilvusVectorStore(uri=config.milvus_uri)
+
 st.set_page_config(page_title="银行贷款助手", page_icon="🏦")
 st.title("🏦 银行贷款顾问助手（生产级错误处理）")
 
 # ==================== 初始化 ====================
 if "memory_store" not in st.session_state:
     try:
-        # 1. 创建 Chroma 向量存储实例
-        vector_store = ChromaVectorStore(persist_dir=config.chroma_persist_dir)
-        # 2. 创建记忆存储实例（注入向量存储）
-        st.session_state.memory_store = ChromaMemoryStore(vector_store=vector_store)
+        #创建记忆存储实例（注入向量存储）
+        st.session_state.memory_store = LongTermMemoryStore(vector_store=vector_store,query_builder=query_builder)
     except Exception as e:
         st.error(f"记忆存储初始化失败: {e}")
         st.stop()

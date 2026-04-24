@@ -12,11 +12,11 @@ from agent.state import AgentState
 from config import config
 from exception import MemoryWriteFailedError
 from memory.classifiers.rules.rules_loader import get_compliance_loader
-from memory.memory_base import BaseMemoryStore
+from memory.memory_store.memory_base import BaseMemoryStore
 from memory.classifiers import infer_evidence_type, detect_sentiment
 from memory.constant.constants import MemoryType, StateFields, MetadataFields, MemoryModelFields, MemoryStatus, \
-    MemorySource, ComplianceSeverity, ComplianceAction, ComplianceRuleFields, PromptKeys, ConfigFields, EvidenceType, \
-    InteractionEventType, InteractionSentiment, ProfileEntityKey
+    MemorySource, ComplianceSeverity, ComplianceAction, ComplianceRuleFields, PromptKeys, ConfigFields, \
+    InteractionEventType, ProfileEntityKey
 from prompt.extract_prompt import EXTRACT_PROMPT
 from prompt.system_prompt import SYSTEM_TEMPLATE
 from retriever.base import BaseRetriever

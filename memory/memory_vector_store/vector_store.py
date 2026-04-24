@@ -9,18 +9,18 @@ class BaseVectorStore(ABC):
     def add(
             self,
             collection_name: str,
+            ids: List[str],
             texts: List[str],
-            metadatas: List[Dict[str, Any]],
-            ids: List[str]
+            metadatas: List[Dict[str, Any]]
     ) -> None:
         """
         batch add vector record
 
         Args:
             collection_name: the name of collection
+            ids: list of ids
             texts: list of texts to be added
             metadatas: list of metadata to be added
-            ids: list of ids
         """
         pass
 
@@ -29,9 +29,9 @@ class BaseVectorStore(ABC):
             self,
             collection_name: str,
             query: str,
-            where: Dict[str, Any],
+            where: Optional[Any],
             limit: int,
-            include: List[str]
+            include:  Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         semantic retrieve
@@ -49,7 +49,7 @@ class BaseVectorStore(ABC):
     def get(
             self,
             collection_name: str,
-            where: Optional[Dict[str, Any]] = None,
+            where: Optional[Any] = None,
             ids: Optional[List[str]] = None,
             limit: Optional[int] = None,
             include: List[str] = None
@@ -88,7 +88,7 @@ class BaseVectorStore(ABC):
     def delete(
             self,
             collection_name: str,
-            where: List[Dict[str, Any]]
+            where: List[Any]
     ) -> None:
         """
         delete records based on condition

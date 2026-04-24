@@ -9,12 +9,13 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
-from memory.chroma_db.chroma_vector_store import ChromaVectorStore
+from memory.db_adpter.adpter_builder.chroma_query_builder import ChromaQueryBuilder
+from memory.memory_vector_store.chroma_db.chroma_vector_store import ChromaVectorStore
 from memory.constant.constants import MemoryType, MemorySource, MemoryStatus, EvidenceType
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from memory.chroma_db.chroma_memory_store import ChromaMemoryStore
+from memory.memory_store.long_term_memory_store import LongTermMemoryStore
 from config import config
 
 logging.basicConfig(level=logging.INFO)
@@ -23,8 +24,9 @@ logger = logging.getLogger(__name__)
 
 def import_profiles(jsonl_path: str):
     """导入用户画像测试数据"""
-    vector_store = ChromaVectorStore(persist_dir=config.chroma_persist_dir)
-    store = ChromaMemoryStore(vector_store=vector_store)
+    vector_store = ChromaVectorStore(...)
+    query_builder = ChromaQueryBuilder()
+    store = LongTermMemoryStore(vector_store=vector_store, query_builder=query_builder)
 
     with open(jsonl_path, "r", encoding="utf-8") as f:
         for line_num, line in enumerate(f, 1):
@@ -64,7 +66,9 @@ def import_profiles(jsonl_path: str):
 
 def verify_import():
     """验证导入结果"""
-    store = ChromaMemoryStore(persist_dir=config.chroma_persist_dir)
+    vector_store = ChromaVectorStore(...)
+    query_builder = ChromaQueryBuilder()
+    store = LongTermMemoryStore(vector_store=vector_store, query_builder=query_builder)
 
     print("\n" + "=" * 60)
     print("验证导入结果")

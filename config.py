@@ -7,8 +7,6 @@ from pydantic import Field
 from pydantic_core import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from exception import ConfigurationError
-
 
 class BankLoanAgentConfig(BaseSettings):
     model_config = SettingsConfigDict(
@@ -59,8 +57,9 @@ class BankLoanAgentConfig(BaseSettings):
     #memory dlq path
     memory_dlq_path: str = Field(...,validation_alias="MEMORY_DLQ_PATH")
 
+    vector_backend: str = Field(...,validate_default="VECTOR_BACKEND")
     #milvus
-    milvus_uri: str = Field(..., validation_alias="milvus uri")
+    milvus_uri: str = Field(..., validation_alias="milvus_uri")
 
     # Logging
     log_level: str = Field("INFO", validation_alias="LOG_LEVEL")
