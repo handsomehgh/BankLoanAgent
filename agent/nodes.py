@@ -14,9 +14,8 @@ from exception import MemoryWriteFailedError
 from memory.classifiers.rules.rules_loader import get_compliance_loader
 from memory.memory_store.memory_base import BaseMemoryStore
 from memory.classifiers import infer_evidence_type, detect_sentiment
-from memory.constant.constants import MemoryType, StateFields, MetadataFields, MemoryModelFields, MemoryStatus, \
-    MemorySource, ComplianceSeverity, ComplianceAction, ComplianceRuleFields, PromptKeys, ConfigFields, \
-    InteractionEventType, ProfileEntityKey
+from memory.models.memory_constant.constants import MemoryType, MemoryStatus, MemorySource, ComplianceSeverity, \
+    ComplianceAction, PromptKeys, ConfigFields, InteractionEventType, ProfileEntityKey, GeneralFieldNames, StateFields
 from prompt.extract_prompt import EXTRACT_PROMPT
 from prompt.system_prompt import SYSTEM_TEMPLATE
 from retriever.base import BaseRetriever
@@ -41,19 +40,20 @@ def call_model_node(state: AgentState, agent_config: RunnableConfig) -> dict:
     if len(messages) > config.max_context_messages:
         recent = messages[-config.max_context_messages:]
     full_messages = [SystemMessage(content=system)] + recent
-    response = llm.invoke_with_fallback(full_messages,fallback_response="Sorry, I am temporarily unable to handle your request. Please try again later.")
+    response = llm.invoke_with_fallback(full_messages,
+                                        fallback_response="Sorry, I am temporarily unable to handle your request. Please try again later.")
     return {StateFields.MESSAGES.value: [response]}
 
 
 def extract_profile_node(state: AgentState, agent_config: RunnableConfig, memory_store: BaseMemoryStore) -> dict:
     """extract user profile and save to store"""
     # get user id
-    user_id = state.get(MetadataFields.USER_ID.value)
+    user_id = state.get(StateFields.USER_ID.value)
     if not user_id:
         logger.warning("No user_id found in state, skipping profile extraction")
         return {StateFields.PROFILE_UPDATED.value: False}
 
-    #get history message
+    # get history message
     messages = state.get(StateFields.MESSAGES.value, [])
     if not messages:
         logger.debug("No messages to extract profile from")
@@ -74,9 +74,9 @@ def extract_profile_node(state: AgentState, agent_config: RunnableConfig, memory
 
     updated = False
     for item in items:
-        if item.get(MemoryModelFields.CONTENT.value) and item.get(MetadataFields.ENTITY_KEY.value):
-            content = item.get(MemoryModelFields.CONTENT.value)
-            entity_key_raw = item.get(MetadataFields.ENTITY_KEY.value)
+        if item.get(GeneralFieldNames.CONTENT) and item.get(GeneralFieldNames.ENTITY_KEY):
+            content = item.get(GeneralFieldNames.CONTENT)
+            entity_key_raw = item.get(GeneralFieldNames.ENTITY_KEY)
 
             # 校验必要字段及 entity_key 合法性
             if not content or not entity_key_raw:
@@ -87,24 +87,24 @@ def extract_profile_node(state: AgentState, agent_config: RunnableConfig, memory
 
             # obtain user messages for context analysis
             user_msgs = [m.content for m in messages if isinstance(m, HumanMessage)]
-            #dynamic inference of evidence types(rules and LLM judge)
-            evidence_type = infer_evidence_type(content,user_msgs)
+            # dynamic inference of evidence types(rules and LLM judge)
+            evidence_type = infer_evidence_type(content, user_msgs)
 
             metadata = {
-                MetadataFields.TYPE.value: MemoryType.USER_PROFILE.value,
-                MetadataFields.SOURCE.value: MemorySource.CHAT_EXTRACTION.value,
-                MetadataFields.CONFIDENCE.value: item.get(MetadataFields.CONFIDENCE.value, 0.7),
-                MetadataFields.STATUS.value: MemoryStatus.ACTIVE.value,
-                MetadataFields.EVIDENCE_TYPE.value: evidence_type,
-                MetadataFields.EFFECTIVE_DATE.value: datetime.now().isoformat(),
-                MetadataFields.EXPIRES_AT.value: None,
+                GeneralFieldNames.TYPE: MemoryType.USER_PROFILE.value,
+                GeneralFieldNames.SOURCE: MemorySource.CHAT_EXTRACTION.value,
+                GeneralFieldNames.CONFIDENCE: item.get(GeneralFieldNames.CONFIDENCE, 0.7),
+                GeneralFieldNames.STATUS: MemoryStatus.ACTIVE.value,
+                GeneralFieldNames.EVIDENCE_TYPE: evidence_type,
+                GeneralFieldNames.EFFECTIVE_DATE: datetime.now().isoformat(),
+                GeneralFieldNames.EXPIRES_AT: None,
             }
             try:
                 memory_store.add_memory(
                     user_id=user_id,
-                    content=item.get(MemoryModelFields.CONTENT.value),
+                    content=item.get(GeneralFieldNames.CONTENT),
                     memory_type=MemoryType.USER_PROFILE,
-                    entity_key=item.get(MetadataFields.ENTITY_KEY.value),
+                    entity_key=item.get(GeneralFieldNames.ENTITY_KEY),
                     metadata=metadata
                 )
                 updated = True
@@ -132,7 +132,7 @@ def retrieve_memory_node(state: AgentState, retrieval: BaseRetriever) -> dict:
         MemoryType.INTERACTION_LOG
     ]
     try:
-        context = retrieval.retrieve(query=user_query, user_id=user_id,memory_types=memory_types)
+        context = retrieval.retrieve(query=user_query, user_id=user_id, memory_types=memory_types)
     except Exception as e:
         logger.error(f"Retrieval failed, using empty context: {e}")
         context = {MemoryType.USER_PROFILE.value: [], MemoryType.COMPLIANCE_RULE.value: [],
@@ -148,14 +148,15 @@ def retrieve_memory_node(state: AgentState, retrieval: BaseRetriever) -> dict:
         }
 
     def fmt(mems):
-        return "\n".join(f"- {m[MemoryModelFields.CONTENT.value]}" for m in mems) if mems else "暂无相关信息"
+        return "\n".join(f"- {m[GeneralFieldNames.TEXT]}" for m in mems) if mems else "暂无相关信息"
 
     formatted = {
         MemoryType.USER_PROFILE.value: fmt(context.get(MemoryType.USER_PROFILE.value, [])),
         MemoryType.COMPLIANCE_RULE.value: fmt(context.get(MemoryType.COMPLIANCE_RULE.value, [])),
         MemoryType.INTERACTION_LOG.value: fmt(context.get(MemoryType.INTERACTION_LOG.value, []))
     }
-    return {StateFields.RETRIEVED_CONTEXT.value: context, StateFields.FORMATTED_CONTEXT.value: formatted, StateFields.ERROR.value: None}
+    return {StateFields.RETRIEVED_CONTEXT.value: context, StateFields.FORMATTED_CONTEXT.value: formatted,
+            StateFields.ERROR.value: None}
 
 
 def log_interaction_node(state: AgentState, agent_config: RunnableConfig, memory_store: BaseMemoryStore):
@@ -164,7 +165,7 @@ def log_interaction_node(state: AgentState, agent_config: RunnableConfig, memory
     configurable = agent_config.get(ConfigFields.CONFIGURABLE.value, {})
     session_id = configurable.get(ConfigFields.THREAD_ID.value, "unknown")
 
-    recent = state.get(StateFields.MESSAGES.value,[])
+    recent = state.get(StateFields.MESSAGES.value, [])
     if len(recent) > config.interaction_recent_num:
         recent = recent[config.interaction_recent_num:]
     conversation = "\n".join(
@@ -174,30 +175,30 @@ def log_interaction_node(state: AgentState, agent_config: RunnableConfig, memory
 
     try:
         summary_prompt = f"请用一句话总结以下对话核心内容，不要包含冗余信息:\n{conversation}\n\n摘要:"
-        summary = llm.invoke([HumanMessage(content=summary_prompt)],fallback_response="Failed to generate conversation summary").content
+        summary = llm.invoke([HumanMessage(content=summary_prompt)],
+                             fallback_response="Failed to generate conversation summary").content
     except Exception as e:
         logger.error(f"Failed to generate conversation summary: {e}")
         user_parts = [m.content for m in recent if isinstance(m, HumanMessage)]
         summary = f"用户询问：{'；'.join(user_parts[:2])}" if user_parts else "对话摘要生成失败"
 
-    #dynamic detect sentiment
+    # dynamic detect sentiment
     sentiment = detect_sentiment(summary)
-
     metadata = {
-        MetadataFields.TYPE.value: MemoryType.INTERACTION_LOG.value,
-        MetadataFields.SOURCE.value: MemorySource.AUTO_SUMMARY.value,
-        MetadataFields.STATUS.value: MemoryStatus.ACTIVE.value,
-        MetadataFields.CONFIDENCE.value: 1.0,
-        MetadataFields.EVENT_TYPE.value: InteractionEventType.INQUIRY.value,
-        MetadataFields.SESSION_ID.value: session_id,
-        MetadataFields.SENTIMENT.value: sentiment,
-        MetadataFields.KEY_ENTITIES.value: [],  # 暂留空，后续可 NLP 提取
-        MetadataFields.TIMESTAMP.value: datetime.now().isoformat(),
+        GeneralFieldNames.TYPE: MemoryType.INTERACTION_LOG.value,
+        GeneralFieldNames.SOURCE: MemorySource.AUTO_SUMMARY.value,
+        GeneralFieldNames.STATUS: MemoryStatus.ACTIVE.value,
+        GeneralFieldNames.CONFIDENCE: 1.0,
+        GeneralFieldNames.EVENT_TYPE: InteractionEventType.INQUIRY.value,
+        GeneralFieldNames.SESSION_ID: session_id,
+        GeneralFieldNames.SENTIMENT: sentiment,
+        GeneralFieldNames.KEY_ENTITIES: [],  # 暂留空，后续可 NLP 提取
+        GeneralFieldNames.TIMESTAMP: datetime.now().isoformat(),
     }
 
     try:
         memory_store.add_memory(
-            user_id=state[MetadataFields.USER_ID.value],
+            user_id=state.get(StateFields.USER_ID.value),
             content=summary,
             memory_type=MemoryType.INTERACTION_LOG,
             metadata=metadata
@@ -224,46 +225,48 @@ def compliance_guard_node(state: AgentState, agent_config: RunnableConfig, memor
             user_query = msg.content
             break
 
-    #match all rules that are hit
+    # match all rules that are hit
     hit_rules = []
     for rule in rules:
-        meta = rule.get(MemoryModelFields.METADATA.value,rule)
-        pattern = meta.get(ComplianceRuleFields.PATTERN.value)
+        meta = rule.get(GeneralFieldNames.METADATA, rule)
+        pattern = meta.get(GeneralFieldNames.PATTERN)
         if not pattern:
             continue
         try:
-            if re.search(pattern,user_query,re.IGNORECASE):
-                rules.append(rule)
+            if re.search(pattern, user_query, re.IGNORECASE):
+                hit_rules.append(rule)
         except re.error as e:
-            logger.warning(f"Invalid regex in rule {meta.get(ComplianceRuleFields.RULE_ID.value)}")
+            logger.warning(f"Invalid regex in rule {meta.get(GeneralFieldNames.RULE_ID)}")
 
-    #load rule severity level from yaml
+    # load rule severity level from yaml
     loader = get_compliance_loader()
     severity_order = loader.get_compliance_severity()
-    hit_rules.sort(key=lambda r: (severity_order.get(r.get(ComplianceRuleFields.SEVERITY.value),4),r.get(ComplianceRuleFields.PRIORITY.value,100)))
+    hit_rules.sort(key=lambda r: (severity_order.get(r.get(GeneralFieldNames.SEVERITY), 4),
+                                  r.get(GeneralFieldNames.PRIORITY, 100)))
 
     blocked = False
     block_reason = ""
     warnings = []
     mandatory_appends = []
 
-    #handle according to different rules
+    # handle according to different rules
     for rule in hit_rules:
-        action = rule.get(ComplianceRuleFields.ACTION.value,ComplianceAction.WARN.value)
-        severity = rule.get(ComplianceRuleFields.SEVERITY.value)
+        action = rule.get(GeneralFieldNames.ACTION, ComplianceAction.WARN.value)
+        severity = rule.get(GeneralFieldNames.SEVERITY)
 
-        if action == ComplianceAction.BLOCK.value and severity in [ComplianceSeverity.CRITICAL.value, ComplianceSeverity.HIGH.value]:
+        if action == ComplianceAction.BLOCK.value and severity in [ComplianceSeverity.CRITICAL.value,
+                                                                   ComplianceSeverity.HIGH.value]:
             blocked = True
-            block_reason = rule.get(ComplianceRuleFields.RULE_NAME.value,"合规规则")
+            block_reason = rule.get(GeneralFieldNames.RULE_NAME, "合规规则")
             break
         elif action == ComplianceAction.WARN.value:
-            warnings.append(rule.get(ComplianceRuleFields.DESCRIPTION.value,""))
+            warnings.append(rule.get(GeneralFieldNames.DESCRIPTION, ""))
         elif action == ComplianceAction.APPEND.value:
-            template = rule.get(ComplianceRuleFields.TEMPLATE.value)
+            template = rule.get(GeneralFieldNames.TEMPLATE)
             if template:
                 mandatory_appends.append(template)
 
-    #if action equals blocking,return immediately
+    # if action equals blocking,return immediately
     if blocked:
         compliance_response = AIMessage(
             content="Sorry,your question involves non-compliant content,and i cannot answer it,\n\nif you have any questions,please contact our official customer service"

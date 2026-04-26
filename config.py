@@ -7,6 +7,8 @@ from pydantic import Field
 from pydantic_core import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from memory.models.memory_constant.constants import SearchStrategy
+
 
 class BankLoanAgentConfig(BaseSettings):
     model_config = SettingsConfigDict(
@@ -58,8 +60,14 @@ class BankLoanAgentConfig(BaseSettings):
     memory_dlq_path: str = Field(...,validation_alias="MEMORY_DLQ_PATH")
 
     vector_backend: str = Field(...,validate_default="VECTOR_BACKEND")
+
     #milvus
     milvus_uri: str = Field(..., validation_alias="milvus_uri")
+    #milvus search strategies
+    default_search_strategy: SearchStrategy = Field(default=SearchStrategy.AUTO,validation_alias="SEARCH_STRATEGY")
+
+    #enum validation
+    strict_enum_validation: bool = Field(default=False,validation_alias="STRICT_ENUM_VALIDATION")
 
     # Logging
     log_level: str = Field("INFO", validation_alias="LOG_LEVEL")

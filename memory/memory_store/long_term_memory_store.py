@@ -14,54 +14,42 @@ from config import config
 from exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
 from memory.classifiers.rules.rules_loader import get_evidence_loader
 from memory.db_adpter.adpter_model.query_model import Condition, Query
-from memory.db_adpter.query_builder import QueryBuilder
+from memory.models.memory_mappers.mappers import StorageToMemoryMapper
 from memory.memory_store.memory_base import BaseMemoryStore
-from memory.constant.constants import MetadataFields, MemoryType, MemorySource, MemoryStatus, MemoryModelFields, \
-    ChromaOperator, ChromaResFields, ComplianceSeverity, EvidenceType, InteractionSentiment, ComplianceRuleFields
-from memory.models.schema import ComplianceRuleMetadata, UserProfileMetadata, InteractionLogMetadata
+from memory.models.memory_constant.constants import MemoryType, MemoryStatus, ComplianceSeverity, EvidenceType, InteractionSentiment, \
+    GeneralFieldNames, InteractionEventType
 from memory.memory_vector_store.vector_store import BaseVectorStore
+from memory.models.memory_data.memory_meta import MemoryBase
+from memory.models.memory_data.schema import UserProfileMemory, InteractionLogMemory, ComplianceRuleMemory
 from utils.retry import retry_on_failure
 
 logger = logging.Logger(__name__)
 
 
 class LongTermMemoryStore(BaseMemoryStore):
-    COLLECTION_NAMES = {
-        MemoryType.USER_PROFILE: "user_profile_memories",
-        MemoryType.INTERACTION_LOG: "interaction_logs",
-        MemoryType.COMPLIANCE_RULE: "compliance_rules",
-    }
-
-    def __init__(self, vector_store: BaseVectorStore,query_builder: QueryBuilder):
+    def __init__(self, vector_store: BaseVectorStore):
         """
         initial chroma client and collection 
         
         Args:
             vector_store: vector databases
-            query_builder: builder query
         """
         self.vector_store = vector_store
-        self.query_builder = query_builder
 
         # dead letter queue
         self.dlq_path = Path(config.memory_dlq_path)
         self.dlq_path.parent.mkdir(parents=True, exist_ok=True)
         logger.info("ChromaMemoryStore initialized with vector_store")
 
-    def _get_collection_name(self, memory_type: MemoryType) -> str:
-        if memory_type not in self.COLLECTION_NAMES:
-            raise ValueError(f"Unsupported memory type: {memory_type}")
-        return self.COLLECTION_NAMES[memory_type]
-
-    def _write_to_dlq(self, user_id: str, content: str, meta: Dict, memory_type: MemoryType, permanent: bool):
+    def _write_to_dlq(
+            self, user_id: str, content: str, model: MemoryBase, memory_type: MemoryType
+    ):
         entry = {
-            MetadataFields.USER_ID.value: user_id,
-            MemoryModelFields.CONTENT.value: content,
-            MetadataFields.MEMORY_TYPE.value: memory_type.value,
-            MemoryModelFields.METADATA.value: meta,
-            MetadataFields.PERMANENT.value: permanent,
-            MetadataFields.TIMESTAMP.value: datetime.now().isoformat(),
-            MetadataFields.RETRY_COUNT.value: 0
+            GeneralFieldNames.USER_ID: user_id,
+            GeneralFieldNames.CONTENT: content,
+            GeneralFieldNames.MEMORY_TYPE: memory_type.value,
+            GeneralFieldNames.METADATA: model.model_dump(mode='json'),
+            GeneralFieldNames.TIMESTAMP: datetime.now().isoformat(),
         }
         with open(self.dlq_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -75,90 +63,81 @@ class LongTermMemoryStore(BaseMemoryStore):
             metadata: Optional[Dict[str, Any]] = None,
             permanent: bool = False
     ) -> str:
-        now = datetime.now().isoformat()
-
-        # conver dict to chroma dict
-        meta_input = metadata.copy() if metadata else {}
+        now = datetime.now()
+        meta_input = metadata or {}
+        model = None
         try:
             if memory_type == MemoryType.USER_PROFILE:
-                model = UserProfileMetadata(
+                model = UserProfileMemory(
                     user_id=user_id,
-                    memory_type=memory_type,
-                    source=meta_input.get(MetadataFields.SOURCE.value, MemorySource.CHAT_EXTRACTION.value),
-                    confidence=meta_input.get(MetadataFields.CONFIDENCE.value, 0.8),
-                    status=meta_input.get(MetadataFields.STATUS.value, MemoryStatus.ACTIVE.value),
+                    confidence=meta_input.get(GeneralFieldNames.CONFIDENCE, 0.8),
+                    status=MemoryStatus.ACTIVE,
                     permanent=permanent,
-                    created_at=meta_input.get(MetadataFields.CREATE_AT.value, now),
-                    last_accessed_at=meta_input.get(MetadataFields.LAST_ACCESS_AT.value, now),
-                    superseded_by=meta_input.get(MetadataFields.SUPERSEDED_BY.value),
+                    created_at=now,
+                    last_accessed_at=now,
+                    source=meta_input.get(GeneralFieldNames.SOURCE, "chat_extraction"),
                     entity_key=entity_key,
-                    evidence_type=meta_input.get(MetadataFields.EVIDENCE_TYPE.value,
-                                                 EvidenceType.EXPLICIT_STATEMENT.value),
-                    effective_date=meta_input.get(MetadataFields.EFFECTIVE_DATE.value, now),
-                    expires_at=meta_input.get(MetadataFields.EXPIRES_AT.value),
-                    extra=meta_input.get(MetadataFields.EXTRA.value, {})
+                    evidence_type=meta_input.get(GeneralFieldNames.EVIDENCE_TYPE, EvidenceType.EXPLICIT_STATEMENT),
+                    effective_date=meta_input.get(GeneralFieldNames.EFFECTIVE_DATE, now),
+                    expires_at=meta_input.get(GeneralFieldNames.EXPIRES_AT),
+                    superseded_by=meta_input.get(GeneralFieldNames.SUPERSEDED_BY),
+                    extra=meta_input.get(GeneralFieldNames.EXTRA) or {}
                 )
             elif memory_type == MemoryType.INTERACTION_LOG:
-                model = InteractionLogMetadata(
+                model = InteractionLogMemory(
                     user_id=user_id,
-                    memory_type=memory_type,
-                    source=meta_input.get(MetadataFields.SOURCE.value, MemorySource.AUTO_SUMMARY.value),
-                    confidence=meta_input.get(MetadataFields.CONFIDENCE.value, 1.0),
-                    status=meta_input.get(MetadataFields.STATUS.value, MemoryStatus.ACTIVE.value),
+                    confidence=meta_input.get(GeneralFieldNames.CONFIDENCE, 1.0),
+                    status=MemoryStatus.ACTIVE,
                     permanent=permanent,
-                    created_at=meta_input.get(MetadataFields.CREATE_AT.value, now),
-                    last_accessed_at=meta_input.get(MetadataFields.LAST_ACCESS_AT.value, now),
-                    superseded_by=meta_input.get(MetadataFields.SUPERSEDED_BY.value),
-                    event_type=meta_input.get(MetadataFields.EVENT_TYPE.value, InteractionLogMetadata.INQUIRY.value),
-                    session_id=meta_input.get(MetadataFields.SESSION_ID.value, "unknown"),
-                    sentiment=meta_input.get(MetadataFields.SENTIMENT.value, InteractionSentiment.NEUTRAL.value),
-                    key_entities=meta_input.get(MetadataFields.KEY_ENTITIES.value, []),
-                    timestamp=meta_input.get(MetadataFields.TIMESTAMP.value, now),
-                    extra=meta_input.get(MetadataFields.EXTRA.value, {})
+                    created_at=now,
+                    last_accessed_at=now,
+                    source=meta_input.get(GeneralFieldNames.SOURCE, "auto_summary"),
+                    event_type=meta_input.get(GeneralFieldNames.EVENT_TYPE, InteractionEventType.INQUIRY),
+                    session_id=meta_input.get(GeneralFieldNames.SESSION_ID, "unknown"),
+                    sentiment=meta_input.get(GeneralFieldNames.SENTIMENT, InteractionSentiment.NEUTRAL),
+                    key_entities=meta_input.get(GeneralFieldNames.KEY_ENTITIES),
+                    timestamp=meta_input.get(GeneralFieldNames.TIMESTAMP, now),
+                    extra=meta_input.get(GeneralFieldNames.EXTRA) or {}
                 )
             elif memory_type == MemoryType.COMPLIANCE_RULE:
-                model = ComplianceRuleMetadata(
+                model = ComplianceRuleMemory(
                     user_id=user_id,
-                    memory_type=memory_type,
-                    source=meta_input.get(MetadataFields.SOURCE.value, MemorySource.ADMIN_IMPORT.value),
-                    confidence=meta_input.get(MetadataFields.CONFIDENCE.value, 1.0),
-                    status=meta_input.get(MetadataFields.STATUS.value, MemoryStatus.ACTIVE.value),
+                    confidence=meta_input.get(GeneralFieldNames.CONFIDENCE, 1.0),
+                    status=MemoryStatus.ACTIVE,
                     permanent=permanent,
-                    created_at=meta_input.get(MetadataFields.CREATE_AT.value, now),
-                    last_accessed_at=meta_input.get(MetadataFields.LAST_ACCESS_AT.value, now),
-                    superseded_by=meta_input.get(MetadataFields.SUPERSEDED_BY.value),
-                    rule_id=meta_input[ComplianceRuleFields.RULE_ID.value],
-                    rule_name=meta_input[ComplianceRuleFields.RULE_NAME.value],
-                    rule_type=meta_input[ComplianceRuleFields.RULE_TYPE.value],
-                    pattern=meta_input.get(ComplianceRuleFields.PATTERN.value, ""),
-                    action=meta_input[ComplianceRuleFields.ACTION.value],
-                    severity=meta_input.get(ComplianceRuleFields.SEVERITY.value, ComplianceSeverity.MEDIUM.value),
-                    priority=meta_input.get(ComplianceRuleFields.PRIORITY.value, 100),
-                    version=meta_input.get(ComplianceRuleFields.VERSION.value, now.strftime("%Y-%m-%d")),
-                    effective_from=meta_input.get(ComplianceRuleFields.EFFECTIVE_FROM.value, now),
-                    effective_to=meta_input.get(ComplianceRuleFields.EFFECTIVE_TO.value),
-                    template=meta_input.get(ComplianceRuleFields.TEMPLATE.value),
-                    extra=meta_input.get(MetadataFields.EXTRA.value, {})
+                    created_at=now,
+                    last_accessed_at=now,
+                    source=meta_input.get(GeneralFieldNames.SOURCE, "admin_import"),
+                    rule_id=meta_input[GeneralFieldNames.RULE_ID],
+                    rule_name=meta_input[GeneralFieldNames.RULE_NAME],
+                    rule_type=meta_input[GeneralFieldNames.RULE_TYPE],
+                    pattern=meta_input.get(GeneralFieldNames.PATTERN, ""),
+                    action=meta_input[GeneralFieldNames.ACTION],
+                    severity=meta_input.get(GeneralFieldNames.SEVERITY, ComplianceSeverity.MEDIUM),
+                    priority=meta_input.get(GeneralFieldNames.PRIORITY, 100),
+                    version=meta_input.get(GeneralFieldNames.VERSION, now.strftime("%Y-%m-%d")),
+                    effective_from=meta_input.get(GeneralFieldNames.EFFECTIVE_FROM, now),
+                    effective_to=meta_input.get(GeneralFieldNames.EFFECTIVE_TO),
+                    template=meta_input.get(GeneralFieldNames.TEMPLATE),
+                    superseded_by=meta_input.get(GeneralFieldNames.SUPERSEDED_BY),
+                    extra=meta_input.get(GeneralFieldNames.EXTRA) or {}
                 )
             else:
                 raise ValueError(f"Unsupported memory type: {memory_type}")
         except Exception as e:
             logger.error(f"Failed to validate metadata with Pydantic model: {e}")
-            self._write_to_dlq(user_id, content, memory_type, meta_input, permanent)
+            fallback = MemoryBase(user_id=user_id, confidence=1.0)
+            self._write_to_dlq(user_id, content, fallback, memory_type)
             raise MemoryWriteFailedError(f"Memory validation failed, queued: {e}") from e
 
-        # user profile specific field
-        if memory_type == MemoryType.USER_PROFILE:
-            meta_input[MetadataFields.ENTITY_KEY.value] = entity_key
-
         # conflict detection(only required for user profile)
-        superseded_memories = []
+        superseded_ids = []
         if memory_type == MemoryType.USER_PROFILE and entity_key and not permanent:
-            existing = []
             try:
                 existing = self.get_memory_by_entity(user_id, entity_key, MemoryStatus.ACTIVE.value)
             except Exception as e:
                 logger.warning(f"Conflict check failed,proceeding: {e}")
+                existing = []
 
             try:
                 loader = get_evidence_loader()
@@ -169,53 +148,49 @@ class LongTermMemoryStore(BaseMemoryStore):
 
             # update the memory status to superseded
             for old in existing:
-                old_meta = old[MemoryModelFields.METADATA.value]
-                old_conf = float(old.get(MetadataFields.CONFIDENCE.value, 0.0))
-                old_evidence = old.get(MetadataFields.EVIDENCE_TYPE.value, EvidenceType.EXPLICIT_STATEMENT.value)
-                old_weight = evidence_weights.get(old_evidence,50)
+                old_conf = float(old.get(GeneralFieldNames.CONFIDENCE, 0.0))
+                old_evidence = old.get(GeneralFieldNames.EVIDENCE_TYPE, EvidenceType.EXPLICIT_STATEMENT.value)
+                old_weight = evidence_weights.get(old_evidence, 50)
 
                 new_conf = model.confidence
-                new_evidence = model.evidence_type if hasattr(model, MetadataFields.EVIDENCE_TYPE.value) else EvidenceType.EXPLICIT_STATEMENT.value
-                new_weight = evidence_weights.get(new_evidence,50)
+                new_evidence = model.evidence_type if hasattr(model,
+                                                              GeneralFieldNames.EVIDENCE_TYPE) else EvidenceType.EXPLICIT_STATEMENT.value
+                new_weight = evidence_weights.get(new_evidence, 50)
 
                 # Overriding Conditions:
                 # 1. The new confidence is significantly higher (> old_conf + 0.1)
                 # 2. Confidence difference is not large (≤ 0.1) but the new evidence is more authoritative
-                if new_conf > old_conf + 0.1 or (abs(new_conf - old_conf) <= 0,1) and new_weight > old_weight:
+                if new_conf > old_conf + 0.1 or ((abs(new_conf - old_conf) <= 0.1) and new_weight > old_weight):
                     try:
-                        self.update_memory_status(old[MemoryModelFields.ID.value], memory_type,
-                                                  MemoryStatus.SUPERSEDED.value,
-                                                  {MetadataFields.SUPERSEDED_BY.value: None})
-                        superseded_memories.append(old["id"])
-                        logger.info(f"Superseded old memory {old['id']} (entity: {entity_key})")
+                        self.update_memory_status(old[GeneralFieldNames.ID], memory_type, MemoryStatus.SUPERSEDED.value,
+                                                  {GeneralFieldNames.SUPERSEDED_BY: None})
+                        superseded_ids.append(old[GeneralFieldNames.ID])
+                        logger.info(f"Superseded old memory {old[GeneralFieldNames.ID]} (entity: {entity_key})")
                     except Exception as e:
-                        logger.warning(f"Failed to superseded {old[MemoryModelFields.ID.value]: {e}}")
+                        logger.warning(f"Failed to superseded {old[GeneralFieldNames.ID]: {e}}")
 
         # add memory
         memory_id = str(uuid.uuid4())
         try:
-            collection_name = self._get_collection_name(memory_type)
-            self.vector_store.add(collection_name=collection_name,ids=[memory_id],texts=[content],metadatas=model.model_dump())
+            self.vector_store.add(memory_type=memory_type, ids=[memory_id], texts=[content], models=[model])
         except Exception as e:
             # write to dlq
             logger.error(f"Write failed for user {user_id}: {e}")
-            self._write_to_dlq(user_id, content, model.to_chroma_dict(), memory_type, permanent)
+            self._write_to_dlq(user_id, content, model, memory_type)
             raise MemoryWriteFailedError(f"Memory write failed, queued: {e}") from e
 
         # update the superseded_by of the memory to the new memory ID
-        for old in superseded_memories:
-            if old[MemoryModelFields.METADATA.value].get(MetadataFields.STATUS.value) == MemoryStatus.SUPERSEDED.value:
-                try:
-                    self.update_memory_status(old[MemoryModelFields.ID.value], memory_type,
-                                              MemoryStatus.SUPERSEDED.value,
-                                              {MetadataFields.SUPERSEDED_BY.value: memory_id})
-                except Exception as e:
-                    logger.error(f"Failed to update superseded_by for {old[MemoryModelFields.ID.value]}: {e}")
+        for old_id in superseded_ids:
+            try:
+                self.update_memory_status(old_id, memory_type, MemoryStatus.SUPERSEDED.value,
+                                          {GeneralFieldNames.SUPERSEDED_BY: memory_id})
+            except Exception as e:
+                logger.error(f"Failed to update superseded_by for {old_id}: {e}")
 
         logger.debug(f"Added memory {memory_id}")
         return memory_id
 
-    @retry_on_failure(max_retries=3, initial_delay=0.2, exceptions=(ChromaError, MemoryRetrievalError))
+    @retry_on_failure(max_retries=3, initial_delay=0.2, exceptions=(Exception, MemoryRetrievalError))
     def search_memory(
             self,
             user_id: str,
@@ -227,17 +202,14 @@ class LongTermMemoryStore(BaseMemoryStore):
     ) -> List[Dict[str, Any]]:
         """search memory by query"""
 
-        collection_name = self._get_collection_name(memory_type)
-
         # build query conditions
         conditions = [
-            Condition(field=MetadataFields.USER_ID.value,op="==",value=user_id),
-            Condition(field=MetadataFields.STATUS.value,op="==",value=MemoryStatus.ACTIVE.value)
+            Condition(field=GeneralFieldNames.USER_ID, op="==", value=user_id),
+            Condition(field=GeneralFieldNames.STATUS, op="==", value=MemoryStatus.ACTIVE.value)
         ]
-        if min_confidence:
-            conditions.append(Condition(field=MetadataFields.CONFIDENCE.value,op=">=",value=min_confidence))
-        query_obj = Query(conditions=conditions,logic="AND")
-        where = self.query_builder.build(query_obj)
+        if min_confidence is not None:
+            conditions.append(Condition(field=GeneralFieldNames.CONFIDENCE, op=">=", value=min_confidence))
+        where = Query(conditions=conditions, logic="AND")
 
         # the number of result
         fetch_limit = limit * 2 if apply_decay else limit
@@ -245,55 +217,48 @@ class LongTermMemoryStore(BaseMemoryStore):
         # execute query
         try:
             results = self.vector_store.search(
-                collection_name=collection_name,
+                memory_type=memory_type,
                 query=query,
                 where=where,
                 limit=fetch_limit,
-                include=[ChromaResFields.DOCUMENTS.value, ChromaResFields.METADATAS.value,
-                         ChromaResFields.DISTANCES.value]
             )
         except Exception as e:
             raise MemoryRetrievalError(f"Search failed: {e}") from e
 
         # organize output and apply time decay
         memories = []
-        if results[ChromaResFields.IDS.value][0]:
-            for i, doc in enumerate(results[ChromaResFields.DOCUMENTS.value][0]):
-                try:
-                    if memory_type == MemoryType.USER_PROFILE:
-                        model = UserProfileMetadata.from_chroma_dict(results[ChromaResFields.METADATAS.value][0][i])
-                    elif memory_type == MemoryType.INTERACTION_LOG:
-                        model = InteractionLogMetadata.from_chroma_dict(results[ChromaResFields.METADATAS.value][0][i])
-                    elif memory_type == MemoryType.COMPLIANCE_RULE:
-                        model = ComplianceRuleMetadata.from_chroma_dict(results[ChromaResFields.METADATAS.value][0][i])
-                    else:
-                        continue
-                except Exception as e:
-                    logger.warning(f"Failed to deserialize memory {results['ids'][0][i]}: {e}")
-                    continue
+        for hit in results:
+            try:
+                model = StorageToMemoryMapper.from_db_dict(hit, memory_type)
+            except Exception as e:
+                logger.warning(f"Failed to deserialize memory {hit.get('id')}: {e}")
+                continue
 
-                mem = {
-                    MemoryModelFields.ID.value: results[ChromaResFields.IDS.value][0][i],
-                    MemoryModelFields.CONTENT.value: doc,
-                    MemoryModelFields.METADATA.value: model.model_dump(exclude={"extra"}),
-                    MemoryModelFields.DISTANCE.value: results[ChromaResFields.DISTANCES.value][0][i],
-                    MemoryModelFields.SIMILARITY.value: 1 - results[ChromaResFields.DISTANCES.value][0][i],
-                }
+            distance = hit.get(GeneralFieldNames.DISTANCE, 0.0)
+            similarity = 1.0 - distance
 
-                if apply_decay and not mem[MemoryModelFields.METADATA.value].get(MetadataFields.PERMANENT.value):
-                    decay_factor = self._calculate_decay_factor(model)
-                    mem[MemoryModelFields.DECAYED_SIMILARITY.value] = mem[MemoryModelFields.SIMILARITY.value] * decay_factor
-                else:
-                    mem[MemoryModelFields.DECAYED_SIMILARITY.value] = mem[MemoryModelFields.SIMILARITY.value]
-                memories.append(mem)
+            mem = {
+                GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
+                GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
+                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items() if
+                                             k != GeneralFieldNames.EXTRA},
+                GeneralFieldNames.DISTANCE: distance,
+                GeneralFieldNames.SIMILARITY: similarity
+            }
 
-        # reordering the memories after time decay
+            if apply_decay and not model.permanent:
+                decay_factor = self._calculate_decay_factor(model)
+                mem[GeneralFieldNames.DECAYED_SIMILARITY] = similarity * decay_factor
+            else:
+                mem[GeneralFieldNames.DECAYED_SIMILARITY] = similarity
+            memories.append(mem)
+
         if apply_decay:
-            memories.sort(key=lambda x: x[MemoryModelFields.DECAYED_SIMILARITY.value], reverse=True)
+            memories.sort(key=lambda x: x[GeneralFieldNames.DECAYED_SIMILARITY], reverse=True)
 
         # update last accessed
         for m in memories[:limit]:
-            self._update_last_accessed(memory_type, m[MemoryModelFields.ID.value])
+            self._update_last_accessed(memory_type, m[GeneralFieldNames.ID])
         return memories[:limit]
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
@@ -304,35 +269,23 @@ class LongTermMemoryStore(BaseMemoryStore):
             status: str = MemoryStatus.ACTIVE.value
     ) -> List[Dict[str, Any]]:
         """get memory by entity key"""
-        collection_name = self._get_collection_name(MemoryType.USER_PROFILE)
 
-        #build query conditions
-        query_obj = Query(conditions=[
-            Condition(field=MetadataFields.USER_ID.value,op="==",value=user_id),
-            Condition(field=MetadataFields.ENTITY_KEY.value,op="==",value=entity_key),
-            Condition(field=MetadataFields.STATUS.value,op="==",value=status)
+        # build query conditions
+        where = Query(conditions=[
+            Condition(field=GeneralFieldNames.USER_ID, op="==", value=user_id),
+            Condition(field=GeneralFieldNames.ENTITY_KEY, op="==", value=entity_key),
+            Condition(field=GeneralFieldNames.STATUS, op="==", value=status)
         ])
-        where = self.query_builder.build(query_obj)
 
         try:
             results = self.vector_store.get(
-                collection_name=collection_name,
+                memory_type=MemoryType.USER_PROFILE,
                 where=where,
-                include=[ChromaResFields.DOCUMENTS.value, ChromaResFields.METADATAS.value]
             )
         except Exception as e:
             logger.error(f"get by entity failed:{e}")
             return []
-
-        memories = []
-        if results[ChromaResFields.IDS.value]:
-            for i, doc in enumerate(results[ChromaResFields.DOCUMENTS.value]):
-                memories.append({
-                    MemoryModelFields.ID.value: results[ChromaResFields.IDS.value][i],
-                    MemoryModelFields.CONTENT.value: doc,
-                    MemoryModelFields.METADATA.value: results[ChromaResFields.METADATAS.value][i]
-                })
-        return memories
+        return results
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
     def update_memory_status(
@@ -342,17 +295,15 @@ class LongTermMemoryStore(BaseMemoryStore):
             new_status: str,
             metadata_updates: Optional[Dict[str, Any]] = None) -> bool:
         """update memory status"""
-        collection_name = self._get_collection_name(memory_type)
+        updates = {GeneralFieldNames.STATUS: new_status}
+        if metadata_updates:
+            updates.update(metadata_updates)
         try:
-            current = self.vector_store.get(collection_name=collection_name,ids=[memory_id], include=[ChromaResFields.METADATAS.value])
-            if not current[ChromaResFields.METADATAS.value]:
-                return False
-
-            new_meta = current[ChromaResFields.METADATAS.value][0].copy()
-            new_meta[MetadataFields.STATUS.value] = new_status
-            if metadata_updates:
-                new_meta.update(metadata_updates)
-            self.vector_store.update(collection_name=collection_name,ids=[memory_id], metadatas=[new_meta])
+            self.vector_store.update(
+                memory_type=memory_type,
+                ids=[memory_id],
+                metadatas=[updates],
+            )
             return True
         except Exception as e:
             raise MemoryUpdateError(f"Update failed: {e}") from e
@@ -369,101 +320,98 @@ class LongTermMemoryStore(BaseMemoryStore):
             return 0
 
         conditions = [
-            Condition(field=MetadataFields.STATUS.value,op="==",value=MemoryStatus.ACTIVE.value),
+            Condition(field=GeneralFieldNames.STATUS, op="==", value=MemoryStatus.ACTIVE.value),
         ]
         if user_id:
-            conditions.append(Condition(field=MetadataFields.USER_ID.value,op="==",value=user_id))
-        query_obj = Query(conditions=conditions,logic="AND")
-        where = self.query_builder.build(query_obj)
+            conditions.append(Condition(field=GeneralFieldNames.USER_ID, op="==", value=user_id))
+        where = Query(conditions=conditions, logic="AND")
 
         # query the memories that need to be forgotten
-        collection_name = self._get_collection_name(MemoryType.USER_PROFILE)
         try:
             res = self.vector_store.get(
-                collection_name=collection_name,
-                where=where,
-                include=[ChromaResFields.METADATAS.value]
+                memory_type=MemoryType.USER_PROFILE,
+                where=where
             )
         except Exception as e:
             logger.error(f"Forgetting scan failed: {e}")
             return 0
 
         count = 0
-        for i, mem_id in enumerate(res[ChromaResFields.IDS.value]):
-            meta = res[ChromaResFields.METADATAS.value][i]
-            if meta.get(MetadataFields.PERMANENT.value):
+        for hit in res:
+            if hit.get(GeneralFieldNames.PERMANENT, False):
                 continue
             try:
-                model = UserProfileMetadata.from_chroma_dict(meta)
-            except Exception:
+                model = StorageToMemoryMapper.from_db_dict(hit, MemoryType.USER_PROFILE)
+            except Exception as e:
                 continue
 
-            threshold = threshold if threshold else config.decay_threshold
+            threshold = threshold or config.decay_threshold
             decay_factor = self._calculate_decay_factor(model)
             if decay_factor < threshold:
                 try:
-                    self.update_memory_status(mem_id, MemoryType.USER_PROFILE, MemoryStatus.FORGOTTEN.value)
+                    self.update_memory_status(
+                        hit[GeneralFieldNames.ID],
+                        MemoryType.USER_PROFILE,
+                        MemoryStatus.FORGOTTEN.value
+                    )
                     count += 1
-                except:
+                except Exception:
                     pass
         logger.info(f"Forgotten {count} memories")
         return count
 
-    def delete_user_memories(self, user_id: str, memory_type: Optional[MemoryType] = None) -> bool:
+    def delete_user_memories(
+            self,
+            user_id: str,
+            memory_type: Optional[MemoryType] = None
+    ) -> bool:
         """delete user memory"""
-        types = [memory_type] if memory_type else [v.value for v in MemoryType]
+        types = [memory_type] if memory_type else list(MemoryType)
         for mem_type in types:
-            collection_name = self._get_collection_name(mem_type)
-            query_obj = Query(conditions=[Condition(field=MetadataFields.USER_ID.value,op="==",value=user_id)])
-            where = self.query_builder.build(query_obj)
+            where = Query(conditions=[Condition(field=GeneralFieldNames.USER_ID, op="==", value=user_id)])
             try:
-                self.vector_store.delete(collection_name=collection_name,where=where)
-                return True
+                self.vector_store.delete(memory_type=mem_type, where=where)
             except Exception as e:
                 logger.error(f"Delete failed: {e}")
                 return False
         return True
 
-    def _calculate_decay_factor(self, model) -> float:
+    def _calculate_decay_factor(self, model: MemoryBase) -> float:
         """apply decay(original similarity * e ** (-decay_factor * (now()-last_accessed)))"""
-        last = model.lass_accessed_at
+        last = model.last_accessed_at
         if not last:
-            return model.similarity
+            return 1.0
         try:
-            days = (datetime.now() - datetime.fromisoformat(last)).days
+            days = (datetime.now() - last).days
         except:
             days = 0
         return np.exp(-config.decay_lambda * days)
 
-
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
     def _update_last_accessed(self, memory_type: MemoryType, memory_id: str):
-        collection_name = self._get_collection_name(memory_type)
         try:
             self.vector_store.update(
-                collection_name=collection_name,
+                memory_type=memory_type,
                 ids=[memory_id],
-                metadatas=[{MetadataFields.LAST_ACCESS_AT.value: datetime.now().isoformat()}]
+                metadatas=[{GeneralFieldNames.LAST_ACCESSED_AT: datetime.now().isoformat()}]
             )
         except Exception as e:
             logger.warning(f"Failed to update access time for {memory_id}: {e}")
 
     def get_recent_interactions(self, user_id: str, limit: int = 5) -> List[Dict[str, Any]]:
-        collection_name = self._get_collection_name(MemoryType.INTERACTION_LOG)
 
         # build query condition
-        where = self.query_builder.build(Query(conditions=[
-            Condition(field=MetadataFields.USER_ID.value,op="==",value=user_id),
-            Condition(field=MetadataFields.STATUS.value,op="==",value=MemoryStatus.ACTIVE.value)
-        ]))
+        where = Query(conditions=[
+            Condition(field=GeneralFieldNames.USER_ID, op="==", value=user_id),
+            Condition(field=GeneralFieldNames.STATUS, op="==", value=MemoryStatus.ACTIVE.value)
+        ])
 
         # execute query
         try:
             results = self.vector_store.get(
-                collection_name=collection_name,
+                memory_type=MemoryType.INTERACTION_LOG,
                 where=where,
-                limit=limit * 3,
-                include=[ChromaResFields.METADATAS.value, ChromaResFields.DOCUMENTS.value]
+                limit=limit * 3
             )
         except Exception as e:
             logger.error(f"Failed to retrieve interactions: {e}")
@@ -471,23 +419,23 @@ class LongTermMemoryStore(BaseMemoryStore):
 
         # organize result data
         memories = []
-        if results[ChromaResFields.IDS.value]:
-            for i, doc in enumerate(results[ChromaResFields.DOCUMENTS.value]):
-                try:
-                    model = InteractionLogMetadata.from_chroma_dict(results[ChromaResFields.METADATAS.value][i])
-                except Exception:
-                    continue
-                memories.append({
-                    MemoryModelFields.ID.value: results[ChromaResFields.IDS.value][i],
-                    MemoryModelFields.CONTENT.value: doc,
-                    MemoryModelFields.METADATA.value: model.model_dump(exclude={MetadataFields.EXTRA.value}),
-                    MemoryModelFields.SIMILARITY.value: 1.0,
-                    MemoryModelFields.DECAYED_SIMILARITY.value: 1.0
-                })
+        for hit in results:
+            try:
+                model = StorageToMemoryMapper.from_db_dict(hit, MemoryType.INTERACTION_LOG)
+            except Exception:
+                continue
+            memories.append({
+                GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
+                GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
+                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items() if
+                                             k != GeneralFieldNames.EXTRA},
+                GeneralFieldNames.SIMILARITY: 1.0,
+                GeneralFieldNames.DECAYED_SIMILARITY: 1.0,
+            })
 
         # sort by time
         def get_timestamp(mem):
-            ts = mem[MemoryModelFields.METADATA.value].get(MetadataFields.TIMESTAMP.value)
+            ts = mem[GeneralFieldNames.METADATA].get(GeneralFieldNames.TIMESTAMP)
             if ts:
                 try:
                     return datetime.fromisoformat(ts)
@@ -499,14 +447,12 @@ class LongTermMemoryStore(BaseMemoryStore):
         return memories[:limit]
 
     def get_active_compliance_rules(self, limit: int = 10) -> List[Dict[str, Any]]:
-        collection_name = self._get_collection_name(MemoryType.COMPLIANCE_RULE)
-        where = self.query_builder.build(Query(conditions=[Condition(field=MetadataFields.STATUS.value,op="==",value=MemoryStatus.ACTIVE.value)]))
+        where = Query(conditions=[Condition(field=GeneralFieldNames.STATUS, op="==", value=MemoryStatus.ACTIVE.value)])
 
         try:
             results = self.vector_store.get(
-                collection_name=collection_name,
-                where=where,
-                include=[ChromaResFields.METADATAS.value, ChromaResFields.DOCUMENTS.value]
+                memory_type=MemoryType.COMPLIANCE_RULE,
+                where=where
             )
         except Exception as e:
             logger.error(f"Failed to retrieve compliance rules: {e}")
@@ -521,56 +467,52 @@ class LongTermMemoryStore(BaseMemoryStore):
         }
 
         rules = []
-        if results[ChromaResFields.IDS.value]:
-            for i, doc in enumerate(results[ChromaResFields.DOCUMENTS.value]):
-                try:
-                    model = ComplianceRuleMetadata.from_chroma_dict(results[ChromaResFields.METADATAS.value][i])
-                except Exception:
-                    continue
-                rules.append({
-                    MemoryModelFields.ID.value: results[ChromaResFields.IDS.value][i],
-                    MemoryModelFields.CONTENT.value: doc,
-                    MemoryModelFields.METADATA.value: model.model_dump(exclude={MetadataFields.EXTRA.value}),
-                })
+        for hit in results:
+            try:
+                model = StorageToMemoryMapper.from_db_dict(hit, MemoryType.COMPLIANCE_RULE)
+            except Exception:
+                continue
+            meta_dict = model.model_dump()
+            rules.append({
+                GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
+                GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
+                GeneralFieldNames.METADATA: meta_dict,
+            })
 
         rules.sort(key=lambda r: (
-            severity_order.get(r["metadata"].get("severity"), 4),
-            r["metadata"].get("priority", 100)
+            severity_order.get(r[GeneralFieldNames.METADATA].get(GeneralFieldNames.SEVERITY), 4),
+            r[GeneralFieldNames.METADATA].get(GeneralFieldNames.PRIORITY, 100)
         ))
         return rules[:limit]
 
     def get_all_user_profile_memories(self, user_id: str, status: str = "active") -> List[Dict[str, Any]]:
-        collection_name = self._get_collection_name(MemoryType.USER_PROFILE)
-
         # build condition
-        where = self.query_builder.build(Query(conditions=[
-            Condition(field=MetadataFields.USER_ID.value,op="==",value=user_id),
-            Condition(field=MetadataFields.STATUS.value,op="==",value=MemoryStatus.ACTIVE.value),
-        ]))
+        where = Query(conditions=[
+            Condition(field=GeneralFieldNames.USER_ID, op="==", value=user_id),
+            Condition(field=GeneralFieldNames.STATUS, op="==", value=status),
+        ])
 
         # execute query
         try:
             results = self.vector_store.get(
-                collection_name=collection_name,
-                where=where,
-                include=[ChromaResFields.METADATAS.value, ChromaResFields.DOCUMENTS.value]
+                memory_type=MemoryType.USER_PROFILE,
+                where=where
             )
         except Exception as e:
             logger.error(f"Failed to get user profile memories: {e}")
             return []
 
         memories = []
-        if results[ChromaResFields.IDS.value]:
-            for i, doc in enumerate(results[ChromaResFields.DOCUMENTS.value]):
-                try:
-                    model = UserProfileMetadata.from_chroma_dict(results[ChromaResFields.METADATAS.value][i])
-                except Exception:
-                    continue
-                memories.append({
-                    MemoryModelFields.ID.value: results[ChromaResFields.IDS.value][i],
-                    MemoryModelFields.CONTENT.value: doc,
-                    MemoryModelFields.METADATA.value: model.model_dump(exclude={MetadataFields.EXTRA.value}),
-                })
+        for hit in results:
+            try:
+                model = StorageToMemoryMapper.from_db_dict(hit, MemoryType.USER_PROFILE)
+            except Exception:
+                continue
+            memories.append({
+                GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
+                GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
+                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items()},
+            })
         return memories
 
 

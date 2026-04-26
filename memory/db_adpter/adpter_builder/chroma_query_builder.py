@@ -26,5 +26,8 @@ class ChromaQueryBuilder(QueryBuilder):
 
         if len(cond_dicts) == 1:
             return cond_dicts[0]
-        else:
+
+        if query.logic.upper() == "AND":
             return {"$and": cond_dicts}
+        else:
+            return {"$or": cond_dicts}

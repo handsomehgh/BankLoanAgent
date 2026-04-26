@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Any
 
 from config import config
 from memory.memory_store.memory_base import BaseMemoryStore
-from memory.constant.constants import MemoryType
+from memory.models.memory_constant.constants import MemoryType
 from retriever.base import BaseRetriever
 
 logger = logging.getLogger(__name__)

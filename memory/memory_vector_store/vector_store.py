@@ -3,62 +3,66 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 
+from memory.models.memory_constant.constants import SearchStrategy, MemoryType
+from memory.db_adpter.adpter_model.query_model import Query
+
 
 class BaseVectorStore(ABC):
     @abstractmethod
     def add(
             self,
-            collection_name: str,
+            memory_type: MemoryType,
             ids: List[str],
             texts: List[str],
-            metadatas: List[Dict[str, Any]]
+            models: List[Any],
+            search_strategy: SearchStrategy = SearchStrategy.AUTO
     ) -> None:
         """
         batch add vector record
 
         Args:
-            collection_name: the name of collection
+            memory_type: the type of collection
             ids: list of ids
             texts: list of texts to be added
-            metadatas: list of metadata to be added
+            models: list of data to be added
+            search_strategy: search strategy
         """
         pass
 
     @abstractmethod
     def search(
             self,
-            collection_name: str,
+            memory_type: MemoryType,
             query: str,
-            where: Optional[Any],
+            where: Optional[Query],
             limit: int,
-            include:  Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+            search_strategy: SearchStrategy = SearchStrategy.AUTO,
+    ) -> List[Dict[str, Any]]:
         """
         semantic retrieve
 
         Args:
-            collection_name: the name of collection
+            memory_type: the type of collection
             query: query text
             where: query Conditions
             limit: the number of return records
-            include: the content included in the return result
+            search_strategy: the search strategy
         """
         pass
 
     @abstractmethod
     def get(
             self,
-            collection_name: str,
-            where: Optional[Any] = None,
+            memory_type: MemoryType,
+            where: Optional[Query] = None,
             ids: Optional[List[str]] = None,
-            limit: Optional[int] = None,
-            include: List[str] = None
-    ) -> Dict[str, Any]:
+            limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         """
         get records by conditions (without calculating vector similarity)
 
         Args:
-            collection_name: the name of collection
+            memory_type: the type of collection
             ids: list of ids
             where: query conditions
             limit: the number of return records
@@ -70,31 +74,31 @@ class BaseVectorStore(ABC):
     @abstractmethod
     def update(
             self,
-            collection_name: str,
+            memory_type: MemoryType,
             ids: List[str],
-            metadatas: List[Dict[str, Any]]
+            metadatas: List[Dict[str, Any]],
     ) -> None:
         """
         update metadatas of specified record
 
         Args:
-            collection_name: the name of collection
+            memory_type: the type of collection
             ids: unique ids of records
-            metadatas: the metadatas to be updated
+            metadatas: the data to be updated
         """
         pass
 
     @abstractmethod
     def delete(
             self,
-            collection_name: str,
-            where: List[Any]
+            memory_type: MemoryType,
+            where: Optional[Query] = None
     ) -> None:
         """
         delete records based on condition
 
         Args:
-            collection_name: the name of collection
+            memory_type: the type of collection
             where: conditions
         """
         pass

@@ -14,7 +14,7 @@ from memory.memory_vector_store.chroma_db.chroma_vector_store import ChromaVecto
 from memory.memory_vector_store.milvus_db.milvus_vector_store import MilvusVectorStore
 from retriever.vector_retriever import VectorRetriever
 from config import config
-from memory.constant.constants import MemoryType
+from memory.models.memory_constant.constants import MemoryType
 
 logging.basicConfig(level=config.log_level)
 logger = logging.getLogger(__name__)

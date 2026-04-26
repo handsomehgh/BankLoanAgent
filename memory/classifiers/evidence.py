@@ -7,7 +7,7 @@ from typing import Dict, List
 from langchain_core.messages import HumanMessage
 
 from memory.classifiers.rules.rules_loader import get_evidence_loader
-from memory.constant.constants import EvidenceType
+from memory.models.memory_constant.constants import EvidenceType
 from prompt.detect_evidence_prompt import DETECT_EVIDENCE_PROMPT
 from utils.llm import get_llm
 

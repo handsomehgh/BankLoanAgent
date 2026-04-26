@@ -1,8 +1,6 @@
 # author hgh
 # version 1.0
-from enum import Enum
-
-from mpmath.libmp.libmpf import mpf_round_int
+from enum import Enum, StrEnum
 
 
 # ========================= memory type ================================
@@ -60,62 +58,61 @@ class MemorySource(str, Enum):
     AUTO_SUMMARY = "auto_summary"  # interactive log automatic summary
     ADMIN_IMPORT = "admin_import"  # offline import
 
-
-# ============================= memory model fields ==============================
-class MemoryModelFields(str, Enum):
-    ID = "id"
-    CONTENT = "content"
-    METADATA = "metadata"
-    DISTANCE = "distance"
-    SIMILARITY = "similarity"
-    DECAYED_SIMILARITY = "decayed_similarity"
-
-
 # ============================ memory metadata fields =============================
-class MetadataFields(str, Enum):
+class GeneralFieldNames:
+    ID = "id"
     USER_ID = "user_id"
-    TYPE = "type"
     MEMORY_TYPE = "memory_type"
-    SOURCE = "source"
-    CONFIDENCE = "confidence"
+    TEXT = "text"
+    CONTENT = "content"
     STATUS = "status"
+    CONFIDENCE = "confidence"
     PERMANENT = "permanent"
-    CREATE_AT = "create_at"
-    LAST_ACCESS_AT = "last_access_at"
+    SOURCE = "source"
+    METADATA = "metadata"
     SUPERSEDED_BY = "superseded_by"
-    SESSION_ID = "session_id"
+    LAST_ACCESSED_AT = "last_accessed_at"
+    CREATED_AT = "created_at"
+    EXTRA = "extra"
 
     ENTITY_KEY = "entity_key"
     EVIDENCE_TYPE = "evidence_type"
     EFFECTIVE_DATE = "effective_date"
     EXPIRES_AT = "expires_at"
 
+    SESSION_ID = "session_id"
+    TIMESTAMP = "timestamp"
+    EVENT_TYPE = "event_type"
     SENTIMENT = "sentiment"
     KEY_ENTITIES = "key_entities"
-    EVENT_TYPE = "event_type"
-    TIMESTAMP = "timestamp"
 
-    SEVERITY = "severity"
-    RETRY_COUNT = "retry_count"
-
-
-    EXTRA = "extra"
-
-# ============================= compliance rule metadata ==========================
-class ComplianceRuleFields(str, Enum):
+    TYPE = "type"
     RULE_ID = "rule_id"
     RULE_NAME = "rule_name"
     RULE_TYPE = "rule_type"
     PATTERN = "pattern"
-    SEVERITY = "severity"
     ACTION = "action"
+    SEVERITY = "severity"
     PRIORITY = "priority"
     VERSION = "version"
     EFFECTIVE_FROM = "effective_from"
     EFFECTIVE_TO = "effective_to"
     TEMPLATE = "template"
     DESCRIPTION = "description"
-    SOURCE = "source"
+
+    DECAYED_SIMILARITY = "decayed_similarity"
+    SIMILARITY = "similarity"
+
+    SCORE = "score"
+    DISTANCES = "distances"
+    DISTANCE = "distance"
+    DOCUMENTS = "documents"
+    EMBEDDINGS = "embeddings"
+    METADATAS = "metadatas"
+
+    DENSE_VECTOR = "dense_vector"
+    SPARSE_VECTOR = "sparse_vector"
+    COLLECTION_NAME = "collection_name"
 
 # ========================== compliance rule action type ==========================
 class ComplianceAction(str, Enum):
@@ -159,7 +156,8 @@ class ConfidenceThreshold(float, Enum):
 
 
 # ============================= agent state fields =================================
-class StateFields(str, Enum):
+class StateFields(str,Enum):
+    USER_ID = "user_id"
     MESSAGES = "messages"
     RETRIEVED_CONTEXT = "retrieved_context"
     FORMATTED_CONTEXT = "formatted_context"
@@ -197,6 +195,7 @@ class ChromaResFields(str, Enum):
     METADATAS = "metadatas"
     DOCUMENTS = "documents"
     DISTANCES = "distances"
+    EMBEDDINGS = "embeddings"
 
 
 # ===================== chroma operator ===================================
@@ -223,6 +222,28 @@ class ConfigFields(str, Enum):
     CONFIGURABLE = "configurable"
     THREAD_ID = "thread_id"
 
+#======================== search strategies ==============================
+class SearchStrategy(str, Enum):
+    AUTO = "auto"  # dynamic inference
+    HYBRID = "hybrid"  # dense and sparse Hybrid retrieval (RRF)
+    SEMANTIC = "semantic"  # pure dense vector retrieval
+    KEYWORD = "keyword"  # full-text search by keywords
+    MMR = "mmr"  # hybrid retrieval and MMR rerank
+
+#========================= collection name ===============================
+class CollectionNames:
+    USER_PROFILE = "user_profile_memories"
+    INTERACTION_LOG = "interaction_logs"
+    COMPLIANCE_RULE = "compliance_rules"
+
+    @classmethod
+    def for_type(cls, memory_type: MemoryType) -> str:
+        mapping = {
+            MemoryType.USER_PROFILE: cls.USER_PROFILE,
+            MemoryType.INTERACTION_LOG: cls.INTERACTION_LOG,
+            MemoryType.COMPLIANCE_RULE: cls.COMPLIANCE_RULE,
+        }
+        return mapping[memory_type]
 
 if __name__ == '__main__':
     print(MemoryType.__members__.values())

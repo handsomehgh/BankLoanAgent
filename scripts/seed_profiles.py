@@ -5,18 +5,11 @@
 
 import json
 import logging
-import sys
-from pathlib import Path
 from datetime import datetime
-
-from memory.db_adpter.adpter_builder.chroma_query_builder import ChromaQueryBuilder
 from memory.memory_vector_store.chroma_db.chroma_vector_store import ChromaVectorStore
-from memory.constant.constants import MemoryType, MemorySource, MemoryStatus, EvidenceType
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from memory.models.memory_constant.constants import MemoryType, MemorySource, MemoryStatus, EvidenceType
 
 from memory.memory_store.long_term_memory_store import LongTermMemoryStore
-from config import config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,9 +17,8 @@ logger = logging.getLogger(__name__)
 
 def import_profiles(jsonl_path: str):
     """导入用户画像测试数据"""
-    vector_store = ChromaVectorStore(...)
-    query_builder = ChromaQueryBuilder()
-    store = LongTermMemoryStore(vector_store=vector_store, query_builder=query_builder)
+    vector_store = ChromaVectorStore("../chromadb")
+    store = LongTermMemoryStore(vector_store=vector_store)
 
     with open(jsonl_path, "r", encoding="utf-8") as f:
         for line_num, line in enumerate(f, 1):
@@ -66,9 +58,8 @@ def import_profiles(jsonl_path: str):
 
 def verify_import():
     """验证导入结果"""
-    vector_store = ChromaVectorStore(...)
-    query_builder = ChromaQueryBuilder()
-    store = LongTermMemoryStore(vector_store=vector_store, query_builder=query_builder)
+    vector_store = ChromaVectorStore("../chromadb")
+    store = LongTermMemoryStore(vector_store=vector_store)
 
     print("\n" + "=" * 60)
     print("验证导入结果")
@@ -80,17 +71,23 @@ def verify_import():
         if memories:
             for mem in memories:
                 meta = mem["metadata"]
-                print(f"  - [{meta.get('entity_key', 'N/A')}] {mem['content']} "
+                effective = meta.get('effective_date')
+                if isinstance(effective, datetime):
+                    effective_str = effective.strftime('%Y-%m-%d')
+                else:
+                    effective_str = str(effective)[:10] if effective else 'N/A'
+                print(f"  - [{meta.get('entity_key', 'N/A')}] {mem['text']} "
                       f"(置信度: {meta.get('confidence')}, 证据: {meta.get('evidence_type')}, "
-                      f"生效: {meta.get('effective_date', 'N/A')[:10]})")
+                      f"生效: {effective_str})")
         else:
             print("  (无活跃记忆)")
 
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--file", default="data/test/user_profiles_test.jsonl", help="JSONL 文件路径")
+    parser.add_argument("--file", default="../data/test/user_profiles_test.jsonl", help="JSONL 文件路径")
     parser.add_argument("--verify", action="store_true", help="仅验证，不导入")
     args = parser.parse_args()
 
@@ -100,3 +97,4 @@ if __name__ == "__main__":
         import_profiles(args.file)
         print("\n✅ 导入完成，开始验证...")
         verify_import()
+    #verify_import()

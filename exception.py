@@ -58,3 +58,8 @@ class EvaluationError(AgentWorkFlowError):
 
 class ExtractionError(AgentWorkFlowError):
     """extraction error"""
+
+
+class MappingError(BankLoanException):
+    """映射层异常，用于序列化/反序列化过程中的不可恢复错误"""
+    pass

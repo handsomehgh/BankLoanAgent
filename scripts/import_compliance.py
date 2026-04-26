@@ -5,20 +5,18 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
-from memory.db_adpter.adpter_builder.chroma_query_builder import ChromaQueryBuilder
 from memory.memory_vector_store.chroma_db.chroma_vector_store import ChromaVectorStore
-from memory.constant.constants import MemoryType, MemoryStatus, SpecialUserID
+from memory.models.memory_constant.constants import MemoryType, MemoryStatus, SpecialUserID
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from memory.memory_store.long_term_memory_store import LongTermMemoryStore
-from config import config
+
 
 def import_compliance_rules(json_path: str):
     """导入合规规则到长期记忆"""
-    vector_store = ChromaVectorStore(...)
-    query_builder = ChromaQueryBuilder()
-    store = LongTermMemoryStore(vector_store=vector_store, query_builder=query_builder)
+    vector_store = ChromaVectorStore("../chromadb")
+    store = LongTermMemoryStore(vector_store=vector_store)
 
     with open(json_path, "r", encoding="utf-8") as f:
         rules = json.load(f)
@@ -34,18 +32,18 @@ def import_compliance_rules(json_path: str):
             # 规则特有字段
             "rule_id": rule["rule_id"],
             "rule_name": rule["rule_name"],
-            "rule_type": rule["type"],
+            "rule_type": rule["rule_type"],
             "pattern": rule.get("pattern", ""),
             "action": rule["action"],
             "severity": rule["severity"],
             "description": rule["description"],
-            "source_ref": rule["source"],
+            "source": rule["source"],
             # Step 2 新增字段
             "priority": rule.get("priority", 100),
             "version": rule.get("version", datetime.now().strftime("%Y-%m-%d")),
             "effective_from": rule.get("effective_from", datetime.now().isoformat()),
             "effective_to": rule.get("effective_to"),
-            "template": rule.get("template"),
+            "template": rule.get("template")
         }
 
         store.add_memory(
@@ -60,4 +58,9 @@ def import_compliance_rules(json_path: str):
 
 
 if __name__ == "__main__":
-    import_compliance_rules("data/rules/compliance_rules.json")
+    import_compliance_rules("../data/rules/compliance_rules.json")
+    vector_store = ChromaVectorStore("../chromadb")
+    store = LongTermMemoryStore(vector_store=vector_store)
+    rules = store.get_active_compliance_rules(limit=15)
+    for rule in rules:
+        print(rule)
