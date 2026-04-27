@@ -7,9 +7,9 @@ from typing import Dict
 from langchain_core.messages import HumanMessage
 
 from memory.classifiers.rules.rules_loader import get_sentiment_loader
-from memory.models.memory_constant.constants import InteractionSentiment
+from config.constants import InteractionSentiment
 from prompt.detect_setiment_prompt import DETECT_SENTIMENT_PROMPT
-from utils.llm import get_llm
+from llm.chat_models import get_llm
 
 logger = logging.getLogger(__name__)
 

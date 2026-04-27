@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any
 
-from memory.models.memory_constant.constants import MemoryType
+from config.constants import MemoryType
 
 
 class BaseRetriever(ABC):

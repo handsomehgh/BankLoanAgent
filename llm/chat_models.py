@@ -9,8 +9,8 @@ from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, before_sleep_log
 
-from config import config
-from exception import LLMTimeoutError, LLMRateLimitError, LLMError
+from config.settings import config
+from exceptions.exception import LLMTimeoutError, LLMRateLimitError, LLMError
 
 logger = logging.getLogger(__name__)
 

@@ -4,8 +4,8 @@ from typing import Optional, List, Any
 
 from pydantic import Field, field_validator
 
-from config import config
-from memory.models.memory_constant.constants import (
+from config.settings import config
+from config.constants import (
     EvidenceType,
     InteractionEventType,
     InteractionSentiment,
@@ -13,7 +13,7 @@ from memory.models.memory_constant.constants import (
     ComplianceSeverity,
     MemorySource, MemoryStatus,
 )
-from memory.models.memory_data.memory_meta import MemoryBase
+from memory.models.memory_data.memory_base import MemoryBase
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class UserProfileMemory(MemoryBase):
         try:
             return EvidenceType(v)
         except ValueError:
-            if config.STRICT_ENUM_VALIDATION:
+            if config.strict_enum_validation:
                 raise ValueError(f"Invalid evidence_type '{v}'. Must be one of {[e.value for e in EvidenceType]}")
             logger.warning(f"Invalid evidence_type '{v}', fallback to EXPLICIT_STATEMENT")
             return EvidenceType.EXPLICIT_STATEMENT

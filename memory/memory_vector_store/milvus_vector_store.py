@@ -9,16 +9,16 @@ from langchain_community.vectorstores.utils import maximal_marginal_relevance
 from pymilvus import connections, MilvusException, Collection, AnnSearchRequest, RRFRanker
 from pymilvus.orm import utility
 
-from config import config
-from memory.models.memory_constant.constants import MemoryType, SearchStrategy, GeneralFieldNames, CollectionNames
-from memory.db_adpter.adpter_builder.milvus_query_builder import MilvusQueryBuilder
-from memory.db_adpter.adpter_model.query_model import Query
-from memory.models.memory_data.schema import UserProfileMemory, InteractionLogMemory, ComplianceRuleMemory
+from config import settings
+from config.constants import MemoryType, SearchStrategy, GeneralFieldNames, CollectionNames
+from query.milvus_query_builder import MilvusQueryBuilder
+from query.query_model import Query
+from memory.models.memory_data.memory_schema import UserProfileMemory, InteractionLogMemory, ComplianceRuleMemory
 from memory.models.memory_mappers.mappers import MemoryToStorageMapper
-from memory.memory_vector_store.vector_store import BaseVectorStore
-from memory.models.memory_data.memory_meta import MemoryBase
-from utils.llm import get_embeddings
-from utils.retry import retry_on_failure
+from memory.memory_vector_store.base_vector_store import BaseVectorStore
+from memory.models.memory_data.memory_base import MemoryBase
+from llm.chat_models import get_embeddings
+from llm.retry import retry_on_failure
 
 logger = logging.getLogger(__name__)
 

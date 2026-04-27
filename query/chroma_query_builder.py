@@ -2,8 +2,8 @@
 # version 1.0
 from typing import Dict, Any
 
-from memory.db_adpter.adpter_model.query_model import Query
-from memory.db_adpter.query_builder import QueryBuilder
+from query.query_model import Query
+from query.query_builder import QueryBuilder
 
 
 class ChromaQueryBuilder(QueryBuilder):

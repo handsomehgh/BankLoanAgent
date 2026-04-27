@@ -10,18 +10,18 @@ from typing import Optional, Dict, Any, List
 import numpy as np
 from chromadb.errors import ChromaError
 
-from config import config
-from exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
+from config.settings import config
+from exceptions.exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
 from memory.classifiers.rules.rules_loader import get_evidence_loader
-from memory.db_adpter.adpter_model.query_model import Condition, Query
+from query.query_model import Condition, Query
 from memory.models.memory_mappers.mappers import StorageToMemoryMapper
-from memory.memory_store.memory_base import BaseMemoryStore
-from memory.models.memory_constant.constants import MemoryType, MemoryStatus, ComplianceSeverity, EvidenceType, InteractionSentiment, \
+from memory.base_memory_store import BaseMemoryStore
+from config.constants import MemoryType, MemoryStatus, ComplianceSeverity, EvidenceType, InteractionSentiment, \
     GeneralFieldNames, InteractionEventType
-from memory.memory_vector_store.vector_store import BaseVectorStore
-from memory.models.memory_data.memory_meta import MemoryBase
-from memory.models.memory_data.schema import UserProfileMemory, InteractionLogMemory, ComplianceRuleMemory
-from utils.retry import retry_on_failure
+from memory.memory_vector_store.base_vector_store import BaseVectorStore
+from memory.models.memory_data.memory_base import MemoryBase
+from memory.models.memory_data.memory_schema import UserProfileMemory, InteractionLogMemory, ComplianceRuleMemory
+from llm.retry import retry_on_failure
 
 logger = logging.Logger(__name__)
 
@@ -74,7 +74,7 @@ class LongTermMemoryStore(BaseMemoryStore):
                     status=MemoryStatus.ACTIVE,
                     permanent=permanent,
                     created_at=now,
-                    last_accessed_at=now,
+                    last_accessed_at=meta_input.get(GeneralFieldNames.LAST_ACCESSED_AT, now),
                     source=meta_input.get(GeneralFieldNames.SOURCE, "chat_extraction"),
                     entity_key=entity_key,
                     evidence_type=meta_input.get(GeneralFieldNames.EVIDENCE_TYPE, EvidenceType.EXPLICIT_STATEMENT),
@@ -240,8 +240,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             mem = {
                 GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
                 GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
-                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items() if
-                                             k != GeneralFieldNames.EXTRA},
+                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items()},
                 GeneralFieldNames.DISTANCE: distance,
                 GeneralFieldNames.SIMILARITY: similarity
             }
@@ -285,7 +284,20 @@ class LongTermMemoryStore(BaseMemoryStore):
         except Exception as e:
             logger.error(f"get by entity failed:{e}")
             return []
-        return results
+
+        memories = []
+        for hit in results:
+            try:
+                model = StorageToMemoryMapper.from_db_dict(hit, MemoryType.USER_PROFILE)
+            except Exception as e:
+                logger.warning(f"Failed to deserialize memory {hit.get('id')}: {e}")
+                continue
+            memories.append({
+                GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
+                GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
+                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items()},
+            })
+        return memories
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
     def update_memory_status(
@@ -310,17 +322,15 @@ class LongTermMemoryStore(BaseMemoryStore):
 
     def apply_forgetting(
             self,
-            memory_type: Optional[MemoryType] = None,
+            memory_type: MemoryType,
             user_id: Optional[str] = None,
             threshold: Optional[float] = None
     ) -> int:
         """apply forgetting"""
-        if memory_type and memory_type != MemoryType.USER_PROFILE:
-            logger.info(f"Skipping forgetting for {memory_type.value} (not supported)")
-            return 0
-
+        #build conditions
         conditions = [
             Condition(field=GeneralFieldNames.STATUS, op="==", value=MemoryStatus.ACTIVE.value),
+            Condition(field=GeneralFieldNames.PERMANENT,op="==",value=False)
         ]
         if user_id:
             conditions.append(Condition(field=GeneralFieldNames.USER_ID, op="==", value=user_id))
@@ -338,10 +348,8 @@ class LongTermMemoryStore(BaseMemoryStore):
 
         count = 0
         for hit in res:
-            if hit.get(GeneralFieldNames.PERMANENT, False):
-                continue
             try:
-                model = StorageToMemoryMapper.from_db_dict(hit, MemoryType.USER_PROFILE)
+                model = StorageToMemoryMapper.from_db_dict(hit, memory_type)
             except Exception as e:
                 continue
 
@@ -351,7 +359,7 @@ class LongTermMemoryStore(BaseMemoryStore):
                 try:
                     self.update_memory_status(
                         hit[GeneralFieldNames.ID],
-                        MemoryType.USER_PROFILE,
+                        memory_type,
                         MemoryStatus.FORGOTTEN.value
                     )
                     count += 1
@@ -385,7 +393,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             days = (datetime.now() - last).days
         except:
             days = 0
-        return np.exp(-config.decay_lambda * days)
+        return np.exp(-config.decay_factor * days)
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
     def _update_last_accessed(self, memory_type: MemoryType, memory_id: str):
@@ -427,8 +435,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             memories.append({
                 GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
                 GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
-                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items() if
-                                             k != GeneralFieldNames.EXTRA},
+                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items()},
                 GeneralFieldNames.SIMILARITY: 1.0,
                 GeneralFieldNames.DECAYED_SIMILARITY: 1.0,
             })
@@ -472,11 +479,10 @@ class LongTermMemoryStore(BaseMemoryStore):
                 model = StorageToMemoryMapper.from_db_dict(hit, MemoryType.COMPLIANCE_RULE)
             except Exception:
                 continue
-            meta_dict = model.model_dump()
             rules.append({
                 GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
                 GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
-                GeneralFieldNames.METADATA: meta_dict,
+                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items()},
             })
 
         rules.sort(key=lambda r: (
@@ -485,12 +491,12 @@ class LongTermMemoryStore(BaseMemoryStore):
         ))
         return rules[:limit]
 
-    def get_all_user_profile_memories(self, user_id: str, status: str = "active") -> List[Dict[str, Any]]:
+    def get_all_user_profile_memories(self, user_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
         # build condition
-        where = Query(conditions=[
-            Condition(field=GeneralFieldNames.USER_ID, op="==", value=user_id),
-            Condition(field=GeneralFieldNames.STATUS, op="==", value=status),
-        ])
+        conditions = [Condition(field=GeneralFieldNames.USER_ID, op="==", value=user_id)]
+        if status:
+            conditions.append(Condition(field=GeneralFieldNames.STATUS, op="==", value=status))
+        where = Query(conditions=conditions,logic="AND")
 
         # execute query
         try:
@@ -514,14 +520,3 @@ class LongTermMemoryStore(BaseMemoryStore):
                 GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items()},
             })
         return memories
-
-
-if __name__ == '__main__':
-    store = LongTermMemoryStore("../../test")
-    # store.add_memory(user_id="hgh001",content="这是测试文件2",memory_type=MemoryType.USER_PROFILE,entity_key="test",metadata={"type": "user_profile","source": "test","confidence": 0.6},permanent=False)
-
-    # result = store.search_memory("hgh001","测试",MemoryType.USER_PROFILE,2)
-    # store.apply_forgetting(MemoryType.USER_PROFILE, "hgh001",2)
-    result = store.get_memory_by_entity("hgh001", "test", MemoryStatus.FORGOTTEN.value)
-    # store.delete_user_memories("hgh001")
-    print(result)

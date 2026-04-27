@@ -7,14 +7,14 @@ import logging
 import uuid
 from langchain_core.messages import HumanMessage, AIMessage
 from agent.graph import build_graph
-from memory.db_adpter.adpter_builder.chroma_query_builder import ChromaQueryBuilder
-from memory.db_adpter.adpter_builder.milvus_query_builder import MilvusQueryBuilder
-from memory.memory_store.long_term_memory_store import LongTermMemoryStore
-from memory.memory_vector_store.chroma_db.chroma_vector_store import ChromaVectorStore
-from memory.memory_vector_store.milvus_db.milvus_vector_store import MilvusVectorStore
-from retriever.vector_retriever import VectorRetriever
-from config import config
-from memory.models.memory_constant.constants import MemoryType
+from query.chroma_query_builder import ChromaQueryBuilder
+from query.milvus_query_builder import MilvusQueryBuilder
+from memory.long_term_memory_store import LongTermMemoryStore
+from memory.memory_vector_store.chroma_vector_store import ChromaVectorStore
+from memory.memory_vector_store.milvus_vector_store import MilvusVectorStore
+from retriever.memory_retriever import VectorRetriever
+from config import settings
+from config.constants import MemoryType
 
 logging.basicConfig(level=config.log_level)
 logger = logging.getLogger(__name__)

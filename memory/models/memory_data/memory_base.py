@@ -4,8 +4,8 @@ from typing import Dict, Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from config import config
-from memory.models.memory_constant.constants import MemoryStatus, GeneralFieldNames
+from config.settings import config
+from config.constants import MemoryStatus, GeneralFieldNames
 
 logger = logging.getLogger(__name__)
 

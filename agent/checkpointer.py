@@ -3,7 +3,7 @@
 import sqlite3
 import logging
 from langgraph.checkpoint.sqlite import SqliteSaver
-from config import config
+from config import settings
 
 logger = logging.getLogger(__name__)
 

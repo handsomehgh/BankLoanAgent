@@ -2,17 +2,18 @@
 # version 1.0
 import os
 import sys
+from pathlib import Path
 
-from pydantic import Field
-from pydantic_core import ValidationError
+from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from memory.models.memory_constant.constants import SearchStrategy
+from config.constants import SearchStrategy
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 class BankLoanAgentConfig(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=os.path.join(os.path.dirname(__file__), ".env"),  # 修正拼写
+        env_file=str(PROJECT_ROOT / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False
@@ -37,7 +38,7 @@ class BankLoanAgentConfig(BaseSettings):
 
     # storage
     chroma_persist_dir: str = Field("./chroma_data", validation_alias="CHROMA_PERSIST_DIR")
-    sqlite_db_path: str = Field("./checkpoints.db", validation_alias="SQLITE_DB_PATH")
+    sqlite_db_path: str = Field("../checkpoints.db", validation_alias="SQLITE_DB_PATH")
 
     # agent behaviour
     max_rewrite_attempts: int = 1
@@ -45,7 +46,7 @@ class BankLoanAgentConfig(BaseSettings):
     max_context_messages: int = 20
 
     # memory decay
-    decay_factor: float = Field(0.01, validation_alias="DECAY_LAMBDA")
+    decay_factor: float = Field(0.0462, validation_alias="DECAY_LAMBDA")
     decay_threshold: float = Field(0.3, validation_alias="DECAY_THRESHOLD")
     cleanup_interval_hours: int = Field(24, validation_alias="CLEANUP_INTERVAL_HOURS")
 
@@ -59,7 +60,7 @@ class BankLoanAgentConfig(BaseSettings):
     #memory dlq path
     memory_dlq_path: str = Field(...,validation_alias="MEMORY_DLQ_PATH")
 
-    vector_backend: str = Field(...,validate_default="VECTOR_BACKEND")
+    vector_backend: str = Field(...,validation_alias="VECTOR_BACKEND")
 
     #milvus
     milvus_uri: str = Field(..., validation_alias="milvus_uri")

@@ -1,20 +1,20 @@
 # author hgh
 # version 1.0
-import json
 import logging
 from typing import Dict, Any, List, Optional
 
 import chromadb
 from chromadb import Settings
 from chromadb.errors import ChromaError
+from chromadb.utils import embedding_functions
 
-from memory.models.memory_constant.constants import ChromaResFields, SearchStrategy, CollectionNames, MemoryType, GeneralFieldNames
-from memory.db_adpter.adpter_builder.chroma_query_builder import ChromaQueryBuilder
-from memory.db_adpter.adpter_model.query_model import Query
+from config.constants import ChromaResFields, SearchStrategy, CollectionNames, MemoryType, GeneralFieldNames
+from query.chroma_query_builder import ChromaQueryBuilder
+from query.query_model import Query
 from memory.models.memory_mappers.mappers import MemoryToStorageMapper
-from memory.memory_vector_store.vector_store import BaseVectorStore
-from memory.models.memory_data.memory_meta import MemoryBase
-from utils.retry import retry_on_failure
+from memory.memory_vector_store.base_vector_store import BaseVectorStore
+from memory.models.memory_data.memory_base import MemoryBase
+from llm.retry import retry_on_failure
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,6 @@ class ChromaVectorStore(BaseVectorStore):
         )
 
         self._collections: Dict[str, Any] = {}
-
         self._query_builder = ChromaQueryBuilder()
         logger.info(f"ChromaVectorStore initialized at {persist_dir}")
 

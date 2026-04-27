@@ -20,8 +20,8 @@ from pathlib import Path
 from pymilvus import FieldSchema, DataType, connections, Collection, MilvusException, CollectionSchema, utility, \
     Function, FunctionType
 
-from config import config
-from memory.models.memory_constant.constants import MemoryType
+from config import settings
+from config.constants import MemoryType
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

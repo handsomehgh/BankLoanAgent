@@ -9,17 +9,17 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableConfig
 
 from agent.state import AgentState
-from config import config
-from exception import MemoryWriteFailedError
+from config import settings
+from exceptions.exception import MemoryWriteFailedError
 from memory.classifiers.rules.rules_loader import get_compliance_loader
-from memory.memory_store.memory_base import BaseMemoryStore
+from memory.base_memory_store import BaseMemoryStore
 from memory.classifiers import infer_evidence_type, detect_sentiment
-from memory.models.memory_constant.constants import MemoryType, MemoryStatus, MemorySource, ComplianceSeverity, \
+from config.constants import MemoryType, MemoryStatus, MemorySource, ComplianceSeverity, \
     ComplianceAction, PromptKeys, ConfigFields, InteractionEventType, ProfileEntityKey, GeneralFieldNames, StateFields
 from prompt.extract_prompt import EXTRACT_PROMPT
 from prompt.system_prompt import SYSTEM_TEMPLATE
 from retriever.base import BaseRetriever
-from utils.llm import get_llm
+from llm.chat_models import get_llm
 from utils.parser import safe_parse_extraction_output
 
 logger = logging.getLogger(__name__)

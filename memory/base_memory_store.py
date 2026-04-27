@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, List
 
-from memory.models.memory_constant.constants import MemoryType
+from config.constants import MemoryType
 
 
 class BaseMemoryStore(ABC):
@@ -98,7 +98,7 @@ class BaseMemoryStore(ABC):
     @abstractmethod
     def apply_forgetting(
             self,
-            memory_type: Optional[MemoryType] = None,
+            memory_type: MemoryType,
             user_id: Optional[str] = None,
             threshold: Optional[float] = None
     ) -> int:

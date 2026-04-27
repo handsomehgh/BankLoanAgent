@@ -6,10 +6,10 @@
 import json
 import logging
 from datetime import datetime
-from memory.memory_vector_store.chroma_db.chroma_vector_store import ChromaVectorStore
-from memory.models.memory_constant.constants import MemoryType, MemorySource, MemoryStatus, EvidenceType
+from memory.memory_vector_store.chroma_vector_store import ChromaVectorStore
+from config.constants import MemoryType, MemorySource, MemoryStatus, EvidenceType
 
-from memory.memory_store.long_term_memory_store import LongTermMemoryStore
+from memory.long_term_memory_store import LongTermMemoryStore
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

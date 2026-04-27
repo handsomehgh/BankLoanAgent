@@ -3,8 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 
-from memory.models.memory_constant.constants import SearchStrategy, MemoryType
-from memory.db_adpter.adpter_model.query_model import Query
+from config.constants import SearchStrategy, MemoryType
+from query.query_model import Query
 
 
 class BaseVectorStore(ABC):

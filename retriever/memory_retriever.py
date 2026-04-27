@@ -3,9 +3,9 @@
 import logging
 from typing import Optional, List, Dict, Any
 
-from config import config
-from memory.memory_store.memory_base import BaseMemoryStore
-from memory.models.memory_constant.constants import MemoryType
+from config import settings
+from memory.base_memory_store import BaseMemoryStore
+from config.constants import MemoryType
 from retriever.base import BaseRetriever
 
 logger = logging.getLogger(__name__)

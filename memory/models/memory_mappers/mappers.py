@@ -10,14 +10,14 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from exception import MappingError
-from memory.models.memory_data.memory_meta import MemoryBase
-from memory.models.memory_data.schema import (
+from exceptions.exception import MappingError
+from memory.models.memory_data.memory_base import MemoryBase
+from memory.models.memory_data.memory_schema import (
     UserProfileMemory,
     InteractionLogMemory,
     ComplianceRuleMemory,
 )
-from memory.models.memory_constant.constants import MemoryType
+from config.constants import MemoryType
 
 logger = logging.getLogger(__name__)
 

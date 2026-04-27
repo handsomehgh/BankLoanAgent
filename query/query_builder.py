@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from memory.db_adpter.adpter_model.query_model import Query
+from query.query_model import Query
 
 
 class QueryBuilder(ABC):

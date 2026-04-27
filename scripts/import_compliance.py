@@ -5,12 +5,12 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
-from memory.memory_vector_store.chroma_db.chroma_vector_store import ChromaVectorStore
-from memory.models.memory_constant.constants import MemoryType, MemoryStatus, SpecialUserID
+from memory.memory_vector_store.chroma_vector_store import ChromaVectorStore
+from config.constants import MemoryType, MemoryStatus, SpecialUserID
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from memory.memory_store.long_term_memory_store import LongTermMemoryStore
+from memory.long_term_memory_store import LongTermMemoryStore
 
 
 def import_compliance_rules(json_path: str):
@@ -26,7 +26,6 @@ def import_compliance_rules(json_path: str):
         metadata = {
             # 基础字段
             "type": MemoryType.COMPLIANCE_RULE.value,
-            "source": "admin_import",
             "confidence": 1.0,
             "status": MemoryStatus.ACTIVE.value,
             # 规则特有字段

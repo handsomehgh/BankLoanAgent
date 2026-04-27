@@ -14,9 +14,9 @@ from pathlib import Path
 # 将项目根目录加入 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from memory.memory_vector_store.chroma_db.chroma_vector_store import ChromaVectorStore
-from memory.memory_store.long_term_memory_store import LongTermMemoryStore
-from memory.models.memory_constant.constants import MemoryType, MemoryStatus
+from memory.memory_vector_store.chroma_vector_store import ChromaVectorStore
+from memory.long_term_memory_store import LongTermMemoryStore
+from config.constants import MemoryType, MemoryStatus
 
 
 logging.basicConfig(level=logging.INFO)
