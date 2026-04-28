@@ -303,7 +303,7 @@ def test_apply_forgotten():
 
 
 if __name__ == '__main__':
-    # test_search()
-    # test_conflict_resolution()
-    # test_get_by_entity()
+    test_search()
+    test_conflict_resolution()
+    test_get_by_entity()
     test_apply_forgotten()

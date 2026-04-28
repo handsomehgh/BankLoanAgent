@@ -14,8 +14,7 @@ class BaseVectorStore(ABC):
             memory_type: MemoryType,
             ids: List[str],
             texts: List[str],
-            models: List[Any],
-            search_strategy: SearchStrategy = SearchStrategy.AUTO
+            models: List[Any]
     ) -> None:
         """
         batch add vector record
@@ -25,7 +24,6 @@ class BaseVectorStore(ABC):
             ids: list of ids
             texts: list of texts to be added
             models: list of data to be added
-            search_strategy: search strategy
         """
         pass
 
@@ -35,8 +33,7 @@ class BaseVectorStore(ABC):
             memory_type: MemoryType,
             query: str,
             where: Optional[Query],
-            limit: int,
-            search_strategy: SearchStrategy = SearchStrategy.AUTO,
+            limit: int
     ) -> List[Dict[str, Any]]:
         """
         semantic retrieve

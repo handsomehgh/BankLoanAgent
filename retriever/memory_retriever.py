@@ -3,7 +3,7 @@
 import logging
 from typing import Optional, List, Dict, Any
 
-from config import settings
+from config.settings import config
 from memory.base_memory_store import BaseMemoryStore
 from config.constants import MemoryType
 from retriever.base import BaseRetriever

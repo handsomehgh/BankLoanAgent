@@ -1,14 +1,14 @@
 """
-生产级模型-存储映射器
+生产级模型-存储映射器（重构版）
 基于 Pydantic 模型元信息自动完成序列化/反序列化。
-包含完善的错误处理、日志记录与异常包装。
+支持 Chroma 和 Milvus 两种目标数据库，通过 target_db 参数适配不同空值策略。
 """
 
 import json
 import logging
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union, get_origin, get_args
 
 from exceptions.exception import MappingError
 from memory.models.memory_data.memory_base import MemoryBase
@@ -21,34 +21,29 @@ from config.constants import MemoryType
 
 logger = logging.getLogger(__name__)
 
-# 模型类映射
 MODEL_CLASS_MAP = {
     MemoryType.USER_PROFILE: UserProfileMemory,
     MemoryType.INTERACTION_LOG: InteractionLogMemory,
     MemoryType.COMPLIANCE_RULE: ComplianceRuleMemory,
 }
 
-# 必填字段集合（不同记忆类型的必填字段）
 REQUIRED_FIELDS = {
     MemoryType.USER_PROFILE: ["user_id", "entity_key"],
     MemoryType.INTERACTION_LOG: ["user_id", "session_id"],
     MemoryType.COMPLIANCE_RULE: ["user_id", "rule_id", "rule_name", "rule_type", "action"],
 }
 
-# 核心枚举字段（解析失败应抛出异常，而非静默降级）
-CRITICAL_ENUM_FIELDS = {
-    "status", "action", "severity"
-}
 
-
-def serialize_field(field_name: str, value: Any) -> Optional[str]:
+# ---------- 序列化辅助函数 ----------
+def serialize_field(field_name: str, value: Any) -> Any:
     """
-    将字段值转为 Chroma 安全格式（str / int / float / bool 之一）。
-    - None 或空集合 → 返回 None（调用方跳过）
-    - datetime → ISO 字符串
-    - Enum → value 字符串
-    - list / dict → JSON 字符串
-    - 未知类型 → str(value) 并记警告
+    将 Python 值转换为存储友好的格式。
+    返回基本类型（str/int/float/bool）或 None。
+    - None      → None
+    - Enum      → value
+    - datetime  → ISO 字符串
+    - list/dict → JSON 字符串
+    - 其他      → str(value) 并记录警告
     """
     if value is None:
         return None
@@ -61,35 +56,26 @@ def serialize_field(field_name: str, value: Any) -> Optional[str]:
             return json.dumps(value, ensure_ascii=False)
         except TypeError as e:
             logger.warning(
-                f"Field '{field_name}' is list/dict but cannot be JSON-serialized: {e}. "
-                f"Falling back to str()."
+                f"Field '{field_name}' is list/dict but cannot be JSON‑serialized: {e}. Falling back to str()."
             )
             return str(value)
     if isinstance(value, (str, int, float, bool)):
         return value
-    # 未知复杂类型，降级为字符串并记录
     logger.warning(
-        f"Field '{field_name}' has unsupported type {type(value).__name__}. "
-        f"Converting to str."
+        f"Field '{field_name}' has unsupported type {type(value).__name__}. Converting to str."
     )
     return str(value)
 
 
+# ---------- 反序列化辅助函数 ----------
 def deserialize_field(
     field_name: str,
     raw: Any,
     annotation: Any,
-    memory_type: MemoryType,   # 保留参数以兼容旧调用，实际本函数未使用
+    memory_type: MemoryType,   # 保留参数兼容旧调用
 ) -> Any:
-    """
-    将存储值反序列化为模型字段期望的类型。
-    - 时间字段：空值返回 None；解析失败返回 None（让模型使用默认值）。
-    - 枚举字段：仅尝试转换，失败时返回原始字符串，交给模型的 field_validator 处理。
-    - 列表/字典字段：JSON 字符串 → 对应类型；解析失败返回空集合。
-    - 其他基础类型直接返回。
-    """
-    # ---------- 时间类型 ----------
-    # 判断是否为 datetime 或 Optional[datetime]
+    """将存储值反序列化为模型字段期望的类型。"""
+    # 时间类型
     is_datetime = (annotation == datetime)
     is_optional_datetime = (
         hasattr(annotation, '__args__') and
@@ -99,7 +85,6 @@ def deserialize_field(
     ) if not is_datetime else False
 
     if is_datetime or is_optional_datetime:
-        # 空字符串、null 字符串统一返回 None
         if isinstance(raw, str) and raw.strip() in ("", "null", "None"):
             return None
         if isinstance(raw, datetime):
@@ -109,96 +94,120 @@ def deserialize_field(
                 return datetime.fromisoformat(raw)
             except ValueError as e:
                 logger.error(
-                    f"Field '{field_name}' contains invalid datetime string '{raw}': {e}. "
-                    f"Returning None to let model apply default."
+                    f"Field '{field_name}' invalid datetime string '{raw}': {e}. Returning None."
                 )
                 return None
-        # 其他类型无法处理，返回 None
-        logger.warning(
-            f"Field '{field_name}' expected datetime, got {type(raw).__name__}. Returning None."
-        )
+        logger.warning(f"Field '{field_name}' expected datetime, got {type(raw).__name__}. Returning None.")
         return None
 
-    # ---------- 枚举类型 ----------
+    # 枚举类型
     if isinstance(annotation, type) and issubclass(annotation, Enum):
         if isinstance(raw, str):
             try:
                 return annotation(raw)
             except ValueError:
                 logger.warning(
-                    f"Field '{field_name}' has invalid enum value '{raw}' for {annotation.__name__}. "
-                    f"Letting model's field_validator handle it."
+                    f"Field '{field_name}' has invalid enum value '{raw}'. Letting model's field_validator handle it."
                 )
-                return raw   # 传回原始字符串，由模型校验器接管
+                return raw
         elif isinstance(raw, annotation):
             return raw
         else:
-            logger.warning(
-                f"Enum field '{field_name}' got unexpected type {type(raw).__name__}. "
-                f"Returning raw value."
-            )
+            logger.warning(f"Enum field '{field_name}' got {type(raw).__name__}. Returning raw value.")
             return raw
 
-    # ---------- 列表类型 ----------
-    if annotation == list or annotation == List[str]:
+    # 列表类型
+    if annotation == list or (get_origin(annotation) is list):
         if isinstance(raw, str):
             try:
                 parsed = json.loads(raw)
-                if isinstance(parsed, list):
-                    return parsed
-                logger.warning(f"Field '{field_name}' parsed as list but got {type(parsed).__name__}.")
+                return parsed if isinstance(parsed, list) else []
             except (json.JSONDecodeError, TypeError) as e:
                 logger.warning(f"Field '{field_name}' cannot be parsed as list: {e}. Returning [].")
-            return []
+                return []
         if isinstance(raw, list):
             return raw
         logger.warning(f"Field '{field_name}' expected list, got {type(raw).__name__}. Returning [].")
         return []
 
-    # ---------- 字典类型 ----------
-    if annotation == dict or annotation == Dict[str, Any]:
+    # 字典类型
+    if annotation == dict or (get_origin(annotation) is dict):
         if isinstance(raw, str):
             try:
                 parsed = json.loads(raw)
-                if isinstance(parsed, dict):
-                    return parsed
-                logger.warning(f"Field '{field_name}' parsed as dict but got {type(parsed).__name__}.")
+                return parsed if isinstance(parsed, dict) else {}
             except (json.JSONDecodeError, TypeError) as e:
                 logger.warning(f"Field '{field_name}' cannot be parsed as dict: {e}. Returning {{}}.")
-            return {}
+                return {}
         if isinstance(raw, dict):
             return raw
         logger.warning(f"Field '{field_name}' expected dict, got {type(raw).__name__}. Returning {{}}.")
         return {}
 
-    # ---------- 其他基础类型（str, int, float, bool）----------
     return raw
 
+
+# ---------- 映射器 ----------
 class MemoryToStorageMapper:
     """领域模型 → 存储字典"""
 
     @staticmethod
-    def to_db_meta(model: MemoryBase) -> Dict[str, Any]:
+    def _infer_type(annotation) -> type:
+        """从 Optional[X] 或直接类型中提取基础类型 X。"""
+        if get_origin(annotation) is Union:
+            args = [a for a in get_args(annotation) if a != type(None)]
+            return args[0] if args else str
+        return annotation
+
+    @classmethod
+    def _default_for_milvus(cls, field_name: str, field_info) -> Any:
+        """根据字段的 Pydantic 类型注解返回 Milvus 安全的空值。"""
+        annotation = field_info.annotation
+        base_type = cls._infer_type(annotation)
+
+        if base_type == str:
+            return ""
+        if base_type == int:
+            return 0
+        if base_type == float:
+            return 0.0
+        if base_type == bool:
+            return False
+        if base_type == datetime:
+            # Milvus 中 datetime 存为 ISO 字符串，空字符串表示缺失
+            return ""
+        if base_type == list or base_type == dict:
+            return "[]"  # 空集合序列化为 JSON 字符串
+        if isinstance(base_type, type) and issubclass(base_type, Enum):
+            # 取第一个枚举值
+            return list(base_type)[0].value
+        # 兜底
+        logger.warning(f"Unknown type {annotation} for field '{field_name}', using empty string.")
+        return ""
+
+    @staticmethod
+    def to_db_meta(model: MemoryBase, target_db: str = "chroma") -> Dict[str, Any]:
         """
-        自动将模型转换为存储字典。
-        跳过空值和非基本类型，确保 Chroma 兼容。
+        将模型转换为存储字典。
+        :param target_db: "chroma" 或 "milvus"
+            - chroma: 完全剔除值为 None 的字段
+            - milvus: 将 None 替换为安全的空值（"" / 0 / 0.0 / False 等）
         """
         result = {}
         for field_name, field_info in model.model_fields.items():
             try:
                 value = getattr(model, field_name)
-                # 跳过 None
-                if value is None:
-                    continue
-                # 跳过空集合
-                if isinstance(value, (list, dict)) and not value:
-                    continue
+                serialized = serialize_field(field_name, value)  # 可能为 None
 
-                serialized = serialize_field(field_name, value)
-                if serialized is not None:
-                    result[field_name] = serialized
+                if target_db == "chroma":
+                    if serialized is None:
+                        continue
+                elif target_db == "milvus":
+                    if serialized is None:
+                        serialized = MemoryToStorageMapper._default_for_milvus(field_name, field_info)
+                result[field_name] = serialized
             except Exception as e:
-                logger.error(f"Failed to serialize field '{field_name}' for model {model.__class__.__name__}: {e}")
+                logger.error(f"Failed to serialize field '{field_name}': {e}")
                 raise MappingError(f"Serialization failed for field '{field_name}'") from e
         return result
 
@@ -210,8 +219,6 @@ class StorageToMemoryMapper:
     def from_db_dict(data: Dict[str, Any], memory_type: MemoryType) -> MemoryBase:
         model_class = MODEL_CLASS_MAP[memory_type]
         init_data = {}
-
-        # 获取当前类型的必填字段
         required = set(REQUIRED_FIELDS.get(memory_type, []))
 
         for field_name, field_info in model_class.model_fields.items():
@@ -224,28 +231,22 @@ class StorageToMemoryMapper:
                 value = deserialize_field(field_name, raw, annotation, memory_type)
                 if value is not None:
                     init_data[field_name] = value
-                else:
-                    # 字段被跳过（枚举降级等），如果是必填字段则报错
-                    if field_name in required:
-                        msg = f"Required field '{field_name}' could not be deserialized for memory type {memory_type}"
-                        logger.error(msg)
-                        raise MappingError(msg)
+                elif field_name in required:
+                    raise MappingError(
+                        f"Required field '{field_name}' deserialized to None for {memory_type}"
+                    )
             except MappingError:
-                raise  # 重新抛出已知异常
+                raise
             except Exception as e:
                 logger.error(f"Unexpected error deserializing field '{field_name}': {e}")
                 if field_name in required:
                     raise MappingError(f"Failed to deserialize required field '{field_name}'") from e
-                # 可选字段跳过，继续
+                # 可选字段跳过
 
-        # 检查必填字段是否都已存在
         missing = required - set(init_data.keys())
         if missing:
-            msg = f"Missing required fields for {memory_type}: {missing}"
-            logger.error(msg)
-            raise MappingError(msg)
+            raise MappingError(f"Missing required fields for {memory_type}: {missing}")
 
-        # 构建模型实例，Pydantic 会执行最终校验
         try:
             return model_class(**init_data)
         except Exception as e:

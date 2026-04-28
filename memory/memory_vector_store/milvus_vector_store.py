@@ -9,15 +9,15 @@ from langchain_community.vectorstores.utils import maximal_marginal_relevance
 from pymilvus import connections, MilvusException, Collection, AnnSearchRequest, RRFRanker
 from pymilvus.orm import utility
 
-from config import settings
+from config.settings import config
 from config.constants import MemoryType, SearchStrategy, GeneralFieldNames, CollectionNames
+from llm.embeddings import get_embeddings
 from query.milvus_query_builder import MilvusQueryBuilder
 from query.query_model import Query
 from memory.models.memory_data.memory_schema import UserProfileMemory, InteractionLogMemory, ComplianceRuleMemory
 from memory.models.memory_mappers.mappers import MemoryToStorageMapper
 from memory.memory_vector_store.base_vector_store import BaseVectorStore
 from memory.models.memory_data.memory_base import MemoryBase
-from llm.chat_models import get_embeddings
 from llm.retry import retry_on_failure
 
 logger = logging.getLogger(__name__)
@@ -74,8 +74,10 @@ class MilvusVectorStore(BaseVectorStore):
         if memory_type not in self._collections:
             coll_name = CollectionNames.for_type(memory_type)
             if not utility.has_collection(coll_name):
-                raise RuntimeError(f"Collection {coll_name} not found,please check your configuration")
-            self._collections[memory_type] = Collection(coll_name)
+                raise RuntimeError(f"Collection {coll_name} not found, please check your configuration")
+            col = Collection(coll_name)
+            col.load()
+            self._collections[memory_type] = col
         return self._collections[memory_type]
 
     def _parse_search_results(self, results, output_fields=None) -> List[Dict]:
@@ -84,7 +86,7 @@ class MilvusVectorStore(BaseVectorStore):
             for hit in hits:
                 item = {
                     GeneralFieldNames.ID: hit.id,
-                    GeneralFieldNames.DISTANCE: 1.0 - hit.score,
+                    GeneralFieldNames.DISTANCE: hit.distance,
                     GeneralFieldNames.SCORE: hit.score,
                 }
 
@@ -109,8 +111,7 @@ class MilvusVectorStore(BaseVectorStore):
             memory_type: MemoryType,
             ids: List[str],
             texts: List[str],
-            models: List[MemoryBase],
-            search_strategy: SearchStrategy = SearchStrategy.AUTO
+            models: List[MemoryBase]
     ) -> None:
         """batch insert into vector data"""
 
@@ -118,23 +119,21 @@ class MilvusVectorStore(BaseVectorStore):
         collection = self._get_collection(memory_type)
 
         # vecotrized texts
-        dense_vector = self._embed_text(texts)
+        dense_vectors = self._embed_text(texts)
 
         # organize insert data
-        meta_dicts = [MemoryToStorageMapper.to_db_meta(m) for m in models]
-        all_keys = set()
-        for meta in meta_dicts:
-            all_keys.update(meta.keys())
-        insert_dict = {
-            GeneralFieldNames.ID: ids,
-            GeneralFieldNames.TEXT: texts,
-            GeneralFieldNames.DENSE_VECTOR: dense_vector,
-        }
-        for key in all_keys:
-            col = [meta.get(key) for meta in meta_dicts]
-            insert_dict[key] = col
+        meta_dicts = [MemoryToStorageMapper.to_db_meta(m,target_db="milvus") for m in models]
+        rows = []
+        for i, mem_id in enumerate(ids):
+            row = {GeneralFieldNames.ID: mem_id, GeneralFieldNames.TEXT: texts[i],
+                   GeneralFieldNames.DENSE_VECTOR: dense_vectors[i]}
+            # 合并元数据
+            for meta in meta_dicts:
+                for key, value in meta.items():
+                    row.setdefault(key, value)
+            rows.append(row)
 
-        collection.insert(insert_dict)
+        collection.insert(data=rows)
         collection.flush()
         logger.debug(f"Inserted {len(ids)} records into {collection.name}")
 
@@ -144,11 +143,10 @@ class MilvusVectorStore(BaseVectorStore):
             memory_type: MemoryType,
             query: str,
             where: Optional[Query] = None,
-            limit: int = 5,
-            search_strategy: SearchStrategy = SearchStrategy.AUTO
+            limit: int = 5
     ) -> List[Dict]:
         """unified search entrance"""
-
+        search_strategy = config.default_search_strategy
         # confirm the final strategy
         if search_strategy == SearchStrategy.AUTO:
             strategy = self._infer_strategy(query, memory_type)
@@ -219,34 +217,23 @@ class MilvusVectorStore(BaseVectorStore):
             ids: List[str],
             metadatas: List[Dict[str, Any]]
     ) -> None:
-        collection = self._get_collection(memory_type)
+        if not ids or not metadatas:
+            return
 
-        core_fields = {GeneralFieldNames.TEXT, GeneralFieldNames.USER_ID, GeneralFieldNames.DENSE_VECTOR,
-                       GeneralFieldNames.SPARSE_VECTOR}
+        collection = self._get_collection(memory_type)
 
         data = []
         for mem_id, meta in zip(ids, metadatas):
-            if not core_fields.intersection(meta.keys()):
-                existing = self.get(memory_type=memory_type, ids=[mem_id])
-                if existing:
-                    full_meta = existing[0].copy()
-                    full_meta.update(meta)
-                    meta = full_meta
-                else:
-                    logger.warning(
-                        f"Attempted partial update on non-existent ID '{mem_id}' in "
-                        f"{CollectionNames.for_type(memory_type)}. Skipping."
-                    )
-                    continue
             row = {GeneralFieldNames.ID: mem_id}
             row.update(meta)
             data.append(row)
 
-        if data:
-            collection.upsert(data)
-            collection.flush()
-            logger.debug(f"Upserted {len(data)} records in {CollectionNames.for_type(memory_type)}")
-
+        # 执行部分更新
+        collection.upsert(data, partial_update=True)
+        collection.flush()
+        logger.debug(
+            f"Partial updated {len(data)} records in {CollectionNames.for_type(memory_type)}"
+        )
     @retry_on_failure(max_retries=3, initial_delay=0.2, exceptions=(MilvusException,))
     def delete(
             self,
@@ -333,7 +320,7 @@ class MilvusVectorStore(BaseVectorStore):
         sparse_vec = AnnSearchRequest(
             data=[query],
             anns_field=GeneralFieldNames.SPARSE_VECTOR,
-            param={"metric_type": "IP"},
+            param={"metric_type": "BM25"},
             limit=limit * 2,
             expr=expr
         )

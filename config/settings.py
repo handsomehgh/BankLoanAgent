@@ -22,6 +22,7 @@ class BankLoanAgentConfig(BaseSettings):
     # qwen ll
     qwen_llm_name: str = Field(..., validation_alias="QWEN_LLM_NAME")
     qwen_emb_name: str = Field(..., validation_alias="QWEN_EMB_NAME")
+    qwen_emb_name_backup: str = Field(..., validation_alias="QWEN_EMB_NAME_BACKUP")
     alibaba_api_key: str = Field(..., validation_alias="ALIBABA_API_KEY")
     alibaba_base_url: str = Field("https://dashscope.aliyuncs.com/compatible-mode/v1",
                                   validation_alias="ALIBABA_BASE_URL")
@@ -65,7 +66,7 @@ class BankLoanAgentConfig(BaseSettings):
     #milvus
     milvus_uri: str = Field(..., validation_alias="milvus_uri")
     #milvus search strategies
-    default_search_strategy: SearchStrategy = Field(default=SearchStrategy.AUTO,validation_alias="SEARCH_STRATEGY")
+    default_search_strategy: SearchStrategy = Field(default=SearchStrategy.AUTO,validation_alias="DEFAULT_SEARCH_STRATEGY")
 
     #enum validation
     strict_enum_validation: bool = Field(default=False,validation_alias="STRICT_ENUM_VALIDATION")

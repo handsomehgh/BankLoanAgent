@@ -63,3 +63,16 @@ class ExtractionError(AgentWorkFlowError):
 class MappingError(BankLoanException):
     """映射层异常，用于序列化/反序列化过程中的不可恢复错误"""
     pass
+
+#=======================embedding====================
+class EmbeddingError(LLMError):
+    """嵌入模型异常"""
+    pass
+
+class EmbeddingTimeoutError(LLMTimeoutError):
+    """嵌入超时"""
+    pass
+
+class EmbeddingRateLimitError(LLMRateLimitError):
+    """嵌入限流"""
+    pass

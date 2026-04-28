@@ -75,7 +75,7 @@ def get_evidence_loader() -> YAMLConfigLoader:
     global _evidence_loader
     if _evidence_loader is None:
         config_path = Path(__file__).parent / "evidence_rules.yaml"
-        return YAMLConfigLoader(str(config_path))
+        _evidence_loader = YAMLConfigLoader(str(config_path))
     return _evidence_loader
 
 
@@ -83,12 +83,12 @@ def get_sentiment_loader() -> YAMLConfigLoader:
     global _sentiment_loader
     if _sentiment_loader is None:
         config_path = Path(__file__).parent / "sentiment_rules.yaml"
-        return YAMLConfigLoader(str(config_path))
+        _sentiment_loader = YAMLConfigLoader(str(config_path))
     return _sentiment_loader
 
 def get_compliance_loader() -> YAMLConfigLoader:
     global _compliance_loader
     if _compliance_loader is None:
         config_path = Path(__file__).parent / "compliance_rules.yaml"
-        return YAMLConfigLoader(str(config_path))
+        _compliance_loader = YAMLConfigLoader(str(config_path))
     return _compliance_loader

@@ -20,8 +20,8 @@ from pathlib import Path
 from pymilvus import FieldSchema, DataType, connections, Collection, MilvusException, CollectionSchema, utility, \
     Function, FunctionType
 
-from config import settings
-from config.constants import MemoryType
+from config.settings import config
+from config.constants import MemoryType, CollectionNames
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -33,12 +33,12 @@ logger = logging.getLogger(__name__)
 
 COMMON_FIELDS = [
     FieldSchema(name="id", dtype=DataType.VARCHAR, is_primary=True, max_length=100),
-    FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
+    FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535,enable_analyzer=True,analyzer_params={"type": "chinese"}),
     FieldSchema(name="dense_vector", dtype=DataType.FLOAT_VECTOR, dim=1024),
     FieldSchema(name="sparse_vector", dtype=DataType.SPARSE_FLOAT_VECTOR),
     FieldSchema(name="user_id", dtype=DataType.VARCHAR, max_length=64),  # max_len -> max_length
     FieldSchema(name="status", dtype=DataType.VARCHAR, max_length=20),
-    FieldSchema(name="confidence", dtype=DataType.FLOAT),
+    FieldSchema(name="confidence", dtype=DataType.DOUBLE),
     FieldSchema(name="extra", dtype=DataType.JSON),
     FieldSchema(name="created_at", dtype=DataType.VARCHAR, max_length=30),
     FieldSchema(name="permanent", dtype=DataType.BOOL),
@@ -59,8 +59,7 @@ INTERACTION_LOG_EXTRA_FIELDS = [
     FieldSchema(name="timestamp", dtype=DataType.VARCHAR, max_length=30),
     FieldSchema(name="event_type", dtype=DataType.VARCHAR, max_length=32),
     FieldSchema(name="sentiment", dtype=DataType.VARCHAR, max_length=20),
-    # 修复：max_length -> max_capacity
-    FieldSchema(name="key_entities", dtype=DataType.ARRAY, element_type=DataType.VARCHAR, max_capacity=20),
+    FieldSchema(name="key_entities", dtype=DataType.ARRAY, element_type=DataType.VARCHAR, max_capacity=20,max_length=20),
     FieldSchema(name="source", dtype=DataType.VARCHAR, max_length=32),
 ]
 
@@ -89,17 +88,16 @@ DENSE_INDEX_PARAMS = {
 }
 
 SPARSE_INDEX_PARAMS = {
-    "metric_type": "IP",
+    "metric_type": "BM25",
     "index_type": "SPARSE_INVERTED_INDEX",
     "params": {"drop_ratio_build": 0.2}
 }
 
 BM25_FUNCTION = Function(
-    name="bm25",
+    name="bm25_fn",
     function_type=FunctionType.BM25,
     input_field_names=["text"],
-    output_field_names=["sparse_vector"],
-    params={"analyzer": "jieba"}
+    output_field_names=["sparse_vector"]
 )
 
 # the scalar fields that need to create dictionary indexes(choose based on query frequency)
@@ -164,6 +162,7 @@ def create_index(col: Collection, dense_field: str = "dense_vector", sparse_fiel
             index_params=DENSE_INDEX_PARAMS,
             index_name=dense_idx_name,
         )
+        utility.wait_for_index_building_complete(col.name, index_name=dense_idx_name)
     else:
         logger.info(f"Dense index on {dense_field} already exists")
 
@@ -175,6 +174,7 @@ def create_index(col: Collection, dense_field: str = "dense_vector", sparse_fiel
             index_params=SPARSE_INDEX_PARAMS,
             index_name=sparse_idx_name
         )
+        utility.wait_for_index_building_complete(col.name, index_name=sparse_idx_name)
     else:
         logger.info(f"Sparse index on {sparse_field} already exists")
 
@@ -198,30 +198,13 @@ def create_index(col: Collection, dense_field: str = "dense_vector", sparse_fiel
                     field_name=field,
                     index_name=idx_name
                 )
+                utility.wait_for_index_building_complete(col.name, index_name=idx_name)
             except MilvusException as e:
                 logger.error(f"Failed to create scalar index {idx_name} : {e}")
-
-    # full-text index
-    ft_index_name = "text_ft_index"
-    if not col.has_index(index_name=ft_index_name):
-        try:
-            col.create_index(
-                field_name="text",
-                index_name=ft_index_name,
-                index_params={
-                    "index_type": "TANTIVY",
-                    "params": {"max_token_length": 5000}
-                }
-            )
-            logger.info("Full-text index created.")
-        except MilvusException as e:
-            logger.warning(f"Full-text index failed: {e}")
 
 
 def load_collection(col: Collection):
     try:
-        # 等待所有索引就绪
-        utility.wait_for_index_building_complete(col.name, timeout=120)
         col.load()
         logger.info(f"Collection '{col.name}' loaded.")
     except MilvusException as e:
@@ -268,3 +251,9 @@ if __name__ == '__main__':
     except Exception as e:
         logger.exception("Initialization failed")
         sys.exit(1)
+    # connections.connect(
+    #     alias="default",
+    #     uri=config.milvus_uri,
+    #     timeout=30
+    # )
+    # utility.drop_collection("compliance_rules")

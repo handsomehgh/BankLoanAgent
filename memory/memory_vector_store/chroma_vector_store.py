@@ -56,7 +56,7 @@ class ChromaVectorStore(BaseVectorStore):
             item = {
                 GeneralFieldNames.ID: doc_id,
                 GeneralFieldNames.TEXT: documents[i] if i < len(documents) else None,
-                GeneralFieldNames.DISTANCE: distances[i] if i < len(distances) else 0.0,
+                GeneralFieldNames.DISTANCE: distance,
                 GeneralFieldNames.SCORE: 1.0 - distance
             }
 
@@ -74,12 +74,11 @@ class ChromaVectorStore(BaseVectorStore):
             memory_type: MemoryType,
             ids: List[str],
             texts: List[str],
-            models: List[MemoryBase],
-            search_strategy: SearchStrategy = SearchStrategy.AUTO
+            models: List[MemoryBase]
     ) -> None:
         collection_name = CollectionNames.for_type(memory_type)
         collection = self._get_collection(collection_name)
-        metadatas = [MemoryToStorageMapper.to_db_meta(m) for m in models]
+        metadatas = [MemoryToStorageMapper.to_db_meta(m,target_db="chroma") for m in models]
         collection.add(ids=ids, documents=texts, metadatas=metadatas)
 
     @retry_on_failure(max_retries=3, initial_delay=0.2, exceptions=(ChromaError,))
@@ -88,8 +87,7 @@ class ChromaVectorStore(BaseVectorStore):
             memory_type: MemoryType,
             query: str,
             where: Optional[Query] = None,
-            limit: int = 5,
-            search_strategy: SearchStrategy = SearchStrategy.AUTO,
+            limit: int = 5
     ) -> List[Dict[str, Any]]:
         collection_name = CollectionNames.for_type(memory_type)
         collection = self._get_collection(collection_name)

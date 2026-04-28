@@ -95,8 +95,7 @@ class RobustLLM:
 def get_llm(temperature: float = 0.7):
     return RobustLLM(temperature=temperature)
 
-def get_embeddings():
-    pass
+
 
 if __name__ == '__main__':
     llm = get_llm()

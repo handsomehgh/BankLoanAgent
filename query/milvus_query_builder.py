@@ -23,5 +23,5 @@ class MilvusQueryBuilder(QueryBuilder):
                 val = f'"{cond.value}"' if isinstance(cond.value, str) else str(cond.value)
                 parts.append(f'{cond.field} {cond.op} {val}')
 
-        connector = "AND" if query.logic.upper() == "AND" else "OR"
+        connector = " AND " if query.logic.upper() == "AND" else " OR "
         return connector.join(parts)

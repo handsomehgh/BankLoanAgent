@@ -13,6 +13,7 @@ from chromadb.errors import ChromaError
 from config.settings import config
 from exceptions.exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
 from memory.classifiers.rules.rules_loader import get_evidence_loader
+from memory.memory_vector_store.milvus_vector_store import MilvusVectorStore
 from query.query_model import Condition, Query
 from memory.models.memory_mappers.mappers import StorageToMemoryMapper
 from memory.base_memory_store import BaseMemoryStore
@@ -233,15 +234,12 @@ class LongTermMemoryStore(BaseMemoryStore):
             except Exception as e:
                 logger.warning(f"Failed to deserialize memory {hit.get('id')}: {e}")
                 continue
-
-            distance = hit.get(GeneralFieldNames.DISTANCE, 0.0)
-            similarity = 1.0 - distance
-
+            similarity = hit.get(GeneralFieldNames.SCORE)
             mem = {
                 GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
                 GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
                 GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items()},
-                GeneralFieldNames.DISTANCE: distance,
+                GeneralFieldNames.DISTANCE: hit.get(GeneralFieldNames.DISTANCE, 0.0),
                 GeneralFieldNames.SIMILARITY: similarity
             }
 
@@ -285,19 +283,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             logger.error(f"get by entity failed:{e}")
             return []
 
-        memories = []
-        for hit in results:
-            try:
-                model = StorageToMemoryMapper.from_db_dict(hit, MemoryType.USER_PROFILE)
-            except Exception as e:
-                logger.warning(f"Failed to deserialize memory {hit.get('id')}: {e}")
-                continue
-            memories.append({
-                GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
-                GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
-                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items()},
-            })
-        return memories
+        return self._assemble_memories(results)
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
     def update_memory_status(
@@ -426,19 +412,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             return []
 
         # organize result data
-        memories = []
-        for hit in results:
-            try:
-                model = StorageToMemoryMapper.from_db_dict(hit, MemoryType.INTERACTION_LOG)
-            except Exception:
-                continue
-            memories.append({
-                GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
-                GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
-                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items()},
-                GeneralFieldNames.SIMILARITY: 1.0,
-                GeneralFieldNames.DECAYED_SIMILARITY: 1.0,
-            })
+        memories = self._assemble_memories(results)
 
         # sort by time
         def get_timestamp(mem):
@@ -473,17 +447,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             ComplianceSeverity.MANDATORY.value: 0
         }
 
-        rules = []
-        for hit in results:
-            try:
-                model = StorageToMemoryMapper.from_db_dict(hit, MemoryType.COMPLIANCE_RULE)
-            except Exception:
-                continue
-            rules.append({
-                GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
-                GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
-                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items()},
-            })
+        rules = self._assemble_memories(results)
 
         rules.sort(key=lambda r: (
             severity_order.get(r[GeneralFieldNames.METADATA].get(GeneralFieldNames.SEVERITY), 4),
@@ -508,8 +472,11 @@ class LongTermMemoryStore(BaseMemoryStore):
             logger.error(f"Failed to get user profile memories: {e}")
             return []
 
+        return self._assemble_memories(results)
+
+    def _assemble_memories(self,results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         memories = []
-        for hit in results:
+        for i, hit in enumerate(results):
             try:
                 model = StorageToMemoryMapper.from_db_dict(hit, MemoryType.USER_PROFILE)
             except Exception:
