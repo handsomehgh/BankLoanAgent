@@ -5,8 +5,10 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
+from config.settings import config
 from memory.memory_vector_store.chroma_vector_store import ChromaVectorStore
 from config.constants import MemoryType, MemoryStatus, SpecialUserID
+from memory.memory_vector_store.milvus_vector_store import MilvusVectorStore
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -15,8 +17,10 @@ from memory.long_term_memory_store import LongTermMemoryStore
 
 def import_compliance_rules(json_path: str):
     """导入合规规则到长期记忆"""
-    vector_store = ChromaVectorStore("../chromadb")
-    store = LongTermMemoryStore(vector_store=vector_store)
+    # vector_store = ChromaVectorStore("../chromadb")
+    # store = LongTermMemoryStore(vector_store=vector_store)
+    vec = MilvusVectorStore(config.milvus_uri)
+    store = LongTermMemoryStore(vector_store=vec)
 
     with open(json_path, "r", encoding="utf-8") as f:
         rules = json.load(f)
@@ -24,11 +28,8 @@ def import_compliance_rules(json_path: str):
     for rule in rules:
         # 构建符合 ComplianceRuleMetadata 的元数据字典
         metadata = {
-            # 基础字段
-            "type": MemoryType.COMPLIANCE_RULE.value,
             "confidence": 1.0,
             "status": MemoryStatus.ACTIVE.value,
-            # 规则特有字段
             "rule_id": rule["rule_id"],
             "rule_name": rule["rule_name"],
             "rule_type": rule["rule_type"],
@@ -37,7 +38,6 @@ def import_compliance_rules(json_path: str):
             "severity": rule["severity"],
             "description": rule["description"],
             "source": rule["source"],
-            # Step 2 新增字段
             "priority": rule.get("priority", 100),
             "version": rule.get("version", datetime.now().strftime("%Y-%m-%d")),
             "effective_from": rule.get("effective_from", datetime.now().isoformat()),
@@ -58,8 +58,9 @@ def import_compliance_rules(json_path: str):
 
 if __name__ == "__main__":
     import_compliance_rules("../data/rules/compliance_rules.json")
-    vector_store = ChromaVectorStore("../chromadb")
-    store = LongTermMemoryStore(vector_store=vector_store)
+    vec = MilvusVectorStore(config.milvus_uri)
+    store = LongTermMemoryStore(vector_store=vec)
+
     rules = store.get_active_compliance_rules(limit=15)
     for rule in rules:
         print(rule)

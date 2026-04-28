@@ -9,7 +9,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableConfig
 
 from agent.state import AgentState
-from config import settings
+from config.settings import config
 from exceptions.exception import MemoryWriteFailedError
 from memory.classifiers.rules.rules_loader import get_compliance_loader
 from memory.base_memory_store import BaseMemoryStore

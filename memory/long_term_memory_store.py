@@ -13,7 +13,6 @@ from chromadb.errors import ChromaError
 from config.settings import config
 from exceptions.exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
 from memory.classifiers.rules.rules_loader import get_evidence_loader
-from memory.memory_vector_store.milvus_vector_store import MilvusVectorStore
 from query.query_model import Condition, Query
 from memory.models.memory_mappers.mappers import StorageToMemoryMapper
 from memory.base_memory_store import BaseMemoryStore
@@ -121,6 +120,7 @@ class LongTermMemoryStore(BaseMemoryStore):
                     effective_to=meta_input.get(GeneralFieldNames.EFFECTIVE_TO),
                     template=meta_input.get(GeneralFieldNames.TEMPLATE),
                     superseded_by=meta_input.get(GeneralFieldNames.SUPERSEDED_BY),
+                    description=meta_input.get(GeneralFieldNames.DESCRIPTION),
                     extra=meta_input.get(GeneralFieldNames.EXTRA) or {}
                 )
             else:
@@ -283,7 +283,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             logger.error(f"get by entity failed:{e}")
             return []
 
-        return self._assemble_memories(results)
+        return self._assemble_memories(results,MemoryType.USER_PROFILE)
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
     def update_memory_status(
@@ -412,7 +412,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             return []
 
         # organize result data
-        memories = self._assemble_memories(results)
+        memories = self._assemble_memories(results,MemoryType.INTERACTION_LOG)
 
         # sort by time
         def get_timestamp(mem):
@@ -447,7 +447,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             ComplianceSeverity.MANDATORY.value: 0
         }
 
-        rules = self._assemble_memories(results)
+        rules = self._assemble_memories(results,MemoryType.COMPLIANCE_RULE)
 
         rules.sort(key=lambda r: (
             severity_order.get(r[GeneralFieldNames.METADATA].get(GeneralFieldNames.SEVERITY), 4),
@@ -472,14 +472,15 @@ class LongTermMemoryStore(BaseMemoryStore):
             logger.error(f"Failed to get user profile memories: {e}")
             return []
 
-        return self._assemble_memories(results)
+        return self._assemble_memories(results,MemoryType.USER_PROFILE)
 
-    def _assemble_memories(self,results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _assemble_memories(self,results: List[Dict[str, Any]],memory_type: MemoryType) -> List[Dict[str, Any]]:
         memories = []
         for i, hit in enumerate(results):
             try:
-                model = StorageToMemoryMapper.from_db_dict(hit, MemoryType.USER_PROFILE)
-            except Exception:
+                model = StorageToMemoryMapper.from_db_dict(hit, memory_type)
+            except Exception as e:
+                print(e)
                 continue
             memories.append({
                 GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),

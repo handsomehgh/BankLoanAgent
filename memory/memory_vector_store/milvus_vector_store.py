@@ -118,7 +118,7 @@ class MilvusVectorStore(BaseVectorStore):
         # get collection by memory type
         collection = self._get_collection(memory_type)
 
-        # vecotrized texts
+        # vectorized texts
         dense_vectors = self._embed_text(texts)
 
         # organize insert data

@@ -246,14 +246,18 @@ def init_all_collections():
 
 
 if __name__ == '__main__':
-    try:
-        init_all_collections()
-    except Exception as e:
-        logger.exception("Initialization failed")
-        sys.exit(1)
-    # connections.connect(
-    #     alias="default",
-    #     uri=config.milvus_uri,
-    #     timeout=30
-    # )
+    # try:
+    #     init_all_collections()
+    # except Exception as e:
+    #     logger.exception("Initialization failed")
+    #     sys.exit(1)
+    connections.connect(
+        alias="default",
+        uri=config.milvus_uri,
+        timeout=30
+    )
+    col = Collection(name=COLLECTION_NAMES[MemoryType.USER_PROFILE.value])
+    col.load()
+    res = col.delete("id in ['1596f346-f309-45d8-9cc7-3612cb963bea','e108494d-c09a-4c66-beec-f119dbe8535']")
+    print(res)
     # utility.drop_collection("compliance_rules")

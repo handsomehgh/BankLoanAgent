@@ -297,14 +297,28 @@ def test_apply_forget():
     # 清理
     store.delete_user_memories(user_id, MemoryType.USER_PROFILE)
 
+def test_get_active_compliance_rules():
+    print("\n" + "=" * 60)
+    print("测试 6: 合规记忆")
+    print("=" * 60)
+
+    store = get_store()
+    rules = store.get_active_compliance_rules(15)
+    assert len(rules) == 15,f"预期合规规则15条,实际{len(rules)}"
+    print_memory("合规规则",rules[:3])
+
+
+
+
 if __name__ == '__main__':
     # test_add_profile_memory()
     # test_base_crud()
     # test_search()
     # test_conflict_resolution()
     # test_get_by_entity()
-    store = get_store()
-    test_apply_forget()
+    test_get_active_compliance_rules()
+    # store = get_store()
+    # # test_apply_forget()
     # user_id = "test_user_entity"
     # store.delete_user_memories(user_id=user_id, memory_type=MemoryType.USER_PROFILE)
     # res = store.get_all_user_profile_memories(user_id,MemoryType.USER_PROFILE)

@@ -37,7 +37,6 @@ def import_profiles(jsonl_path: str):
                 "confidence": data.get("confidence", 0.8),
                 "status": MemoryStatus.ACTIVE.value,
                 "permanent": data.get("permanent", False),
-                # Step 2 新增字段
                 "evidence_type": data.get("evidence_type", EvidenceType.EXPLICIT_STATEMENT.value),
                 "effective_date": data.get("effective_date", data.get("timestamp", datetime.now().isoformat())),
                 "expires_at": data.get("expires_at"),

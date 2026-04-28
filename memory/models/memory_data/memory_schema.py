@@ -97,6 +97,7 @@ class ComplianceRuleMemory(MemoryBase):
     effective_from: datetime = Field(default_factory=datetime.now, description="effective from")
     effective_to: Optional[datetime] = Field(default=None, description="effective to")
     template: Optional[str] = Field(default=None, description="template text for APPEND action")
+    description: Optional[str] = Field(default=None, description="description text for rule")
     superseded_by: Optional[str] = Field(default=None, description="replaced by which rule id")
 
     def supersede(self, new_id: str) -> None:
