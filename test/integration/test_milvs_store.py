@@ -307,7 +307,17 @@ def test_get_active_compliance_rules():
     assert len(rules) == 15,f"预期合规规则15条,实际{len(rules)}"
     print_memory("合规规则",rules[:3])
 
+def test_get_user_profile_memories():
+    print("\n" + "=" * 60)
+    print("测试 7: 测试获取用户活跃记忆摘要")
+    print("=" * 60)
 
+    user_id = "test_user_001"
+    store = get_store()
+
+    summary = store.get_profile_summary(user_id)
+    assert summary,f"预期存在用户{user_id}的活跃记忆"
+    print(summary)
 
 
 if __name__ == '__main__':
@@ -316,7 +326,8 @@ if __name__ == '__main__':
     # test_search()
     # test_conflict_resolution()
     # test_get_by_entity()
-    test_get_active_compliance_rules()
+    # test_get_active_compliance_rules()
+    test_get_user_profile_memories()
     # store = get_store()
     # # test_apply_forget()
     # user_id = "test_user_entity"

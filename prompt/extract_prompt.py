@@ -5,6 +5,9 @@ from langchain_core.prompts import ChatPromptTemplate
 EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
     ("system", """你是一个专业的信息提取专家，负责从客户与贷款顾问的对话中提取**新增或更新的**客户画像信息。
 
+## 已知用户画像(基于之前提取的记录)
+{known_profile}
+
 ## 可提取的实体类型 (entity_key)
 请严格从以下枚举值中选择，不要使用任何其他值：
 - `income`: 年收入或月收入信息

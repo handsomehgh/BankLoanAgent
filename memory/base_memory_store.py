@@ -161,3 +161,27 @@ class BaseMemoryStore(ABC):
         """obtain all user's profile memories(used for interface display)"""
         pass
 
+    @abstractmethod
+    def get_extraction_cursor(self,user_id: str) -> Optional[int]:
+        """
+        get the global message sequence number for the user's last profile extraction,
+        if it has never been extracted or is available,return None
+
+        Args:
+            user_id: user unique id
+
+        Returns:
+            global message sequence number
+        """
+        pass
+
+    @abstractmethod
+    def set_extraction_cursor(self, user_id: str, message_index: int) -> None:
+        """
+        set user profile extraction cursor
+        """
+        pass
+
+    @abstractmethod
+    def get_profile_summary(self, user_id: str, max_chars: int = 500) -> str:
+        pass

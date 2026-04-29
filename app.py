@@ -7,13 +7,13 @@ import logging
 import uuid
 from langchain_core.messages import HumanMessage, AIMessage
 from agent.graph import build_graph
+from config.settings import config
 from query.chroma_query_builder import ChromaQueryBuilder
 from query.milvus_query_builder import MilvusQueryBuilder
 from memory.long_term_memory_store import LongTermMemoryStore
 from memory.memory_vector_store.chroma_vector_store import ChromaVectorStore
 from memory.memory_vector_store.milvus_vector_store import MilvusVectorStore
 from retriever.memory_retriever import VectorRetriever
-from config import settings
 from config.constants import MemoryType
 
 logging.basicConfig(level=config.log_level)
@@ -34,8 +34,8 @@ st.title("🏦 银行贷款顾问助手（生产级错误处理）")
 # ==================== 初始化 ====================
 if "memory_store" not in st.session_state:
     try:
-        #创建记忆存储实例（注入向量存储）
-        st.session_state.memory_store = LongTermMemoryStore(vector_store=vector_store,query_builder=query_builder)
+        # 修正：移除多余的 query_builder 参数
+        st.session_state.memory_store = LongTermMemoryStore(vector_store=vector_store)
     except Exception as e:
         st.error(f"记忆存储初始化失败: {e}")
         st.stop()

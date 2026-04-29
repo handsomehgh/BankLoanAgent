@@ -71,6 +71,9 @@ class BankLoanAgentConfig(BaseSettings):
     #enum validation
     strict_enum_validation: bool = Field(default=False,validation_alias="STRICT_ENUM_VALIDATION")
 
+    #roll back widow size when the profile extraction cursor is lost
+    profile_extraction_fallback_window: int = Field(default=10,validation_alias="PROFILE_EXTRACTION_FALLBACK_WINDOW")
+
     # Logging
     log_level: str = Field("INFO", validation_alias="LOG_LEVEL")
 

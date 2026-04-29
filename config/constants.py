@@ -169,6 +169,8 @@ class StateFields(str,Enum):
     MANDATORY_APPENDS = "mandatory_appends"
     SHOULD_SKIP_LLM = "should_skip_llm"
     ERROR = "error"
+    LAST_EXTRACTED_MESSAGE_INDEX = "last_extracted_message_index"
+    NEXT_MESSAGE_INDEX = "next_message_index"
 
 
 # ==================== interaction trajectory event type ====================
@@ -208,6 +210,7 @@ class ChromaOperator(str, Enum):
 # ======================= prompt key =======================================
 class PromptKeys(str, Enum):
     CONVERSATION = "conversation"
+    KNOWN_PROFILE = "known_profile"
 
 
 # ======================= index type =====================================
@@ -244,6 +247,11 @@ class CollectionNames:
             MemoryType.COMPLIANCE_RULE: cls.COMPLIANCE_RULE,
         }
         return mapping[memory_type]
+
+#========================= Message index ==================================
+class MessageCommonFields(str, Enum):
+    ADDITIONAL_KWARGS = "additional_kwargs"
+    MESSAGE_INDEX = "message_index"
 
 if __name__ == '__main__':
     print(MemoryType.__members__.values())

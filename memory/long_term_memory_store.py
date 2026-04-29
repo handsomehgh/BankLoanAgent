@@ -488,3 +488,74 @@ class LongTermMemoryStore(BaseMemoryStore):
                 GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items()},
             })
         return memories
+
+    def get_profile_summary(self,user_id: str,max_chars: int = 500) -> str:
+        """
+        Get a brief summary of the user's current active profile for extracting node injection prompts
+
+        Args:
+            user_id: unique user id
+            max_chars: maximum number of characters to display
+
+        Returns:
+            each line "- entity_key: content (confidence X.XX)"
+            If there is no profile, return "No known profile."
+        """
+        try:
+            memories = self.get_all_user_profile_memories(user_id,MemoryStatus.ACTIVE.value)
+            if not memories:
+                return "暂无已知用户画像"
+
+            #messages are sorted by last accessed time or creation time
+            def get_ts(mem):
+                meta = mem.get(GeneralFieldNames.METADATA,{})
+                ts_str = meta.get(GeneralFieldNames.LAST_ACCESSED_AT) or meta.get(GeneralFieldNames.CREATED_AT)
+                if ts_str:
+                    try:
+                        return datetime.fromisoformat(ts_str)
+                    except:
+                        pass
+                    return datetime.min
+            memories.sort(key=get_ts, reverse=True)
+
+            #sensitive field desensitization regex(example: phone/email)
+            SENSITIVE_KEYS = {'contact', 'phone', 'email'}
+            def mask_content(key,content):
+                if not isinstance(content,str):
+                    return content
+                if key in SENSITIVE_KEYS:
+                    if len(content) > 4:
+                        return content[:2] + "*" * (len(content)-4) + content[-2:]
+                    else:
+                        return "***"
+
+            lines = []
+            total_chars = 0
+            for mem in memories:
+                metadata = mem.get(GeneralFieldNames.METADATA, {})
+                entity_key = metadata.get(GeneralFieldNames.ENTITY_KEY, 'unknown')
+                content = mem.get(GeneralFieldNames.TEXT, '')
+                confidence = metadata.get(GeneralFieldNames.CONFIDENCE, 0.0)
+                #mask sensitive content
+                content_masked = mask_content(entity_key, content)
+                line = f"- {entity_key}: {content_masked} (置信度 {confidence:.2f})"
+
+                if total_chars + len(line) > max_chars:
+                    break
+                lines.append(line)
+                total_chars += len(line) + 1
+
+            if not lines:
+                return "暂无已知用户画像"
+            result = "\n".join(lines)
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get user profile summary: {e}")
+            return "暂无已知用户画像"
+
+    def get_extraction_cursor(self, user_id: str) -> Optional[int]:
+        logger.info(f"get_extraction_cursor called for {user_id} (not implemented)")
+        return None
+
+    def set_extraction_cursor(self, user_id: str, message_index: int) -> None:
+        logger.info(f"set_extraction_cursor called for {user_id} to {message_index} (not implemented)")

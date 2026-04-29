@@ -6,8 +6,11 @@ from langgraph.constants import END
 from langgraph.graph import StateGraph
 
 from agent.checkpointer import get_checkpointer
-from agent.nodes import retrieve_memory_node, compliance_guard_node, call_model_node, extract_profile_node, \
-    log_interaction_node
+from agent.nodes.call_llm_node import call_model_node
+from agent.nodes.compliance_guard_node import compliance_guard_node
+from agent.nodes.extract_profile_node import extract_profile_node
+from agent.nodes.retrieve_memory_node import retrieve_memory_node
+from agent.nodes.summary_interaction_node import log_interaction_node
 from agent.state import AgentState
 from memory.base_memory_store import BaseMemoryStore
 from config.constants import AgentNodeName, StateFields
