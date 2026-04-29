@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 
-from config.constants import SearchStrategy, MemoryType
+from config.constants import MemoryType
 from query.query_model import Query
 
 

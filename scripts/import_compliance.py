@@ -5,9 +5,8 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
-from config.settings import config
-from memory.memory_vector_store.chroma_vector_store import ChromaVectorStore
 from config.constants import MemoryType, MemoryStatus, SpecialUserID
+from config.settings import agentConfig
 from memory.memory_vector_store.milvus_vector_store import MilvusVectorStore
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -19,7 +18,7 @@ def import_compliance_rules(json_path: str):
     """导入合规规则到长期记忆"""
     # vector_store = ChromaVectorStore("../chromadb")
     # store = LongTermMemoryStore(vector_store=vector_store)
-    vec = MilvusVectorStore(config.milvus_uri)
+    vec = MilvusVectorStore(agentConfig.milvus_uri)
     store = LongTermMemoryStore(vector_store=vec)
 
     with open(json_path, "r", encoding="utf-8") as f:
@@ -58,7 +57,7 @@ def import_compliance_rules(json_path: str):
 
 if __name__ == "__main__":
     import_compliance_rules("../data/rules/compliance_rules.json")
-    vec = MilvusVectorStore(config.milvus_uri)
+    vec = MilvusVectorStore(agentConfig.milvus_uri)
     store = LongTermMemoryStore(vector_store=vec)
 
     rules = store.get_active_compliance_rules(limit=15)

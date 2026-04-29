@@ -3,7 +3,7 @@
 import logging
 from typing import Optional, List, Dict, Any
 
-from config.settings import config
+from config.settings import agentConfig
 from memory.base_memory_store import BaseMemoryStore
 from config.constants import MemoryType
 from retriever.base import BaseRetriever
@@ -29,7 +29,7 @@ class VectorRetriever(BaseRetriever):
         - compliance_rule: get all active rules and sorted by severity
         - interaction_log: do not perform semantic retrieval, directly return the most recent N entries (in reverse chronological order)
         """
-        top_k = top_k if top_k else config.retrieval_top_k
+        top_k = top_k if top_k else agentConfig.retrieval_top_k
         types = memory_types or [MemoryType.USER_PROFILE, MemoryType.INTERACTION_LOG, MemoryType.COMPLIANCE_RULE]
 
         results = {}

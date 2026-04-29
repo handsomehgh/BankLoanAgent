@@ -4,7 +4,7 @@ import logging
 import time
 
 from config.constants import MemoryType, MemorySource, EvidenceType, MemoryStatus, GeneralFieldNames
-from config.settings import config
+from config.settings import agentConfig
 from memory.long_term_memory_store import LongTermMemoryStore
 from memory.memory_vector_store.milvus_vector_store import MilvusVectorStore
 
@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def get_store() -> LongTermMemoryStore:
-    vs = MilvusVectorStore(config.milvus_uri)
+    vs = MilvusVectorStore(agentConfig.milvus_uri)
     return LongTermMemoryStore(vs)
 
 def cleanup_user(store: LongTermMemoryStore,user_id: str):

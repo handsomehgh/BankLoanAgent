@@ -9,7 +9,7 @@ from langchain_core.runnables import RunnableConfig
 from agent.state import AgentState
 from config.constants import ConfigFields, StateFields, GeneralFieldNames, MemorySource, MemoryStatus, \
     InteractionEventType, MemoryType
-from config.settings import config
+from config.settings import agentConfig
 from llm.chat_models import get_llm
 from memory.base_memory_store import BaseMemoryStore
 from memory.classifiers import detect_sentiment
@@ -19,15 +19,15 @@ logger = logging.getLogger(__name__)
 llm = get_llm()
 
 
-def log_interaction_node(state: AgentState, agent_config: RunnableConfig, memory_store: BaseMemoryStore):
+def log_interaction_node(state: AgentState, config: RunnableConfig, memory_store: BaseMemoryStore):
     """generate a conversation summary and store it in the interaction memory"""
     # obtain session_id
-    configurable = agent_config.get(ConfigFields.CONFIGURABLE.value, {})
+    configurable = config.get(ConfigFields.CONFIGURABLE.value, {})
     session_id = configurable.get(ConfigFields.THREAD_ID.value, "unknown")
 
     recent = state.get(StateFields.MESSAGES.value, [])
-    if len(recent) > config.interaction_recent_num:
-        recent = recent[-config.interaction_recent_num:]
+    if len(recent) > agentConfig.interaction_recent_num:
+        recent = recent[-agentConfig.interaction_recent_num:]
     conversation = "\n".join(
         format_message(m)
         for m in recent

@@ -4,7 +4,7 @@ from typing import List, Optional
 from langchain_community.embeddings import DashScopeEmbeddings
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from config.settings import config
+from config.settings import agentConfig
 from exceptions.exception import EmbeddingTimeoutError, EmbeddingRateLimitError, EmbeddingError
 
 logger = logging.getLogger(__name__)
@@ -15,8 +15,8 @@ class RobustEmbeddings:
                  model_name: Optional[str] = None,
                  backup_model_name: Optional[str] = None,
                  dimensions: int = 1024):
-        self.model_name = model_name or config.qwen_emb_name
-        self.backup_model_name = backup_model_name or getattr(config, 'qwen_emb_name_backup', None)
+        self.model_name = model_name or agentConfig.qwen_emb_name
+        self.backup_model_name = backup_model_name or getattr(agentConfig, 'qwen_emb_name_backup', None)
         self.dimensions = dimensions
         self._primary = None
         self._backup = None
@@ -24,7 +24,7 @@ class RobustEmbeddings:
     def _create(self, model_name: str) -> DashScopeEmbeddings:
         """创建 embedding 实例，**model 参数必须使用传入的 model_name**"""
         return DashScopeEmbeddings(
-            dashscope_api_key=config.alibaba_api_key,
+            dashscope_api_key=agentConfig.alibaba_api_key,
             model=model_name
         )
 

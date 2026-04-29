@@ -85,11 +85,11 @@ class BankLoanAgentConfig(BaseSettings):
 
 
 try:
-    config = BankLoanAgentConfig()
+    agentConfig = BankLoanAgentConfig()
 except ValidationError as e:
     print("❌ 配置验证失败，请检查 .env 文件是否存在且包含以下必填项：")
     print(e)
     sys.exit(1)
 
 if __name__ == '__main__':
-    print(config)
+    print(agentConfig)

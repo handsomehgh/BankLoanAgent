@@ -6,8 +6,8 @@ import json
 import logging
 from datetime import datetime
 
-from config.settings import config
 from config.constants import MemoryType, MemorySource, MemoryStatus, EvidenceType
+from config.settings import agentConfig
 
 from memory.long_term_memory_store import LongTermMemoryStore
 from memory.memory_vector_store.milvus_vector_store import MilvusVectorStore
@@ -56,7 +56,7 @@ def import_profiles(jsonl_path: str):
 
 def verify_import():
     """verify import module"""
-    vec = MilvusVectorStore(config.milvus_uri)
+    vec = MilvusVectorStore(agentConfig.milvus_uri)
     store = LongTermMemoryStore(vec)
 
     print("\n" + "=" * 60)

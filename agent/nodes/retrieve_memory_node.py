@@ -3,15 +3,16 @@
 import logging
 
 from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
 
 from agent.state import AgentState
-from config.constants import MemoryType, StateFields, GeneralFieldNames, MemoryCommonFields, MessageCommonFields
+from config.constants import MemoryType, StateFields, GeneralFieldNames, MessageCommonFields
 from retriever.base import BaseRetriever
 
 logger = logging.getLogger(__name__)
 
 
-def retrieve_memory_node(state: AgentState, retrieval: BaseRetriever) -> dict:
+def retrieve_memory_node(state: AgentState,config: RunnableConfig, retrieval: BaseRetriever) -> dict:
     """
     retrieve memory and assign a globally incrementing sequence to all unnumbered user/assistant mesasges
     """

@@ -8,7 +8,7 @@ import json
 import logging
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union, get_origin, get_args
+from typing import Any, Dict,Union, get_origin, get_args
 
 from exceptions.exception import MappingError
 from memory.models.memory_data.memory_base import MemoryBase

@@ -9,8 +9,8 @@ from langchain_community.vectorstores.utils import maximal_marginal_relevance
 from pymilvus import connections, MilvusException, Collection, AnnSearchRequest, RRFRanker
 from pymilvus.orm import utility
 
-from config.settings import config
 from config.constants import MemoryType, SearchStrategy, GeneralFieldNames, CollectionNames
+from config.settings import agentConfig
 from llm.embeddings import get_embeddings
 from query.milvus_query_builder import MilvusQueryBuilder
 from query.query_model import Query
@@ -146,7 +146,7 @@ class MilvusVectorStore(BaseVectorStore):
             limit: int = 5
     ) -> List[Dict]:
         """unified search entrance"""
-        search_strategy = config.default_search_strategy
+        search_strategy = agentConfig.default_search_strategy
         # confirm the final strategy
         if search_strategy == SearchStrategy.AUTO:
             strategy = self._infer_strategy(query, memory_type)
@@ -363,8 +363,8 @@ class MilvusVectorStore(BaseVectorStore):
     def _infer_strategy(self, query, memory_type) -> SearchStrategy:
         """dynamically select retrieval strategies based on query content and memory type"""
         # global configuration override
-        if config.default_search_strategy != SearchStrategy.AUTO:
-            return config.default_search_strategy
+        if agentConfig.default_search_strategy != SearchStrategy.AUTO:
+            return agentConfig.default_search_strategy
 
         # query feature recognition
         if len(query) < 5 and any(c.isdigit() or c.isascii() for c in query):

@@ -3,8 +3,6 @@
 from dataclasses import dataclass, field
 from typing import Literal, Any, List
 
-from sqlalchemy.orm import defer
-
 
 @dataclass
 class Condition:

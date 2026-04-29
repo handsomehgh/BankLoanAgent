@@ -4,7 +4,6 @@ from typing import Optional, List, Any
 
 from pydantic import Field, field_validator
 
-from config.settings import config
 from config.constants import (
     EvidenceType,
     InteractionEventType,
@@ -13,6 +12,7 @@ from config.constants import (
     ComplianceSeverity,
     MemorySource, MemoryStatus,
 )
+from config.settings import agentConfig
 from memory.models.memory_data.memory_base import MemoryBase
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ class UserProfileMemory(MemoryBase):
         try:
             return EvidenceType(v)
         except ValueError:
-            if config.strict_enum_validation:
+            if agentConfig.strict_enum_validation:
                 raise ValueError(f"Invalid evidence_type '{v}'. Must be one of {[e.value for e in EvidenceType]}")
             logger.warning(f"Invalid evidence_type '{v}', fallback to EXPLICIT_STATEMENT")
             return EvidenceType.EXPLICIT_STATEMENT
@@ -62,7 +62,7 @@ class InteractionLogMemory(MemoryBase):
         try:
             return InteractionEventType(v)
         except ValueError:
-            if config.STRICT_ENUM_VALIDATION:
+            if agentConfig.STRICT_ENUM_VALIDATION:
                 raise ValueError(f"Invalid event_type '{v}'. Must be one of {[e.value for e in InteractionEventType]}")
             logger.warning(f"Invalid event_type '{v}', fallback to INQUIRY")
             return InteractionEventType.INQUIRY
@@ -77,7 +77,7 @@ class InteractionLogMemory(MemoryBase):
         try:
             return InteractionSentiment(v)
         except ValueError:
-            if config.STRICT_ENUM_VALIDATION:
+            if agentConfig.STRICT_ENUM_VALIDATION:
                 raise ValueError(f"Invalid sentiment '{v}'. Must be one of {[e.value for e in InteractionSentiment]}")
             logger.warning(f"Invalid sentiment '{v}', ignoring sentiment")
             return None
@@ -112,7 +112,7 @@ class ComplianceRuleMemory(MemoryBase):
         try:
             return ComplianceAction(v)
         except ValueError:
-            if config.STRICT_ENUM_VALIDATION:
+            if agentConfig.STRICT_ENUM_VALIDATION:
                 raise ValueError(f"Invalid action '{v}'. Must be one of {[e.value for e in ComplianceAction]}")
             logger.warning(f"Invalid action '{v}', fallback to WARN")
             return ComplianceAction.WARN
@@ -125,7 +125,7 @@ class ComplianceRuleMemory(MemoryBase):
         try:
             return ComplianceSeverity(v)
         except ValueError:
-            if config.STRICT_ENUM_VALIDATION:
+            if agentConfig.STRICT_ENUM_VALIDATION:
                 raise ValueError(f"Invalid severity '{v}'. Must be one of {[e.value for e in ComplianceSeverity]}")
             logger.warning(f"Invalid severity '{v}', fallback to MEDIUM")
             return ComplianceSeverity.MEDIUM

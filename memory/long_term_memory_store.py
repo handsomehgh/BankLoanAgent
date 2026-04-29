@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any, List
 import numpy as np
 from chromadb.errors import ChromaError
 
-from config.settings import config
+from config.settings import agentConfig
 from exceptions.exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
 from memory.classifiers.rules.rules_loader import get_evidence_loader
 from query.query_model import Condition, Query
@@ -37,7 +37,7 @@ class LongTermMemoryStore(BaseMemoryStore):
         self.vector_store = vector_store
 
         # dead letter queue
-        self.dlq_path = Path(config.memory_dlq_path)
+        self.dlq_path = Path(agentConfig.memory_dlq_path)
         self.dlq_path.parent.mkdir(parents=True, exist_ok=True)
         logger.info("ChromaMemoryStore initialized with vector_store")
 
@@ -339,7 +339,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             except Exception as e:
                 continue
 
-            threshold = threshold or config.decay_threshold
+            threshold = threshold or agentConfig.decay_threshold
             decay_factor = self._calculate_decay_factor(model)
             if decay_factor < threshold:
                 try:
@@ -379,7 +379,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             days = (datetime.now() - last).days
         except:
             days = 0
-        return np.exp(-config.decay_factor * days)
+        return np.exp(-agentConfig.decay_factor * days)
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
     def _update_last_accessed(self, memory_type: MemoryType, memory_id: str):

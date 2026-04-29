@@ -4,8 +4,8 @@ from typing import Dict, Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from config.settings import config
 from config.constants import MemoryStatus, GeneralFieldNames
+from config.settings import agentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class MemoryBase(BaseModel):
         try:
             return MemoryStatus(v)
         except ValueError:
-            if config.STRICT_ENUM_VALIDATION:
+            if agentConfig.STRICT_ENUM_VALIDATION:
                 raise ValueError(f"Invalid status '{v}'. Must be one of {[e.value for e in MemoryStatus]}")
             logger.warning(f"Invalid status '{v}', fallback to ACTIVE")
             return MemoryStatus.ACTIVE

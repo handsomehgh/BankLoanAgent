@@ -12,7 +12,7 @@ from langchain_core.runnables import RunnableConfig
 from agent.state import AgentState
 from config.constants import StateFields, PromptKeys, ProfileEntityKey, GeneralFieldNames, MemorySource, MemoryStatus, \
     MemoryType, MessageCommonFields
-from config.settings import config
+from config.settings import agentConfig
 from exceptions.exception import MemoryWriteFailedError
 from llm.chat_models import get_llm
 from memory.base_memory_store import BaseMemoryStore
@@ -54,7 +54,7 @@ def _get_new_user_messages(
         return []
 
     if fallback_window is None:
-        fallback_window = config.profile_extraction_fallback_window
+        fallback_window = agentConfig.profile_extraction_fallback_window
 
     if last_extracted_index is None:
         recent = messages[-fallback_window:] if len(messages) > fallback_window else messages
@@ -81,7 +81,7 @@ def _get_new_user_messages(
         return [m for m in recent if isinstance(m, HumanMessage)]
 
 
-def extract_profile_node(state: AgentState, agent_config: RunnableConfig, memory_store: BaseMemoryStore) -> dict:
+def extract_profile_node(state: AgentState, config: RunnableConfig, memory_store: BaseMemoryStore) -> dict:
     """extract user profile and save to store"""
     # get user id
     user_id = state.get(StateFields.USER_ID.value)

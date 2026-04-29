@@ -13,7 +13,7 @@ from memory.classifiers.rules.rules_loader import get_compliance_loader
 
 logger = logging.getLogger(__name__)
 
-def compliance_guard_node(state: AgentState, agent_config: RunnableConfig, memory_store: BaseMemoryStore) -> dict:
+def compliance_guard_node(state: AgentState, config: RunnableConfig, memory_store: BaseMemoryStore) -> dict:
     """
     compliance check node:
     scan user input and draft response before generating answers to intercept non-compliant content

@@ -32,19 +32,19 @@ def build_graph(memory_store: BaseMemoryStore, retriever: BaseRetriever):
 
     # =========================== register node =================================
     # retrieve node:get long term memory for vector store
-    workflow.add_node(AgentNodeName.RETRIEVE.value, partial(retrieve_memory_node, retriever))
+    workflow.add_node(AgentNodeName.RETRIEVE.value, partial(retrieve_memory_node, retriever=retriever))
 
     # compliance interception node: scan user input,and if high-risk rules are hit,directly return interception phrasing
-    workflow.add_node(AgentNodeName.COMPLIANCE_GUARD.value, partial(compliance_guard_node, memory_store))
+    workflow.add_node(AgentNodeName.COMPLIANCE_GUARD.value, partial(compliance_guard_node, memory_store=memory_store))
 
     # generate answer node,inject context and invoke llm
     workflow.add_node(AgentNodeName.CALL_MODEL.value, call_model_node)
 
     # profile extract node,extract user profiles from conversation and store them in long term memory
-    workflow.add_node(AgentNodeName.EXTRACT_PROFILE.value, partial(extract_profile_node, memory_store))
+    workflow.add_node(AgentNodeName.EXTRACT_PROFILE.value, partial(extract_profile_node, memory_store=memory_store))
 
     # interaction log node,generate,generate a conversation summary and store it in the interaction trajectory memory
-    workflow.add_node(AgentNodeName.LOG_INTERACTION.value, partial(log_interaction_node, memory_store))
+    workflow.add_node(AgentNodeName.LOG_INTERACTION.value, partial(log_interaction_node, memory_store=memory_store))
 
     # =========================== define entry =================================
     workflow.set_entry_point(AgentNodeName.RETRIEVE.value)

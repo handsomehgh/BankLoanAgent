@@ -9,7 +9,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, before_sleep_log
 
-from config.settings import config
+from config.settings import agentConfig
 from exceptions.exception import LLMTimeoutError, LLMRateLimitError, LLMError
 
 logger = logging.getLogger(__name__)
@@ -60,24 +60,24 @@ class RobustLLM:
         self.llm = self._create_llm()
 
     def _create_llm(self) -> BaseChatModel:
-        if config.llm_provider == "deepseek":
+        if agentConfig.llm_provider == "deepseek":
             return _create_llm_instance(
-                config.deepseek_api_key,
-                config.deepseek_base_url,
-                config.deepseek_llm_name,
+                agentConfig.deepseek_api_key,
+                agentConfig.deepseek_base_url,
+                agentConfig.deepseek_llm_name,
                 self.temperature,
-                config.deepseek_provider,
+                agentConfig.deepseek_provider,
             )
-        elif config.llm_provider == "qwen":
+        elif agentConfig.llm_provider == "qwen":
             return _create_llm_instance(
-                config.alibaba_api_key,
-                config.alibaba_base_url,
-                config.qwen_llm_name,
+                agentConfig.alibaba_api_key,
+                agentConfig.alibaba_base_url,
+                agentConfig.qwen_llm_name,
                 self.temperature,
-                config.openai_provider,
+                agentConfig.openai_provider,
             )
         else:
-            raise LLMError(f"Unsupported provider: {config.llm_provider}")
+            raise LLMError(f"Unsupported provider: {agentConfig.llm_provider}")
 
     def invoke(self, messages):
         return _invoke_with_retry(self.llm,messages)

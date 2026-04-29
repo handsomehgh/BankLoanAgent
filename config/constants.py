@@ -1,6 +1,6 @@
 # author hgh
 # version 1.0
-from enum import Enum, StrEnum
+from enum import Enum
 
 
 # ========================= memory type ================================

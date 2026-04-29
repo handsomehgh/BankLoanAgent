@@ -7,7 +7,7 @@ import logging
 import uuid
 from langchain_core.messages import HumanMessage, AIMessage
 from agent.graph import build_graph
-from config.settings import config
+from config.settings import agentConfig
 from query.chroma_query_builder import ChromaQueryBuilder
 from query.milvus_query_builder import MilvusQueryBuilder
 from memory.long_term_memory_store import LongTermMemoryStore
@@ -16,17 +16,20 @@ from memory.memory_vector_store.milvus_vector_store import MilvusVectorStore
 from retriever.memory_retriever import VectorRetriever
 from config.constants import MemoryType
 
-logging.basicConfig(level=config.log_level)
+import streamlit.watcher.local_sources_watcher as watcher
+watcher.MODULE_IGNORE_LIST = ["transformers"]  # 忽略 transformers 模块的路径检查
+
+logging.basicConfig(level=agentConfig.log_level)
 logger = logging.getLogger(__name__)
 
 
-if config.vector_backend == "chroma":
+if agentConfig.vector_backend == "chroma":
     query_builder = ChromaQueryBuilder()
-    vector_store = ChromaVectorStore(persist_dir=config.chroma_persist_dir)
+    vector_store = ChromaVectorStore(persist_dir=agentConfig.chroma_persist_dir)
 else:
     # 预留 Milvus
     query_builder = MilvusQueryBuilder()
-    vector_store = MilvusVectorStore(uri=config.milvus_uri)
+    vector_store = MilvusVectorStore(uri=agentConfig.milvus_uri)
 
 st.set_page_config(page_title="银行贷款助手", page_icon="🏦")
 st.title("🏦 银行贷款顾问助手（生产级错误处理）")
@@ -34,7 +37,6 @@ st.title("🏦 银行贷款顾问助手（生产级错误处理）")
 # ==================== 初始化 ====================
 if "memory_store" not in st.session_state:
     try:
-        # 修正：移除多余的 query_builder 参数
         st.session_state.memory_store = LongTermMemoryStore(vector_store=vector_store)
     except Exception as e:
         st.error(f"记忆存储初始化失败: {e}")
@@ -44,7 +46,7 @@ if "retriever" not in st.session_state:
     st.session_state.retriever = VectorRetriever(st.session_state.memory_store)
 
 if "user_id" not in st.session_state:
-    st.session_state.user_id = "default_user"
+    st.session_state.user_id = "test_user_001"
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 if "agent" not in st.session_state:

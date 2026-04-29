@@ -6,9 +6,8 @@ from typing import Dict, Any, List, Optional
 import chromadb
 from chromadb import Settings
 from chromadb.errors import ChromaError
-from chromadb.utils import embedding_functions
 
-from config.constants import ChromaResFields, SearchStrategy, CollectionNames, MemoryType, GeneralFieldNames
+from config.constants import ChromaResFields,CollectionNames, MemoryType, GeneralFieldNames
 from query.chroma_query_builder import ChromaQueryBuilder
 from query.query_model import Query
 from memory.models.memory_mappers.mappers import MemoryToStorageMapper

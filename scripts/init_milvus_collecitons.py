@@ -20,8 +20,8 @@ from pathlib import Path
 from pymilvus import FieldSchema, DataType, connections, Collection, MilvusException, CollectionSchema, utility, \
     Function, FunctionType
 
-from config.settings import config
-from config.constants import MemoryType, CollectionNames
+from config.constants import MemoryType
+from config.settings import agentConfig
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -120,10 +120,10 @@ def connect_milvus():
     try:
         connections.connect(
             alias="default",
-            uri=config.milvus_uri,
+            uri=agentConfig.milvus_uri,
             timeout=30
         )
-        logger.info(f"Connected to milvus at: {config.milvus_uri}")
+        logger.info(f"Connected to milvus at: {agentConfig.milvus_uri}")
     except Exception as e:
         logger.error(f"Failed to connect to Milvus: {e}")
         sys.exit(1)
@@ -253,7 +253,7 @@ if __name__ == '__main__':
     #     sys.exit(1)
     connections.connect(
         alias="default",
-        uri=config.milvus_uri,
+        uri=agentConfig.milvus_uri,
         timeout=30
     )
     col = Collection(name=COLLECTION_NAMES[MemoryType.USER_PROFILE.value])
