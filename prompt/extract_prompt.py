@@ -12,12 +12,19 @@ EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
 - `occupation`: 职业、职位、行业
 - `loan_purpose`: 贷款用途（如购房、装修、经营周转）
 - `loan_amount`: 期望贷款金额
-- `loan_term`: 期望贷款期限（单位：年或月）
-- `asset`: 资产状况（房产、车辆、存款等）
-- `liability`: 负债情况（现有贷款、信用卡欠款等）
 - `credit_score`: 信用评分或征信状况
-- `preference`: 产品偏好（如固定利率、随借随还、低风险）
-- `contact`: 联系方式变更
+- `has_overdue_history`: 是否有逾期记录
+- `liability`: 负债情况（现有贷款、信用卡欠款等）
+- `loan_term`: 期望贷款期限（单位：年或月）
+- `marital_status`: 婚姻状况（已婚/未婚/离异）
+- `dependents`: 供养人数
+- `asset`: 资产状况（房产、车辆、存款等）
+- `existing_bank_relationship`: 是否有本行业务（代发薪、理财、存款等）
+- `contact`: 联系方式
+- `work_years`: 工作年限
+- `household_registration`: 户籍所在地
+- `industry_type`: 所在行业
+- `loan_experience`: 是否有过贷款经历
 
 ## 置信度 (confidence) 评分标准
 请根据陈述的**明确程度**和**证据支撑**综合打分：

@@ -3,15 +3,16 @@
 import logging
 import re
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 
+import yaml
 from langchain_core.messages import HumanMessage, BaseMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableConfig
 
 from agent.state import AgentState
 from config.constants import StateFields, PromptKeys, ProfileEntityKey, GeneralFieldNames, MemorySource, MemoryStatus, \
-    MemoryType, MessageCommonFields
+    MemoryType, MessageCommonFields, ProfileGateConfigFields
 from config.settings import agentConfig
 from exceptions.exception import MemoryWriteFailedError
 from llm.chat_models import get_llm
@@ -24,20 +25,92 @@ from utils.parser import safe_parse_extraction_output
 logger = logging.getLogger(__name__)
 llm = get_llm()
 
-_PROFILE_SIGNALS = re.compile(
-    r"(我是|我叫|我姓|我在|我今年|我住|我电话|我邮箱|我职业|我工作|我爱好|"
-    r"年龄|生日|地址|手机号|月入|年薪|收入|贷款|负债|资产|"
-    r"公司|岗位|职位|偏好|想要|需要|计划|职业|行业|"
-    r"利率|期限|信用|征信|变更|更新|更改|修改|改成)",
-    re.IGNORECASE
-)
+
+def _load_gate_config() -> Dict:
+    """load the gate configuration file,and use hard_coded defaults value if it fails"""
+    path = agentConfig.profile_gate_config_path
+    default_config = {
+        "strong_patterns": [
+            r'\d+\s*(?:万|元|岁|年|月|天|k|w|块|毛)',
+            r'1[3-9]\d{9}',
+            r'不对|错了|其实是|应该是|实际上是|更正一下|更新一下|确切说|准确来说|我记错了'
+        ],
+        "explicit_triggers": [
+            r'(?:我(?:想|要|需要|要求|准备)|请(?:帮我|给我))(?:更改|修改|更新|变更|改成|改为)',
+            r'现在(?:是|在)|已经(?:是|在)|我刚换|我最近换|我(?:刚|才)换'
+        ],
+        "weak_signals": [
+            {"words": ["公司", "工作", "收入", "工资", "贷款", "资产", "负债"], "score": 2},
+            {"words": ["结婚", "孩子", "父母", "学历"], "score": 1}
+        ],
+        "threshold": 4
+    }
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            config_data = yaml.safe_load(f)
+            if not config_data:
+                raise ValueError("Empty config file")
+            for key in [ProfileGateConfigFields.STRONG_PATTERNS, ProfileGateConfigFields.EXPLICIT_TRIGGERS,
+                        ProfileGateConfigFields.WEAK_SIGNALS, ProfileGateConfigFields.MATCH_THRESHOLD]:
+                if key not in config_data:
+                    raise ValueError(f"Missing key '{key}' in gate config")
+            logger.info(f"Profile gate config loaded from {path}")
+            return config_data
+    except Exception as e:
+        logger.warning(f"Failed to load gate config from {path}: {e}. Using built-in defaults.")
+        return default_config
+
+
+_gate_config = _load_gate_config()
+
+# strong signal regular merging
+_STRONG_SIGNALS_RULES = _gate_config[ProfileGateConfigFields.STRONG_PATTERNS]
+_STRONG_SIGNALS = re.compile('|'.join(f'(?:{p})' for p in _STRONG_SIGNALS_RULES), re.IGNORECASE)
+
+# explicit instruction regular merging
+_EXPLICIT_TRIGGERS_RULES = _gate_config[ProfileGateConfigFields.EXPLICIT_TRIGGERS]
+_EXPLICIT_TRIGGERS = re.compile('|'.join(f'(?:{p})' for p in _EXPLICIT_TRIGGERS_RULES), re.IGNORECASE)
+
+# weak signal lexicon: {words: score}
+_WEAK_SIGNALS_DICT: Dict[str, int] = {}
+for group in _gate_config[ProfileGateConfigFields.WEAK_SIGNALS]:
+    score = int(group[ProfileGateConfigFields.SCORE])
+    for word in group[ProfileGateConfigFields.WORDS]:
+        _WEAK_SIGNALS_DICT[word.lower()] = score
+
+_WEAK_SIGNAL_THRESHOLD = int(_gate_config[ProfileGateConfigFields.MATCH_THRESHOLD])
 
 
 def _likely_contains_profile(user_messages: List[BaseMessage]) -> bool:
-    for m in user_messages:
-        if _PROFILE_SIGNALS.search(m.content):
+    """
+    Production-level gating (profile-based):
+        - Explicit update command → trigger directly
+        - Strong signal regular match → trigger directly
+        - Weak signal accumulation ≥ threshold → trigger
+        - Otherwise return False
+    """
+    for msg in user_messages:
+        content = msg.content if hasattr(msg, 'content') else ""
+        if not content:
+            continue
+
+        # 显式更新指令
+        if _EXPLICIT_TRIGGERS.search(content):
             return True
-        return False
+
+        # 强信号快速通道
+        if _STRONG_SIGNALS.search(content):
+            return True
+
+        # 弱信号累积
+        score = 0
+        for word, point in _WEAK_SIGNALS_DICT.items():
+            if re.search(r'\b' + re.escape(word) + r'\b', content, re.IGNORECASE):
+                score += point
+                if score >= _WEAK_SIGNAL_THRESHOLD:
+                    return True
+
+    return False
 
 
 def _get_new_user_messages(

@@ -59,9 +59,26 @@ class BankLoanAgentConfig(BaseSettings):
     interaction_log_min_new_msgs: int = Field(10, validation_alias="INTERACTION_LOG_MIN_NEW_MSGS")
     interaction_log_max_context: int = Field(50, validation_alias="INTERACTION_LOG_MAX_CONTEXT")
 
+    #compliance rules memory cache time
+    compliance_cache_ttl: int = Field(300, validation_alias="COMPLIANCE_CACHE_TTL")
+
+    #minimum similarity for user profile retrieval
+    retrieval_min_similarity: float = Field(0.3, validation_alias="RETRIEVAL_MIN_SIMILARITY")
+
+    #profile gate file
+    profile_gate_config_path: str = Field(
+        default_factory=lambda: os.environ.get(
+            "PROFILE_GATE_CONFIG_PATH",
+            os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "profile_gate.yaml")
+            )
+        )
+    )
+
     #memory dlq path
     memory_dlq_path: str = Field(...,validation_alias="MEMORY_DLQ_PATH")
 
+    #db type
     vector_backend: str = Field(...,validation_alias="VECTOR_BACKEND")
 
     #milvus

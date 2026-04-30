@@ -2,6 +2,8 @@
 # version 1.0
 import json
 import logging
+import threading
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -39,7 +41,13 @@ class LongTermMemoryStore(BaseMemoryStore):
         # dead letter queue
         self.dlq_path = Path(agentConfig.memory_dlq_path)
         self.dlq_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info("ChromaMemoryStore initialized with vector_store")
+
+        # compliance rules cache
+        self._compliance_rule_cache: Optional[List[Dict[str, Any]]] = None
+        self._compliance_cache_time: float = 0
+        self._compliance_cache_lock = threading.Lock()
+
+        logger.info("LongTermMemoryStore initialized with vector_store")
 
     def _write_to_dlq(
             self, user_id: str, content: str, model: MemoryBase, memory_type: MemoryType
@@ -427,7 +435,38 @@ class LongTermMemoryStore(BaseMemoryStore):
         memories.sort(key=get_timestamp, reverse=True)
         return memories[:limit]
 
-    def get_active_compliance_rules(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_active_compliance_rules(self,limit: int = 10) -> List[Dict[str,Any]]:
+        """get all active compliance rules with caching"""
+        now = time.time()
+        cache_ttl = agentConfig.compliance_cache_ttl
+
+        #attempt to get cache
+        with self._compliance_cache_lock:
+            if (self._compliance_rule_cache is not None and
+                    cache_ttl > 0 and
+                    (now - self._compliance_cache_time) < cache_ttl):
+                logger.debug("Returning compliance rules from cache")
+                return list(self._compliance_rule_cache)
+
+        #cache miss,fetch again
+        try:
+            fresh_rules = self._get_active_compliance_rules_uncached(limit)
+        except Exception as e:
+            logger.error(f"Failed to retrieve compliance rules: {e}")
+            with self._compliance_cache_lock:
+                if self._compliance_rule_cache is not None:
+                    logger.warning("Using stale compliance cache due to retrieval error")
+                    return list(self._compliance_rule_cache)
+            return []
+
+        #update cache
+        with self._compliance_cache_lock:
+            self._compliance_rule_cache = fresh_rules
+            self._compliance_cache_time = now
+
+        return fresh_rules
+
+    def _get_active_compliance_rules_uncached(self, limit: int = 10) -> List[Dict[str, Any]]:
         where = Query(conditions=[Condition(field=GeneralFieldNames.STATUS, op="==", value=MemoryStatus.ACTIVE.value)])
 
         try:

@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Any
 
 from config.settings import agentConfig
 from memory.base_memory_store import BaseMemoryStore
-from config.constants import MemoryType
+from config.constants import MemoryType, GeneralFieldNames
 from retriever.base import BaseRetriever
 
 logger = logging.getLogger(__name__)
@@ -36,13 +36,20 @@ class VectorRetriever(BaseRetriever):
         for mem_type in types:
             try:
                 if mem_type == MemoryType.USER_PROFILE:
-                    results[mem_type.value] = self.memory_store.search_memory(
+                    results = self.memory_store.search_memory(
                         user_id=user_id,
                         query=query,
                         memory_type=mem_type,
                         limit=top_k,
                         apply_decay=True
                     )
+
+                    #minimum similarity filtering
+                    min_sim = agentConfig.retrieval_min_similarity
+                    filtered = [r for r in results if r.get(GeneralFieldNames.DECAYED_SIMILARITY, 0) >= min_sim]
+                    results[mem_type.value] = filtered[:top_k]
+                    logger.debug(f"User profile retrieval: {len(results)} raw, {len(filtered)} filtered")
+
                 elif mem_type == MemoryType.INTERACTION_LOG:
                     results[mem_type.value] = self.memory_store.get_recent_interactions(
                         user_id=user_id,

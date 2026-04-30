@@ -12,18 +12,34 @@ class MemoryType(str, Enum):
 
 
 # ========================== entity type of user profile ===========================
-class ProfileEntityKey(str, Enum):
-    """Profile entity key enumeration,used for extract prompt and metadata['entity_key'] field"""
-    OCCUPATION = "occupation"
-    INCOME = "income"
-    LOAN_PURPOSE = "loan_purpose"
-    LOAN_AMOUNT = "loan_amount"
-    LOAN_TERM = "loan_term"
-    ASSERT = "assert"
-    LIABILITY = "liability"
-    CREDIT_SCORE = "credit_score"
-    PREFERENCE = "preference"
-    CONTACT = "contact"
+class ProfileEntityKey(Enum):
+    # ======== P0：核心风控（立即启用）========
+    INCOME = "income"                         # annual income or monthly income
+    OCCUPATION = "occupation"                 # occupation/position/industry
+    LOAN_PURPOSE = "loan_purpose"             # loan purpose
+    LOAN_AMOUNT = "loan_amount"               # expected loan amount
+    CREDIT_SCORE = "credit_score"             # credit score or credit status
+    HAS_OVERDUE_HISTORY = "has_overdue_history"  # overdue record
+    LIABILITY = "liability"                   # debt situation
+    CONTACT = "contact"  # contact
+    WORK_YEARS = "work_years"  # years of work experience
+    HOUSEHOLD_REGISTRATION = "household_registration"  # place of household registration
+    INDUSTRY_TYPE = "industry_type"  # industry
+    LOAN_EXPERIENCE = "loan_experience"  # loan experience
+
+    # ======== P1：辅助授信（阶段一/二加入）========
+    LOAN_TERM = "loan_term"                   # expected loan term
+    MARITAL_STATUS = "marital_status"         # marital status
+    DEPENDENTS = "dependents"                 # number of dependents
+    ASSET = "asset"                            # asset status
+    EXISTING_BANK_RELATIONSHIP = "existing_bank_relationship"  # history
+
+    # ======== P2：精细化运营（阶段二 RAG 引入）========
+    PREFERENCE = "preference"                 # product preference
+    INSURANCE_STATUS = "insurance_status"     # social security/provident fund payment status
+    EDUCATION = "education"                   # highest education level
+    RESIDENCE_TYPE = "residence_type"         # residential situation
+
 
     @classmethod
     def to_list(cls) -> list:
@@ -253,6 +269,16 @@ class CollectionNames:
 class MessageCommonFields(str, Enum):
     ADDITIONAL_KWARGS = "additional_kwargs"
     MESSAGE_INDEX = "message_index"
+
+#======================== profile gate config =============================
+class ProfileGateConfigFields:
+    SCORE = "score"
+    WORDS = "words"
+    STRONG_PATTERNS = "strong_patterns"
+    EXPLICIT_TRIGGERS = "explicit_triggers"
+    WEAK_SIGNALS = "weak_signals"
+    MATCH_THRESHOLD = "match_threshold"
+
 
 if __name__ == '__main__':
     print(MemoryType.__members__.values())
