@@ -1,5 +1,3 @@
-# author hgh
-# version 1.0
 from langchain_core.prompts import ChatPromptTemplate
 
 EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
@@ -39,7 +37,7 @@ EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
 **必须直接输出一个合法的 JSON 数组，不要使用 Markdown 代码块包裹，不要添加任何额外说明。**
 
 正确输出示例：
-[{"entity_key": "income", "content": "客户年收入约50万元", "confidence": 0.8}]
+[{{"entity_key": "income", "content": "客户年收入约50万元", "confidence": 0.8}}]
 
 ## 完整示例
 
@@ -50,14 +48,14 @@ EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
 用户: 嗯，年薪大概80万，比之前涨了不少。
 
 正确输出：
-[{"entity_key": "occupation", "content": "客户是字节跳动架构师", "confidence": 0.9}, {"entity_key": "income", "content": "客户年收入约80万元", "confidence": 0.8}]
+[{{"entity_key": "occupation", "content": "客户是字节跳动架构师", "confidence": 0.9}}, {{"entity_key": "income", "content": "客户年收入约80万元", "confidence": 0.8}}]
 
 ### 示例 2：信息更正
 对话内容：
 用户: 我之前说我年收入50万，其实记错了，那是税前，税后到手大概40万。
 
 正确输出：
-[{"entity_key": "income", "content": "客户税后年收入约40万元", "confidence": 0.9}]
+[{{"entity_key": "income", "content": "客户税后年收入约40万元", "confidence": 0.9}}]
 
 ### 示例 3：无新信息
 对话内容：

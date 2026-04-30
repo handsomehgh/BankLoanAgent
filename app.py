@@ -32,7 +32,7 @@ else:
     vector_store = MilvusVectorStore(uri=agentConfig.milvus_uri)
 
 st.set_page_config(page_title="银行贷款助手", page_icon="🏦")
-st.title("🏦 银行贷款顾问助手（生产级错误处理）")
+st.title("🏦 银行贷款顾问助手")
 
 # ==================== 初始化 ====================
 if "memory_store" not in st.session_state:
@@ -46,7 +46,7 @@ if "retriever" not in st.session_state:
     st.session_state.retriever = VectorRetriever(st.session_state.memory_store)
 
 if "user_id" not in st.session_state:
-    st.session_state.user_id = "test_user_001"
+    st.session_state.user_id = "test_user_003"
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 if "agent" not in st.session_state:

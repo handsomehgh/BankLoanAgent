@@ -12,6 +12,8 @@ class AgentState(TypedDict):
     last_extracted_message_index: Optional[int]
     #global message sequence number counter,new messages take this value and then increment
     next_message_index: int
+    #interacition log cursor
+    last_logged_message_index: Optional[int]
     retrieved_context: Dict[str, Any]
     formatted_context: Dict[str, Any]
     profile_updated: bool

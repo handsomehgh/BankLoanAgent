@@ -32,7 +32,7 @@ def build_graph(memory_store: BaseMemoryStore, retriever: BaseRetriever):
 
     # =========================== register node =================================
     # retrieve node:get long term memory for vector store
-    workflow.add_node(AgentNodeName.RETRIEVE.value, partial(retrieve_memory_node, retriever=retriever))
+    workflow.add_node(AgentNodeName.RETRIEVE.value, partial(retrieve_memory_node, retrieval=retriever))
 
     # compliance interception node: scan user input,and if high-risk rules are hit,directly return interception phrasing
     workflow.add_node(AgentNodeName.COMPLIANCE_GUARD.value, partial(compliance_guard_node, memory_store=memory_store))

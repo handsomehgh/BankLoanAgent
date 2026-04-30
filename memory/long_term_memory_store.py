@@ -14,7 +14,7 @@ from config.settings import agentConfig
 from exceptions.exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
 from memory.classifiers.rules.rules_loader import get_evidence_loader
 from query.query_model import Condition, Query
-from memory.models.memory_mappers.mappers import StorageToMemoryMapper
+from memory.models.memory_mappers.mappers import StorageToMemoryMapper, MemoryToStorageMapper
 from memory.base_memory_store import BaseMemoryStore
 from config.constants import MemoryType, MemoryStatus, ComplianceSeverity, EvidenceType, InteractionSentiment, \
     GeneralFieldNames, InteractionEventType
@@ -238,7 +238,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             mem = {
                 GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
                 GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
-                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items()},
+                GeneralFieldNames.METADATA: {k: v for k, v in MemoryToStorageMapper.to_db_meta(model, target_db="milvus").items()},
                 GeneralFieldNames.DISTANCE: hit.get(GeneralFieldNames.DISTANCE, 0.0),
                 GeneralFieldNames.SIMILARITY: similarity
             }
@@ -379,7 +379,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             days = (datetime.now() - last).days
         except:
             days = 0
-        return np.exp(-agentConfig.decay_factor * days)
+        return float(np.exp(-agentConfig.decay_factor * days))
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
     def _update_last_accessed(self, memory_type: MemoryType, memory_id: str):
@@ -485,7 +485,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             memories.append({
                 GeneralFieldNames.ID: hit.get(GeneralFieldNames.ID),
                 GeneralFieldNames.TEXT: hit.get(GeneralFieldNames.TEXT),
-                GeneralFieldNames.METADATA: {k: v for k, v in model.model_dump().items()},
+                GeneralFieldNames.METADATA: {k: v for k, v in MemoryToStorageMapper.to_db_meta(model, target_db="milvus").items()},
             })
         return memories
 

@@ -16,6 +16,7 @@ def retrieve_memory_node(state: AgentState,config: RunnableConfig, retrieval: Ba
     """
     retrieve memory and assign a globally incrementing sequence to all unnumbered user/assistant mesasges
     """
+    print(f"=======================\n{state}\n==========================")
     user_id = state.get(StateFields.USER_ID.value, "unknown")
     messages = state.get(StateFields.MESSAGES.value, [])
 
@@ -26,7 +27,7 @@ def retrieve_memory_node(state: AgentState,config: RunnableConfig, retrieval: Ba
         if not hasattr(msg, MessageCommonFields.ADDITIONAL_KWARGS.value) or msg.additional_kwargs is None:
             msg.additional_kwargs = {}
         if MessageCommonFields.MESSAGE_INDEX.value not in msg.additional_kwargs:
-            msg.additional_kwargs[MessageCommonFields] = next_index
+            msg.additional_kwargs[MessageCommonFields.MESSAGE_INDEX.value] = next_index
             next_index += 1
             updated = True
 

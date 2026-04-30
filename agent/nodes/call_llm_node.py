@@ -16,6 +16,7 @@ llm = get_llm()
 
 def call_model_node(state: AgentState, config: RunnableConfig) -> dict:
     """call llm"""
+    print(f"=======================\n{state}\n==========================")
     formatted = state.get(StateFields.FORMATTED_CONTEXT.value, {})
     system = SYSTEM_TEMPLATE.format(
         user_profile=formatted.get(MemoryType.USER_PROFILE.value, "暂无"),

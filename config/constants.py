@@ -171,6 +171,7 @@ class StateFields(str,Enum):
     ERROR = "error"
     LAST_EXTRACTED_MESSAGE_INDEX = "last_extracted_message_index"
     NEXT_MESSAGE_INDEX = "next_message_index"
+    LAST_LOGGED_MESSAGE_INDEX = "last_logged_message_index"
 
 
 # ==================== interaction trajectory event type ====================

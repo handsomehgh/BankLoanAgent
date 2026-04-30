@@ -18,7 +18,7 @@ from llm.chat_models import get_llm
 from memory.base_memory_store import BaseMemoryStore
 from memory.classifiers import infer_evidence_type
 from prompt.extract_prompt import EXTRACT_PROMPT
-from utils.message_format import format_message
+from utils.memory_utils.memory_common_utils import format_message, get_message_index
 from utils.parser import safe_parse_extraction_output
 
 logger = logging.getLogger(__name__)
@@ -110,7 +110,7 @@ def extract_profile_node(state: AgentState, config: RunnableConfig, memory_store
     if not _likely_contains_profile(new_user_messages):
         logger.info(f"extraction_skipped_filter user_id{user_id} msg_count{len(new_user_messages)}")
         last_msg = messages[-1]
-        last_index = _get_message_index(last_msg)
+        last_index = get_message_index(last_msg)
         if last_index is None:
             logger.warning(f"cannot update cursor after filter skip: no message_index user_id{user_id}")
             return {StateFields.PROFILE_UPDATED.value: False}
@@ -121,7 +121,7 @@ def extract_profile_node(state: AgentState, config: RunnableConfig, memory_store
 
     # build context window
     first_idx = messages.index(new_user_messages[0])
-    last_idx = messages.index[new_user_messages[-1]]
+    last_idx = messages.index(new_user_messages[-1])
     context_start = max(0, first_idx - 2)
     context_end = min(len(messages), last_idx + 3)
     context_messages = messages[context_start:context_end]
@@ -131,16 +131,18 @@ def extract_profile_node(state: AgentState, config: RunnableConfig, memory_store
     )
 
     # obtain a desensitized profile summary
+    known_profile = "暂无已知用户画像"
     try:
-        know_profile = memory_store.get_profile_summary(user_id)
+        summary = memory_store.get_profile_summary(user_id)
+        if summary:
+            known_profile = summary
     except Exception as e:
-        logger.warning(f"Failed to get profile summary: {e}")
-        known_profile = "暂无已知用户画像"
+        logger.warning(f"Failed to get profile summary, using default: {e}")
 
     # llm extract
     logger.info(f"extraction_llm_call user_id={user_id} msg_count={len(new_user_messages)}")
     try:
-        chain = EXTRACT_PROMPT | llm | StrOutputParser()
+        chain = EXTRACT_PROMPT | llm.llm | StrOutputParser()
         extract_str = chain.invoke({
             PromptKeys.CONVERSATION.value: conversations,
             PromptKeys.KNOWN_PROFILE.value: known_profile
@@ -195,7 +197,7 @@ def extract_profile_node(state: AgentState, config: RunnableConfig, memory_store
 
         # update cursor
         last_msg = messages[-1]
-        last_index = _get_message_index(last_msg)
+        last_index = get_message_index(last_msg)
         if last_index is None:
             logger.warning(f"Cannot update cursor after extraction: no message_index user_id={user_id}")
             return {StateFields.PROFILE_UPDATED.value: updated}
@@ -210,10 +212,3 @@ def extract_profile_node(state: AgentState, config: RunnableConfig, memory_store
             StateFields.PROFILE_UPDATED.value: updated,
             StateFields.LAST_EXTRACTED_MESSAGE_INDEX.value: last_index
         }
-
-
-def _get_message_index(msg: BaseMessage) -> Optional[int]:
-    """安全获取消息的全局序号"""
-    if hasattr(msg, 'additional_kwargs') and isinstance(msg.additional_kwargs, dict):
-        return msg.additional_kwargs.get('message_index')
-    return None
