@@ -36,7 +36,7 @@ class VectorRetriever(BaseRetriever):
         for mem_type in types:
             try:
                 if mem_type == MemoryType.USER_PROFILE:
-                    results = self.memory_store.search_memory(
+                    results[mem_type] = self.memory_store.search_memory(
                         user_id=user_id,
                         query=query,
                         memory_type=mem_type,
@@ -45,10 +45,11 @@ class VectorRetriever(BaseRetriever):
                     )
 
                     #minimum similarity filtering
-                    min_sim = agentConfig.retrieval_min_similarity
-                    filtered = [r for r in results if r.get(GeneralFieldNames.DECAYED_SIMILARITY, 0) >= min_sim]
-                    results[mem_type.value] = filtered[:top_k]
-                    logger.debug(f"User profile retrieval: {len(results)} raw, {len(filtered)} filtered")
+                    if len(results[mem_type]) != 0:
+                        min_sim = agentConfig.retrieval_min_similarity
+                        filtered = [r for r in results if r.get(GeneralFieldNames.DECAYED_SIMILARITY, 0) >= min_sim]
+                        results[mem_type.value] = filtered[:top_k]
+                        logger.debug(f"User profile retrieval: {len(results)} raw, {len(filtered)} filtered")
 
                 elif mem_type == MemoryType.INTERACTION_LOG:
                     results[mem_type.value] = self.memory_store.get_recent_interactions(

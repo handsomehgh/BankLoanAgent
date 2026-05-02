@@ -68,4 +68,4 @@ weak_signals:
     score: 2
 
 # 弱信号累积阈值（一条消息内总分达到此值触发）
-threshold: 4
+match_threshold: 4

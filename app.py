@@ -46,7 +46,7 @@ if "retriever" not in st.session_state:
     st.session_state.retriever = VectorRetriever(st.session_state.memory_store)
 
 if "user_id" not in st.session_state:
-    st.session_state.user_id = "test_user_003"
+    st.session_state.user_id = "test_user_004"
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 if "agent" not in st.session_state:
