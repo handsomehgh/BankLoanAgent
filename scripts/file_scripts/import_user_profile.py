@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def import_profiles(jsonl_path: str):
     """导入用户画像测试数据"""
-    vec = MilvusVectorStore(config.milvus_uri)
+    vec = MilvusVectorStore(agentConfig.milvus_uri)
     store = LongTermMemoryStore(vec)
     with open(jsonl_path, "r", encoding="utf-8") as f:
         for line_num, line in enumerate(f, 1):

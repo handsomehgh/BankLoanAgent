@@ -14,10 +14,10 @@ from config.settings import agentConfig
 from llm.embeddings import get_embeddings
 from query.milvus_query_builder import MilvusQueryBuilder
 from query.query_model import Query
-from memory.models.memory_data.memory_schema import UserProfileMemory, InteractionLogMemory, ComplianceRuleMemory
+from memory.models.memory_data.memory_schema import UserProfileMemory, InteractionLogMemory, ComplianceRuleMemory, \
+    BusinessKnowledge
 from memory.models.memory_mappers.mappers import MemoryToStorageMapper
 from memory.memory_vector_store.base_vector_store import BaseVectorStore
-from memory.models.memory_data.memory_base import MemoryBase
 from llm.retry import retry_on_failure
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,7 @@ _MODEL_CLASSES = {
     MemoryType.USER_PROFILE: UserProfileMemory,
     MemoryType.INTERACTION_LOG: InteractionLogMemory,
     MemoryType.COMPLIANCE_RULE: ComplianceRuleMemory,
+    MemoryType.BUSINESS_KNOWLEDGE: BusinessKnowledge
 }
 
 
@@ -111,7 +112,7 @@ class MilvusVectorStore(BaseVectorStore):
             memory_type: MemoryType,
             ids: List[str],
             texts: List[str],
-            models: List[MemoryBase]
+            models: List[Any]
     ) -> None:
         """batch insert into vector data"""
 
@@ -122,12 +123,12 @@ class MilvusVectorStore(BaseVectorStore):
         dense_vectors = self._embed_text(texts)
 
         # organize insert data
-        meta_dicts = [MemoryToStorageMapper.to_db_meta(m,target_db="milvus") for m in models]
+        meta_dicts = [MemoryToStorageMapper.to_db_meta(m,target_db=agentConfig.vector_backend) for m in models]
         rows = []
         for i, mem_id in enumerate(ids):
             row = {GeneralFieldNames.ID: mem_id, GeneralFieldNames.TEXT: texts[i],
                    GeneralFieldNames.DENSE_VECTOR: dense_vectors[i]}
-            # 合并元数据
+            # merge metadata
             for meta in meta_dicts:
                 for key, value in meta.items():
                     row.setdefault(key, value)
@@ -161,7 +162,7 @@ class MilvusVectorStore(BaseVectorStore):
         output_fields = self._get_all_output_fields(memory_type)
         expr = self._query_builder.build(where) if where else None
 
-        # 执行检索
+        # execute retrieve
         if strategy == SearchStrategy.HYBRID:
             results = self._hybrid_search(memory_type, query, expr, limit, output_fields)
         elif strategy == SearchStrategy.SEMANTIC:

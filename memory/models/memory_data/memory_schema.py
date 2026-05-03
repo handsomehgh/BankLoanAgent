@@ -1,8 +1,8 @@
 import logging
 from datetime import datetime
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, BaseModel
 
 from config.constants import (
     EvidenceType,
@@ -129,3 +129,19 @@ class ComplianceRuleMemory(MemoryBase):
                 raise ValueError(f"Invalid severity '{v}'. Must be one of {[e.value for e in ComplianceSeverity]}")
             logger.warning(f"Invalid severity '{v}', fallback to MEDIUM")
             return ComplianceSeverity.MEDIUM
+
+# ==================== business knowledge ======================
+class BusinessKnowledge(BaseModel):
+    """business knowledge model"""
+    id: str = Field(..., description="unique chunk id")
+    text: str = Field(..., description="chunk content")
+    source: str = Field(..., description="source file name")
+    category: str = Field(..., description="knowledge category")
+    last_updated: datetime = Field(default_factory=datetime.now, description="last update time")
+    version: str = Field(..., description="knowledge version")
+    media_type: str = Field(...,description="knowledge media type")
+    file_url: str = Field(..., description="file url")
+    external_id: List[str] = Field(default_factory=list,description="external related entities id")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="dynamic additional data")
+    data_source_type: str = Field(...,description="data source type")
+    collected_at: datetime = Field(default_factory=datetime.now, description="collected at")

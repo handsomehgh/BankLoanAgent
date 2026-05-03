@@ -1,7 +1,5 @@
 """
-生产级模型-存储映射器（重构版）
-基于 Pydantic 模型元信息自动完成序列化/反序列化。
-支持 Chroma 和 Milvus 两种目标数据库，通过 target_db 参数适配不同空值策略。
+Production-Grade Model - Storage Mapper
 """
 
 import json
@@ -15,7 +13,7 @@ from memory.models.memory_data.memory_base import MemoryBase
 from memory.models.memory_data.memory_schema import (
     UserProfileMemory,
     InteractionLogMemory,
-    ComplianceRuleMemory,
+    ComplianceRuleMemory, BusinessKnowledge,
 )
 from config.constants import MemoryType
 
@@ -25,6 +23,7 @@ MODEL_CLASS_MAP = {
     MemoryType.USER_PROFILE: UserProfileMemory,
     MemoryType.INTERACTION_LOG: InteractionLogMemory,
     MemoryType.COMPLIANCE_RULE: ComplianceRuleMemory,
+    MemoryType.BUSINESS_KNOWLEDGE: BusinessKnowledge,
 }
 
 REQUIRED_FIELDS = {
@@ -72,10 +71,10 @@ def deserialize_field(
     field_name: str,
     raw: Any,
     annotation: Any,
-    memory_type: MemoryType,   # 保留参数兼容旧调用
+    memory_type: MemoryType
 ) -> Any:
     """将存储值反序列化为模型字段期望的类型。"""
-    # 时间类型
+    # datetime type
     is_datetime = (annotation == datetime)
     is_optional_datetime = (
         hasattr(annotation, '__args__') and
@@ -100,7 +99,7 @@ def deserialize_field(
         logger.warning(f"Field '{field_name}' expected datetime, got {type(raw).__name__}. Returning None.")
         return None
 
-    # 枚举类型
+    # enum types
     if isinstance(annotation, type) and issubclass(annotation, Enum):
         if isinstance(raw, str):
             try:
@@ -186,12 +185,12 @@ class MemoryToStorageMapper:
         return ""
 
     @staticmethod
-    def to_db_meta(model: MemoryBase, target_db: str = "chroma") -> Dict[str, Any]:
+    def to_db_meta(model: Any, target_db: str = "chroma") -> Dict[str, Any]:
         """
-        将模型转换为存储字典。
-        :param target_db: "chroma" 或 "milvus"
-            - chroma: 完全剔除值为 None 的字段
-            - milvus: 将 None 替换为安全的空值（"" / 0 / 0.0 / False 等）
+        Convert the model to a storage dictionary.
+        :param target_db: "chroma" or "milvus"
+            - chroma: completely remove fields with value None
+            - milvus: replace None with safe empty values ("" / 0 / 0.0 / False, etc.)
         """
         result = {}
         for field_name, field_info in model.model_fields.items():
@@ -241,7 +240,6 @@ class StorageToMemoryMapper:
                 logger.error(f"Unexpected error deserializing field '{field_name}': {e}")
                 if field_name in required:
                     raise MappingError(f"Failed to deserialize required field '{field_name}'") from e
-                # 可选字段跳过
 
         missing = required - set(init_data.keys())
         if missing:

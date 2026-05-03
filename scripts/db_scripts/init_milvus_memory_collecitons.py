@@ -84,7 +84,7 @@ COMPLIANCE_RULE_EXTRA_FIELDS = [
 DENSE_INDEX_PARAMS = {
     "metric_type": "COSINE",
     "index_type": "HNSW",
-    "params": {"M": 16, "efConstruction": 200}   # 修正拼写
+    "params": {"M": 16, "efConstruction": 200}
 }
 
 SPARSE_INDEX_PARAMS = {

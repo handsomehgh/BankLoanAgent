@@ -12,7 +12,6 @@ from query.chroma_query_builder import ChromaQueryBuilder
 from query.query_model import Query
 from memory.models.memory_mappers.mappers import MemoryToStorageMapper
 from memory.memory_vector_store.base_vector_store import BaseVectorStore
-from memory.models.memory_data.memory_base import MemoryBase
 from llm.retry import retry_on_failure
 
 logger = logging.getLogger(__name__)
@@ -73,7 +72,7 @@ class ChromaVectorStore(BaseVectorStore):
             memory_type: MemoryType,
             ids: List[str],
             texts: List[str],
-            models: List[MemoryBase]
+            models: List[Any]
     ) -> None:
         collection_name = CollectionNames.for_type(memory_type)
         collection = self._get_collection(collection_name)

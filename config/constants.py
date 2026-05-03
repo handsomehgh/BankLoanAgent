@@ -9,6 +9,7 @@ class MemoryType(str, Enum):
     USER_PROFILE = "user_profile"  # the user info
     COMPLIANCE_RULE = "compliance_rule"  # compliance and safety memory
     INTERACTION_LOG = "interaction_log"  # interactive trajectory memory
+    BUSINESS_KNOWLEDGE = "business_knowledge"
 
 
 # ========================== entity type of user profile ===========================
@@ -255,6 +256,7 @@ class CollectionNames:
     USER_PROFILE = "user_profile_memories"
     INTERACTION_LOG = "interaction_logs"
     COMPLIANCE_RULE = "compliance_rules"
+    BUSINESS_KNOWLEDGE = "business_knowledge"
 
     @classmethod
     def for_type(cls, memory_type: MemoryType) -> str:
@@ -262,6 +264,7 @@ class CollectionNames:
             MemoryType.USER_PROFILE: cls.USER_PROFILE,
             MemoryType.INTERACTION_LOG: cls.INTERACTION_LOG,
             MemoryType.COMPLIANCE_RULE: cls.COMPLIANCE_RULE,
+            MemoryType.BUSINESS_KNOWLEDGE: cls.BUSINESS_KNOWLEDGE,
         }
         return mapping[memory_type]
 
