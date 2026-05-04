@@ -1,6 +1,6 @@
 # author hgh
 # version 1.0
-from config.global_constant.common_fields import CommonFields
+from config.global_constant.fields import CommonFields
 
 
 class MemoryFields(CommonFields):

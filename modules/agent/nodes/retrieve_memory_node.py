@@ -5,9 +5,9 @@ import logging
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 
-from config.global_constant.common_fields import CommonFields
+from config.global_constant.fields import CommonFields
 from config.global_constant.constants import MemoryType
-from modules.agent.agent_constant.constants import StateFields, MessageCommonFields
+from modules.agent.constants import StateFields, MessageCommonFields
 from modules.agent.state import AgentState
 from modules.memory.base import BaseRetriever
 

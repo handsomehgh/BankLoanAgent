@@ -5,7 +5,7 @@ from typing import Optional, List, Any, Dict
 from pydantic import Field, field_validator, BaseModel
 
 from config.global_constant.constants import ComplianceAction, ComplianceSeverity
-from config.models.memory_system import MemorySystemConfig
+from config.models.memory_config import MemorySystemConfig
 from config.registry import ConfigRegistry
 from modules.memory.memory_constant.constants import MemorySource, EvidenceType, MemoryStatus, InteractionEventType, \
     InteractionSentiment, ProfileEntityKey

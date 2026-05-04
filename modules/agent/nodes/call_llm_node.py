@@ -6,8 +6,8 @@ from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from config.global_constant.constants import MemoryType
-from config.models.memory_system import MemorySystemConfig
-from modules.agent.agent_constant.constants import StateFields, MessageCommonFields
+from config.models.memory_config import MemorySystemConfig
+from modules.agent.constants import StateFields, MessageCommonFields
 from modules.agent.state import AgentState
 from modules.module_services.chat_models import get_llm
 from config.prompts.system_prompt import SYSTEM_TEMPLATE

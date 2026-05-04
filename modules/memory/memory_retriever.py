@@ -4,7 +4,7 @@ import logging
 from typing import Optional, List, Dict, Any
 
 from config.global_constant.constants import MemoryType
-from config.models.memory_system import MemorySystemConfig
+from config.models.memory_config import MemorySystemConfig
 from modules.memory.base import BaseRetriever
 from modules.memory.memory_business_store.base_memory_store import BaseMemoryStore
 from modules.memory.memory_constant.fields import MemoryFields

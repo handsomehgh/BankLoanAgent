@@ -10,7 +10,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMe
 
 from config.prompts.detect_evidence_prompt import DETECT_EVIDENCE_PROMPT
 from config.prompts.detect_setiment_prompt import DETECT_SENTIMENT_PROMPT
-from modules.agent.agent_constant.constants import MessageCommonFields
+from modules.agent.constants import MessageCommonFields
 from modules.memory.memory_constant.constants import EvidenceType, InteractionSentiment
 from modules.module_services.chat_models import get_llm
 

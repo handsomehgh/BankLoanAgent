@@ -4,10 +4,11 @@ import logging
 import os.path
 import shutil
 
-from config.constants import MemoryType, EvidenceType, MemoryStatus, GeneralFieldNames, MemorySource
-from modules.memory import LongTermMemoryStore
-from modules.memory.memory_constant.constants import ProfileEntityKey
-from modules.memory.memory_vector_store.chroma_memory_vector_store import ChromaVectorStore
+from config.global_constant.constants import MemoryType
+from config.global_constant.fields import CommonFields
+from modules.memory.memory_constant.constants import ProfileEntityKey, MemoryStatus, EvidenceType, MemorySource
+from modules.memory.memory_constant.fields import MemoryFields
+from utils.config_utils.memory_test_store import create_test_memory_store
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,6 +20,8 @@ def cleanup():
     if os.path.exists(TEST_DIR):
         shutil.rmtree(TEST_DIR)
 
+def get_store():
+    return create_test_memory_store("http://192.168.24.128:19530")
 
 def print_memory(label: str, memories: list):
     print(f"\n{label}")
@@ -26,10 +29,10 @@ def print_memory(label: str, memories: list):
         print(" (空)")
         return
     for mem in memories:
-        id = mem.get(GeneralFieldNames.ID, "N/A")
+        id = mem.get(CommonFields.ID, "N/A")
         print(f"ID:{id}")
 
-        similarity = mem.get(GeneralFieldNames.SIMILARITY, 0.0)
+        similarity = mem.get(CommonFields.SIMILARITY, 0.0)
         print(f"SIMILARITY:{similarity}")
 
         meta = mem.get("metadata", {})
@@ -37,7 +40,7 @@ def print_memory(label: str, memories: list):
         text = mem.get("text", "N/A")
         print(f"[{entity_key}] {text}")
         for k, v in meta.items():
-            if k not in [GeneralFieldNames.ENTITY_KEY, GeneralFieldNames.TEXT]:
+            if k not in [CommonFields.ENTITY_KEY, CommonFields.TEXT]:
                 print(f"- {k}: {v}")
 
 def test_base_crud():
@@ -45,23 +48,21 @@ def test_base_crud():
     print("测试 1: 基本增删改查")
     print("=" * 60)
 
-    vector_stoer = ChromaVectorStore(TEST_DIR)
-    store = LongTermMemoryStore(vector_stoer)
-
     user_id = "test_user_crud"
+    store = get_store()
 
     print("\n1.1 插入画像记忆")
     store.add_memory(
         user_id=user_id,
         content="客户年收入约50万元",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="income",
+        entity_key=ProfileEntityKey.INCOME,
         metadata={
-            GeneralFieldNames.SOURCE: MemorySource.CHAT_EXTRACTION.value,
-            GeneralFieldNames.CONFIDENCE: 0.8,
-            GeneralFieldNames.EVIDENCE_TYPE: EvidenceType.EXPLICIT_STATEMENT,
-            GeneralFieldNames.STATUS: MemoryStatus.ACTIVE.value,
-            GeneralFieldNames.PERMANENT: False
+            CommonFields.SOURCE: MemorySource.CHAT_EXTRACTION.value,
+            CommonFields.CONFIDENCE: 0.8,
+            CommonFields.EVIDENCE_TYPE: EvidenceType.EXPLICIT_STATEMENT,
+            CommonFields.STATUS: MemoryStatus.ACTIVE.value,
+            MemoryFields.PERMANENT: False
         }
     )
 
@@ -72,20 +73,20 @@ def test_base_crud():
 
     print("\n1.3 更新记忆内容....")
     mem_id = all_memories[0]["id"]
-    store.update_memory_status(mem_id, MemoryType.USER_PROFILE, MemoryStatus.ACTIVE.value,
-                               {GeneralFieldNames.EVIDENCE_TYPE: EvidenceType.CREDIT_REPORT.value})
+    store.update_memory_status(mem_id, MemoryType.USER_PROFILE, MemoryStatus.ACTIVE,
+                               {CommonFields.EVIDENCE_TYPE: EvidenceType.CREDIT_REPORT.value})
 
     print("\n1.4 再次查询活跃记忆...")
-    all_memories = store.get_all_user_profile_memories(user_id,status=MemoryStatus.ACTIVE.value)
+    all_memories = store.get_all_user_profile_memories(user_id,status=MemoryStatus.ACTIVE)
     print_memory("更新后记忆内容", all_memories)
     assert len(all_memories) == 1, f"预期 1 条活跃记忆，实际 {len(all_memories)}"
 
     print("\n1.5 更新记忆状态....")
     mem_id = all_memories[0]["id"]
-    store.update_memory_status(mem_id, MemoryType.USER_PROFILE, MemoryStatus.SUPERSEDED.value)
+    store.update_memory_status(mem_id, MemoryType.USER_PROFILE, MemoryStatus.SUPERSEDED)
 
     print("\n1.6 再次查询活跃记忆...")
-    all_memories = store.get_all_user_profile_memories(user_id,status=MemoryStatus.ACTIVE.value)
+    all_memories = store.get_all_user_profile_memories(user_id,status=MemoryStatus.ACTIVE)
     print_memory("更新后活跃记忆", all_memories)
     assert len(all_memories) == 0, f"预期 0 条活跃记忆，实际 {len(all_memories)}"
 
@@ -103,8 +104,7 @@ def test_search():
     print("测试 2: 语义搜索")
     print("=" * 60)
 
-    vector_store = ChromaVectorStore(TEST_DIR)
-    store = LongTermMemoryStore(vector_store=vector_store)
+    store = get_store()
 
     user_id = "test_user_search"
     print("\n2.1 插入测试数据...")
@@ -120,7 +120,7 @@ def test_search():
             user_id=user_id,
             content=content,
             memory_type=MemoryType.USER_PROFILE,
-            entity_key=entity_key,
+            entity_key=ProfileEntityKey(entity_key),
             metadata={"source": "chat_extraction", "confidence": confidence},
         )
 
@@ -148,11 +148,8 @@ def test_conflict_resolution():
     print("测试 3: 冲突解决（高置信度覆盖低置信度）")
     print("=" * 60)
 
-    vector_store = ChromaVectorStore(TEST_DIR)
-    store = LongTermMemoryStore(vector_store=vector_store)
-
+    store = get_store()
     user_id = "test_user_conflict"
-
     store.delete_user_memories(user_id=user_id, memory_type=MemoryType.USER_PROFILE)
 
     # 1. 插入低置信度记忆
@@ -161,7 +158,7 @@ def test_conflict_resolution():
         user_id=user_id,
         content="客户年收入约40万元",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="income",
+        entity_key=ProfileEntityKey.INCOME,
         metadata={"source": "chat_extraction", "confidence": 0.6,"evidence_type": EvidenceType.EXPLICIT_STATEMENT},
     )
 
@@ -177,7 +174,7 @@ def test_conflict_resolution():
         user_id=user_id,
         content="客户再次提及，年收入约50万元",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="income",
+        entity_key=ProfileEntityKey.INCOME,
         metadata={"source": "chat_extraction", "confidence": 0.95,"evidence_type": EvidenceType.EXPLICIT_STATEMENT},
     )
 
@@ -199,7 +196,7 @@ def test_conflict_resolution():
         user_id=user_id,
         content="客户提供工资流水，年收入确认为65万元",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="income",
+        entity_key=ProfileEntityKey.INCOME,
         metadata={"source": "chat_extraction", "confidence": 0.95,"evidence_type": EvidenceType.BANK_STATEMENT},
     )
 
@@ -225,9 +222,7 @@ def test_get_by_entity():
     print("测试 4: 按实体键查询")
     print("=" * 60)
 
-    vector_store = ChromaVectorStore(TEST_DIR)
-    store = LongTermMemoryStore(vector_store=vector_store)
-
+    store = get_store()
     user_id = "test_user_entity"
 
     # 插入多条不同实体的记忆
@@ -236,20 +231,20 @@ def test_get_by_entity():
         user_id=user_id,
         content="客户年收入约50万元",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="income",
+        entity_key=ProfileEntityKey.INCOME,
         metadata={"source": "chat_extraction", "confidence": 0.8},
     )
     store.add_memory(
         user_id=user_id,
         content="客户是互联网公司产品经理",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="occupation",
+        entity_key=ProfileEntityKey.OCCUPATION,
         metadata={"source": "chat_extraction", "confidence": 0.9},
     )
 
     # 2. 按 entity_key 查询
     print("\n4.2 按 entity_key='income' 查询...")
-    results = store.get_memory_by_entity(user_id, ProfileEntityKey.INCOME, MemoryStatus.ACTIVE.value)
+    results = store.get_memory_by_entity(user_id, ProfileEntityKey.INCOME, MemoryStatus.ACTIVE)
     print_memory("income 记忆", results)
     assert len(results) == 1, f"预期 1 条记忆，实际 {len(results)}"
     assert results[0]["text"] == "客户年收入约50万元"
@@ -264,8 +259,7 @@ def test_apply_forgotten():
     print("测试 4: 记忆遗忘")
     print("=" * 60)
 
-    vector_store = ChromaVectorStore(TEST_DIR)
-    store = LongTermMemoryStore(vector_store=vector_store)
+    store = get_store()
 
     user_id = "test_user_forgotten"
 
@@ -275,14 +269,14 @@ def test_apply_forgotten():
         user_id=user_id,
         content="客户年收入约50万元",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="income",
+        entity_key=ProfileEntityKey.INCOME,
         metadata={"source": "chat_extraction", "confidence": 0.8,"last_accessed_at": "2026-03-25T09:00:00"},
     )
     store.add_memory(
         user_id=user_id,
         content="客户是互联网公司产品经理",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="occupation",
+        entity_key=ProfileEntityKey.OCCUPATION,
         metadata={"source": "chat_extraction", "confidence": 0.9,"last_accessed_at": "2026-04-11T09:00:00"},
     )
 

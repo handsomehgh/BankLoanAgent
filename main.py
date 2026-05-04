@@ -1,9 +1,11 @@
 from pathlib import Path
+
+from config.global_constant.constants import RegistryModules
 from config.registry import ConfigRegistry
 from config.settings import GlobalSettings
-from config.models.memory_system import MemorySystemConfig
-from config.models.retrieval import RetrievalConfig
-from config.models.llm import LLMConfig
+from config.models.memory_config import MemorySystemConfig
+from config.models.retrieval_config import RetrievalConfig
+from config.models.llm_config import LLMConfig
 
 def inject_sensitive_fields(cfg_registry: ConfigRegistry, settings: GlobalSettings):
     """
@@ -12,7 +14,7 @@ def inject_sensitive_fields(cfg_registry: ConfigRegistry, settings: GlobalSettin
     Retrieval: milvus_uri
     """
     # LLM
-    llm_cfg = cfg_registry.get_config("llm")
+    llm_cfg = cfg_registry.get_config(RegistryModules.LLM)
     llm_cfg.deepseek_api_key = settings.deepseek_api_key
     llm_cfg.deepseek_base_url = settings.deepseek_base_url
     llm_cfg.deepseek_llm_name = settings.deepseek_llm_name
@@ -21,13 +23,13 @@ def inject_sensitive_fields(cfg_registry: ConfigRegistry, settings: GlobalSettin
     llm_cfg.alibaba_emb_name = settings.alibaba_emb_name
     llm_cfg.alibaba_emb_backup = settings.alibaba_emb_backup
     llm_cfg.qwen_llm_name = settings.qwen_llm_name
-    cfg_registry.update_config("llm", llm_cfg)
+    cfg_registry.update_config(RegistryModules.LLM, llm_cfg)
 
     # Retrieval
-    ret_cfg = cfg_registry.get_config("retrieval")
+    ret_cfg = cfg_registry.get_config(RegistryModules.RETRIEVAL)
     ret_cfg.milvus_uri = settings.milvus_uri
     ret_cfg.sqlite_db_path = settings.sqlite_db_path
-    cfg_registry.update_config("retrieval", ret_cfg)
+    cfg_registry.update_config(RegistryModules.RETRIEVAL, ret_cfg)
 
 def load_config():
     settings = GlobalSettings()
@@ -35,16 +37,20 @@ def load_config():
 
     # 注册所有模块
     registry.register_model(
-        "memory_system", MemorySystemConfig,
-        Path("config/rules/memory_system.yaml")
+        RegistryModules.MEMORY_SYSTEM, MemorySystemConfig,
+        Path("config/rules/memory_config.yaml")
     )
     registry.register_model(
-        "retrieval", RetrievalConfig,
-        Path("config/rules/retrieval.yaml")
+        RegistryModules.RETRIEVAL, RetrievalConfig,
+        Path("config/rules/retrieval_config.yaml")
     )
     registry.register_model(
-        "llm", LLMConfig,
-        Path("config/rules/llm.yaml")
+        RegistryModules.LLM, LLMConfig,
+        Path("config/rules/llm_config.yaml")
+    )
+    registry.register_model(
+        RegistryModules.FILE_PROCESS, LLMConfig,
+        Path("config/rules/file_process_config.yaml")
     )
 
     # 加载 YAML
@@ -55,12 +61,6 @@ def load_config():
 
     # 启动热更新
     observer = registry.start_hot_reload()
-
-    # 示例使用
-    mem = registry.get_config("memory_system")
-    print(mem)
-    ret = registry.get_config("retrieval")
-    print(ret)
 
     try:
         import time

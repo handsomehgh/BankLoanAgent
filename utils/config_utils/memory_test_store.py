@@ -1,9 +1,9 @@
 # modules/memory/factory.py
 from pathlib import Path
 
-from config.models.llm import LLMConfig
-from config.models.memory_system import MemorySystemConfig
-from config.models.retrieval import RetrievalConfig
+from config.models.llm_config import LLMConfig
+from config.models.memory_config import MemorySystemConfig
+from config.models.retrieval_config import RetrievalConfig
 from config.registry import ConfigRegistry
 from config.settings import GlobalSettings
 from infra.milvus_client import MilvusClientManager
@@ -20,9 +20,9 @@ def create_test_memory_store(uri: str | None = None, config_path: str | None = N
 
     registry = ConfigRegistry()
     # 如果未提供路径，使用默认
-    path1 = Path(config_path or  PROJECT_ROOT / "config" / "rules" / "memory_system.yaml")
-    path2 = Path(config_path or  PROJECT_ROOT / "config" / "rules" / "llm.yaml")
-    path3 = Path(config_path or  PROJECT_ROOT / "config" / "rules" / "retrieval.yaml")
+    path1 = Path(config_path or  PROJECT_ROOT / "config" / "rules" / "memory_system_config.yaml")
+    path2 = Path(config_path or  PROJECT_ROOT / "config" / "rules" / "llm_config.yaml")
+    path3 = Path(config_path or  PROJECT_ROOT / "config" / "rules" / "retrieval_config.yaml")
     if not registry._models:  # 避免重复注册
         registry.register_model("memory_system", MemorySystemConfig, path1)
         registry.register_model("llm", LLMConfig, path2)

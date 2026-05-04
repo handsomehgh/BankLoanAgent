@@ -3,7 +3,7 @@
 
 import re
 import logging
-from config.models.memory_system import MemoryGateRules
+from config.models.memory_config import MemoryGateRules
 
 logger = logging.getLogger(__name__)
 

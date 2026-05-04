@@ -4,7 +4,7 @@ import sqlite3
 import logging
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from config.models.retrieval import RetrievalConfig
+from config.models.retrieval_config import RetrievalConfig
 
 logger = logging.getLogger(__name__)
 

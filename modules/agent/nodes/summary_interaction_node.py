@@ -6,10 +6,10 @@ from datetime import datetime
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 
-from config.global_constant.common_fields import CommonFields
+from config.global_constant.fields import CommonFields
 from config.global_constant.constants import ConfigFields, MemoryType
-from config.models.memory_system import MemorySystemConfig
-from modules.agent.agent_constant.constants import StateFields
+from config.models.memory_config import MemorySystemConfig
+from modules.agent.constants import StateFields
 from modules.agent.state import AgentState
 from modules.memory.memory_business_store.base_memory_store import BaseMemoryStore
 from modules.memory.memory_constant.constants import InteractionEventType, MemorySource, MemoryStatus

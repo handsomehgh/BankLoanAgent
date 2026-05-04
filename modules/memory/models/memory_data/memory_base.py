@@ -4,7 +4,7 @@ from typing import Dict, Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from config.models.memory_system import MemorySystemConfig
+from config.models.memory_config import MemorySystemConfig
 from config.registry import ConfigRegistry
 from modules.memory.memory_constant.constants import MemoryStatus
 from modules.memory.memory_constant.fields import MemoryFields

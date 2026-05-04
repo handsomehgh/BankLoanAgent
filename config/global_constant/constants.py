@@ -6,6 +6,7 @@ class RegistryModules(str, Enum):
     MEMORY_SYSTEM = "memory_system"
     RETRIEVAL = "retrieval"
     LLM = "llm"
+    FILE_PROCESS = "file_process"
 
 class SpecialUserID(str, Enum):
     GLOBAL = "global"
@@ -65,5 +66,12 @@ class ComplianceAction(str, Enum):
     APPEND = "append"
     REMIND = "remind"
     MASK = "mask"
+
+class SourceType(str, Enum):
+    FAQ = "faq"
+    PRODUCT_MANUAL = "product_manual"
+    PROCESS_GUIDE = "process_guide"
+    REGULATION = "regulation"
+    GLOSSARY = "glossary"
 
 

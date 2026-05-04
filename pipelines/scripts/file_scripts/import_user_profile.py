@@ -10,7 +10,6 @@ from pathlib import Path
 from config.global_constant.constants import MemoryType
 from modules.memory.memory_business_store.long_term_memory_store import LongTermMemoryStore
 from modules.memory.memory_constant.constants import MemorySource, MemoryStatus, EvidenceType, ProfileEntityKey
-from modules.memory.memory_vector_store.milvus_memory_vector_store import MilvusMemoryVectorStore
 from utils.config_utils.memory_test_store import create_test_memory_store
 
 logging.basicConfig(level=logging.INFO)

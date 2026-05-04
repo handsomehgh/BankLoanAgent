@@ -6,9 +6,8 @@ from langgraph.constants import END
 from langgraph.graph import StateGraph
 
 from config.global_constant.constants import RegistryModules
-from config.models.retrieval import RetrievalConfig
 from config.registry import ConfigRegistry
-from modules.agent.agent_constant.constants import AgentNodeName, StateFields
+from modules.agent.constants import AgentNodeName, StateFields
 from modules.agent.checkpointer import get_checkpointer
 from modules.agent.nodes.call_llm_node import call_model_node
 from modules.agent.nodes.compliance_guard_node import compliance_guard_node

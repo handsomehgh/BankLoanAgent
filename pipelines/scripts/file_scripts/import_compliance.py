@@ -1,14 +1,11 @@
 # author hgh
 # version 1.0
 import json
-import sys
 from pathlib import Path
 from datetime import datetime
 
 from config.global_constant.constants import SpecialUserID, MemoryType
-from modules.memory.memory_business_store.long_term_memory_store import LongTermMemoryStore
 from modules.memory.memory_constant.constants import MemoryStatus
-from modules.memory.memory_vector_store.milvus_memory_vector_store import MilvusMemoryVectorStore
 from utils.config_utils.memory_test_store import create_test_memory_store
 
 
@@ -18,8 +15,7 @@ def import_compliance_rules(json_path: str):
     """导入合规规则到长期记忆"""
     # vector_store = ChromaVectorStore("../chromadb")
     # store = LongTermMemoryStore(vector_store=vector_store)
-    vec = MilvusMemoryVectorStore("http://192.168.24.128:19530")
-    store = LongTermMemoryStore(vector_store=vec)
+    store = create_test_memory_store("http://192.168.24.128:19530")
 
     with open(json_path, "r", encoding="utf-8") as f:
         rules = json.load(f)

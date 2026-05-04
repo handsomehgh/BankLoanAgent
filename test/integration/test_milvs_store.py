@@ -3,18 +3,18 @@
 import logging
 import time
 
-from config.constants import MemoryType, MemorySource, EvidenceType, MemoryStatus, GeneralFieldNames
-from config.settings1 import agentConfig
-from modules.memory import LongTermMemoryStore
-from modules.memory.memory_constant.constants import ProfileEntityKey
-from modules.memory.memory_vector_store import MilvusVectorStore
+from config.global_constant.constants import MemoryType
+from config.global_constant.fields import CommonFields
+from modules.memory.memory_business_store.long_term_memory_store import LongTermMemoryStore
+from modules.memory.memory_constant.constants import ProfileEntityKey, MemorySource, EvidenceType, MemoryStatus
+from modules.memory.memory_constant.fields import MemoryFields
+from utils.config_utils.memory_test_store import create_test_memory_store
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def get_store() -> LongTermMemoryStore:
-    vs = MilvusVectorStore(agentConfig.milvus_uri)
-    return LongTermMemoryStore(vs)
+    return create_test_memory_store("http://192.168.24.128:19530")
 
 def cleanup_user(store: LongTermMemoryStore,user_id: str):
     """delete all memory data of the specified user and clean testing traces"""
@@ -29,10 +29,10 @@ def print_memory(label: str, memories: list):
         print(" (空)")
         return
     for mem in memories:
-        id = mem.get(GeneralFieldNames.ID, "N/A")
+        id = mem.get(CommonFields.ID, "N/A")
         print(f"ID:{id}")
 
-        similarity = mem.get(GeneralFieldNames.SIMILARITY, 0.0)
+        similarity = mem.get(CommonFields.SIMILARITY, 0.0)
         print(f"SIMILARITY:{similarity}")
 
         meta = mem.get("metadata", {})
@@ -40,7 +40,7 @@ def print_memory(label: str, memories: list):
         text = mem.get("text", "N/A")
         print(f"[{entity_key}] {text}")
         for k, v in meta.items():
-            if k not in [GeneralFieldNames.ENTITY_KEY, GeneralFieldNames.TEXT]:
+            if k not in [CommonFields.ENTITY_KEY, CommonFields.TEXT]:
                 print(f"- {k}: {v}")
 
 def test_add_profile_memory():
@@ -52,7 +52,7 @@ def test_add_profile_memory():
             user_id=TEST_USER,
             content="客户年收入约50万元",
             memory_type=MemoryType.USER_PROFILE,
-            entity_key="income",
+            entity_key=ProfileEntityKey.INCOME,
             metadata={
                 "source": MemorySource.CHAT_EXTRACTION.value,
                 "confidence": 0.8,
@@ -61,7 +61,7 @@ def test_add_profile_memory():
             }
         )
         assert mem_id, "Should return valid memory ID"
-        results = store.get_all_user_profile_memories(TEST_USER, status=MemoryStatus.ACTIVE.value)
+        results = store.get_all_user_profile_memories(TEST_USER, status=MemoryStatus.ACTIVE)
         assert len(results) == 1, f"There should be one active memory，actual{len(results)}"
         print("  ✅ Added successfully")
         print_memory("The memory content after added",results)
@@ -84,13 +84,13 @@ def test_base_crud():
         user_id=user_id,
         content="客户年收入约50万元",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="income",
+        entity_key=ProfileEntityKey.INCOME,
         metadata={
-            GeneralFieldNames.SOURCE: MemorySource.CHAT_EXTRACTION.value,
-            GeneralFieldNames.CONFIDENCE: 0.8,
-            GeneralFieldNames.EVIDENCE_TYPE: EvidenceType.EXPLICIT_STATEMENT,
-            GeneralFieldNames.STATUS: MemoryStatus.ACTIVE.value,
-            GeneralFieldNames.PERMANENT: False
+            CommonFields.SOURCE: MemorySource.CHAT_EXTRACTION.value,
+            CommonFields.CONFIDENCE: 0.8,
+            CommonFields.EVIDENCE_TYPE: EvidenceType.EXPLICIT_STATEMENT,
+            CommonFields.STATUS: MemoryStatus.ACTIVE.value,
+            MemoryFields.PERMANENT: False
         }
     )
 
@@ -101,20 +101,20 @@ def test_base_crud():
 
     print("\n1.3 更新记忆内容....")
     mem_id = all_memories[0]["id"]
-    store.update_memory_status(mem_id, MemoryType.USER_PROFILE, MemoryStatus.ACTIVE.value,
-                               {GeneralFieldNames.EVIDENCE_TYPE: EvidenceType.CREDIT_REPORT.value})
+    store.update_memory_status(mem_id, MemoryType.USER_PROFILE, MemoryStatus.ACTIVE,
+                               {CommonFields.EVIDENCE_TYPE: EvidenceType.CREDIT_REPORT.value})
 
     print("\n1.4 再次查询活跃记忆...")
-    all_memories = store.get_all_user_profile_memories(user_id,status=MemoryStatus.ACTIVE.value)
+    all_memories = store.get_all_user_profile_memories(user_id,status=MemoryStatus.ACTIVE)
     print_memory("更新后记忆内容", all_memories)
     assert len(all_memories) == 1, f"预期 1 条活跃记忆，实际 {len(all_memories)}"
 
     print("\n1.5 更新记忆状态....")
     mem_id = all_memories[0]["id"]
-    store.update_memory_status(mem_id, MemoryType.USER_PROFILE, MemoryStatus.SUPERSEDED.value)
+    store.update_memory_status(mem_id, MemoryType.USER_PROFILE, MemoryStatus.SUPERSEDED)
 
     print("\n1.6 再次查询活跃记忆...")
-    all_memories = store.get_all_user_profile_memories(user_id,status=MemoryStatus.ACTIVE.value)
+    all_memories = store.get_all_user_profile_memories(user_id,status=MemoryStatus.ACTIVE)
     print_memory("更新后活跃记忆", all_memories)
     assert len(all_memories) == 0, f"预期 0 条活跃记忆，实际 {len(all_memories)}"
 
@@ -148,7 +148,7 @@ def test_search():
             user_id=user_id,
             content=content,
             memory_type=MemoryType.USER_PROFILE,
-            entity_key=entity_key,
+            entity_key=ProfileEntityKey(entity_key),
             metadata={"source": "chat_extraction", "confidence": confidence},
         )
 
@@ -185,7 +185,7 @@ def test_conflict_resolution():
         user_id=user_id,
         content="客户年收入约40万元",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="income",
+        entity_key=ProfileEntityKey.INCOME,
         metadata={"source": "chat_extraction", "confidence": 0.6},
     )
 
@@ -201,7 +201,7 @@ def test_conflict_resolution():
         user_id=user_id,
         content="客户提供工资流水，年收入确认为55万元",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="income",
+        entity_key=ProfileEntityKey.INCOME,
         metadata={"source": "bank_statement", "confidence": 0.95},
     )
 
@@ -239,20 +239,20 @@ def test_get_by_entity():
         user_id=user_id,
         content="客户年收入约50万元",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="income",
+        entity_key=ProfileEntityKey.INCOME,
         metadata={"source": "chat_extraction", "confidence": 0.8},
     )
     store.add_memory(
         user_id=user_id,
         content="客户是互联网公司产品经理",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="occupation",
+        entity_key=ProfileEntityKey.OCCUPATION,
         metadata={"source": "chat_extraction", "confidence": 0.9},
     )
 
     # 2. 按 entity_key 查询
     print("\n4.2 按 entity_key='income' 查询...")
-    results = store.get_memory_by_entity(user_id, ProfileEntityKey.INCOME, MemoryStatus.ACTIVE.value)
+    results = store.get_memory_by_entity(user_id, ProfileEntityKey.INCOME, MemoryStatus.ACTIVE)
     print_memory("income 记忆", results)
     assert len(results) == 1, f"预期 1 条记忆，实际 {len(results)}"
     assert results[0]["text"] == "客户年收入约50万元"
@@ -275,14 +275,14 @@ def test_apply_forget():
         user_id=user_id,
         content="客户年收入约50万元",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="income",
+        entity_key=ProfileEntityKey.INCOME,
         metadata={"source": "chat_extraction", "confidence": 0.8,"last_accessed_at": "2026-03-10T09:00:00"},
     )
     store.add_memory(
         user_id=user_id,
         content="客户是互联网公司产品经理",
         memory_type=MemoryType.USER_PROFILE,
-        entity_key="occupation",
+        entity_key=ProfileEntityKey.OCCUPATION,
         metadata={"source": "chat_extraction", "confidence": 0.9,"last_accessed_at": "2026-04-20T09:00:00"},
     )
 
@@ -292,7 +292,7 @@ def test_apply_forget():
 
     results = store.get_all_user_profile_memories(user_id)
     print_memory("遗忘后记忆-----------------",results)
-    active_mem = [m for m in results if results["metadata"].get("status") == "active"]
+    active_mem = [m for m in results if results[CommonFields.METADATA].get("status") == "active"]
     assert len(active_mem) == 1,f"预期目前活跃记忆1条,实际{count}条"
 
     # 清理

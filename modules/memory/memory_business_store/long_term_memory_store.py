@@ -13,7 +13,7 @@ import numpy as np
 from chromadb.errors import ChromaError
 
 from config.global_constant.constants import VectorQueryFields, MemoryType, ComplianceSeverity
-from config.models.memory_system import MemorySystemConfig
+from config.models.memory_config import MemorySystemConfig
 from exceptions.exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
 from modules.memory.memory_constant.constants import MemoryStatus, EvidenceType, InteractionEventType, \
     InteractionSentiment, ProfileEntityKey, MemorySource

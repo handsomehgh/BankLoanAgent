@@ -10,7 +10,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 from config.global_constant.constants import RegistryModules
 from config.registry import ConfigRegistry
-from config.models.llm import LLMConfig
+from config.models.llm_config import LLMConfig
 from exceptions.exception import LLMTimeoutError, LLMRateLimitError, LLMError
 
 logger = logging.getLogger(__name__)

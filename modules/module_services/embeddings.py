@@ -5,7 +5,7 @@ from langchain_community.embeddings import DashScopeEmbeddings
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from config.global_constant.constants import RegistryModules
-from config.models.llm import LLMConfig
+from config.models.llm_config import LLMConfig
 from config.registry import ConfigRegistry
 from exceptions.exception import EmbeddingTimeoutError, EmbeddingRateLimitError, EmbeddingError
 

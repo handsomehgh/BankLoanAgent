@@ -9,7 +9,7 @@ from langchain_community.vectorstores.utils import maximal_marginal_relevance
 from pymilvus import MilvusException, AnnSearchRequest, RRFRanker
 
 from config.global_constant.constants import MemoryType, VectorQueryFields, SearchStrategy
-from config.models.memory_system import MemorySystemConfig
+from config.models.memory_config import MemorySystemConfig
 from infra.collections import CollectionNames
 from infra.milvus_client import MilvusClientManager
 from modules.memory.memory_constant.fields import MemoryFields

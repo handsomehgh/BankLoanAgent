@@ -8,10 +8,10 @@ from langchain_core.messages import HumanMessage, BaseMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableConfig
 
-from config.global_constant.common_fields import CommonFields
+from config.global_constant.fields import CommonFields
 from config.global_constant.constants import MemoryType
-from config.models.memory_system import MemorySystemConfig
-from modules.agent.agent_constant.constants import MessageCommonFields, StateFields, PromptKeys
+from config.models.memory_config import MemorySystemConfig
+from modules.agent.constants import MessageCommonFields, StateFields, PromptKeys
 from modules.agent.state import AgentState
 from exceptions.exception import MemoryWriteFailedError
 from modules.memory.memory_business_store.base_memory_store import BaseMemoryStore
