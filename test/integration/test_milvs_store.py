@@ -4,9 +4,10 @@ import logging
 import time
 
 from config.constants import MemoryType, MemorySource, EvidenceType, MemoryStatus, GeneralFieldNames
-from config.settings import agentConfig
-from memory.long_term_memory_store import LongTermMemoryStore
-from memory.memory_vector_store.milvus_vector_store import MilvusVectorStore
+from config.settings1 import agentConfig
+from modules.memory import LongTermMemoryStore
+from modules.memory.memory_constant.constants import ProfileEntityKey
+from modules.memory.memory_vector_store import MilvusVectorStore
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -251,7 +252,7 @@ def test_get_by_entity():
 
     # 2. 按 entity_key 查询
     print("\n4.2 按 entity_key='income' 查询...")
-    results = store.get_memory_by_entity(user_id, "income", MemoryStatus.ACTIVE.value)
+    results = store.get_memory_by_entity(user_id, ProfileEntityKey.INCOME, MemoryStatus.ACTIVE.value)
     print_memory("income 记忆", results)
     assert len(results) == 1, f"预期 1 条记忆，实际 {len(results)}"
     assert results[0]["text"] == "客户年收入约50万元"

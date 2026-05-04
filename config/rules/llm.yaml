@@ -1,0 +1,12 @@
+# LLM 非敏感参数（API Key 等由环境变量注入）
+llm_provider: "deepseek"
+deepseek_provider: "deepseek"
+deepseek_api_key: ""               # 由 settings 覆盖
+deepseek_base_url: "https://api.deepseek.com"
+deepseek_llm_name: "deepseek-chat"
+alibaba_api_key: ""                # 由 settings 覆盖
+alibaba_base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+alibaba_emb_name: "text-embedding-v4"
+alibaba_emb_backup: "text-embedding-v3"
+qwen_llm_name: "qwen3-max"
+qwen_provider: "openai"

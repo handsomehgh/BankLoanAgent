@@ -6,30 +6,42 @@ import streamlit as st
 import logging
 import uuid
 from langchain_core.messages import HumanMessage, AIMessage
-from agent.graph import build_graph
-from config.settings import agentConfig
-from query.chroma_query_builder import ChromaQueryBuilder
-from query.milvus_query_builder import MilvusQueryBuilder
-from memory.long_term_memory_store import LongTermMemoryStore
-from memory.memory_vector_store.chroma_vector_store import ChromaVectorStore
-from memory.memory_vector_store.milvus_vector_store import MilvusVectorStore
-from retriever.memory_retriever import VectorRetriever
-from config.constants import MemoryType
 
+from config.global_constant.constants import RegistryModules, MemoryType
+from config.registry import ConfigRegistry
+from infra.milvus_client import MilvusClientManager
+from main import load_config
+from modules.agent.graph import build_graph
+from modules.memory.memory_business_store.long_term_memory_store import LongTermMemoryStore
+from modules.memory.memory_constant.constants import MemoryStatus
+from modules.memory.memory_retriever import MemoryVectorRetriever
+from modules.memory.memory_vector_store.milvus_memory_vector_store import MilvusMemoryVectorStore
+from modules.module_services.embeddings import get_embeddings
+from utils.query.chroma_query_builder import ChromaQueryBuilder
+from modules.memory.memory_vector_store.chroma_memory_vector_store import ChromaVectorStore
 import streamlit.watcher.local_sources_watcher as watcher
+
+from utils.query.milvus_query_builder import MilvusQueryBuilder
+
 watcher.MODULE_IGNORE_LIST = ["transformers"]  # 忽略 transformers 模块的路径检查
 
-logging.basicConfig(level=agentConfig.log_level)
+load_config()
+llm_config = ConfigRegistry.get_config(RegistryModules.LLM)
+memory_config = ConfigRegistry.get_config(RegistryModules.MEMORY_SYSTEM)
+retrieval_config = ConfigRegistry.get_config(RegistryModules.RETRIEVAL)
+
+logging.basicConfig(level=llm_config.log_level)
 logger = logging.getLogger(__name__)
 
-
-if agentConfig.vector_backend == "chroma":
+if memory_config.vector_backend == "chroma":
     query_builder = ChromaQueryBuilder()
-    vector_store = ChromaVectorStore(persist_dir=agentConfig.chroma_persist_dir)
+    vector_store = ChromaVectorStore(persist_dir=memory_config.chroma_persist_dir)
 else:
     # 预留 Milvus
     query_builder = MilvusQueryBuilder()
-    vector_store = MilvusVectorStore(uri=agentConfig.milvus_uri)
+    milvus_client = MilvusClientManager(retrieval_config.milvus_uri)
+    embeder = get_embeddings()
+    vector_store = MilvusMemoryVectorStore(milvus_client=milvus_client, embed=embeder, config=memory_config)
 
 st.set_page_config(page_title="银行贷款助手", page_icon="🏦")
 st.title("🏦 银行贷款顾问助手")
@@ -37,13 +49,13 @@ st.title("🏦 银行贷款顾问助手")
 # ==================== 初始化 ====================
 if "memory_store" not in st.session_state:
     try:
-        st.session_state.memory_store = LongTermMemoryStore(vector_store=vector_store)
+        st.session_state.memory_store = LongTermMemoryStore(vector_store=vector_store, config=memory_config)
     except Exception as e:
         st.error(f"记忆存储初始化失败: {e}")
         st.stop()
 
-if "retriever" not in st.session_state:
-    st.session_state.retriever = VectorRetriever(st.session_state.memory_store)
+if "retrieval" not in st.session_state:
+    st.session_state.retriever = MemoryVectorRetriever(st.session_state.memory_store, memory_config)
 
 if "user_id" not in st.session_state:
     st.session_state.user_id = "test_user_004"
@@ -53,7 +65,8 @@ if "agent" not in st.session_state:
     try:
         st.session_state.agent = build_graph(
             st.session_state.memory_store,
-            st.session_state.retriever
+            st.session_state.retriever,
+            ConfigRegistry()
         )
     except Exception as e:
         st.error(f"Agent 初始化失败: {e}")
@@ -81,7 +94,7 @@ with st.sidebar:
         # 使用新的抽象方法获取用户画像
         profile_memories = st.session_state.memory_store.get_all_user_profile_memories(
             user_id=st.session_state.user_id,
-            status="active"
+            status=MemoryStatus.ACTIVE
         )
     except Exception as e:
         logger.error(f"获取用户画像失败: {e}")

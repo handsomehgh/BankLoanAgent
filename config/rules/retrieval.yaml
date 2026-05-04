@@ -1,0 +1,58 @@
+# RAG 检索与索引配置（完全独立的检索参数）
+retrieval_top_k: 5
+retrieval_fetch_k: 10
+retrieval_min_similarity: 0.3
+rag_max_context_length: 3000
+
+# ---------- 索引参数 ----------
+index_params:
+  dense:
+    metric_type: "IP"
+    index_type: "IVF_FLAT"
+    nlist: 1024
+  sparse:
+    metric_type: "IP"
+    index_type: "SPARSE_INVERTED_INDEX"
+    drop_ratio_build: 0.2
+multi_vector:
+  enable: true
+  term_vector: true
+  summary_vector: false
+  faq_similar_vector: false
+  graph_embedding_dim: 256
+embedding:
+  model_name: "BAAI/bge-large-zh-v1.5"
+  device: "cpu"
+  normalize: true
+  max_seq_length: 512
+  batch_size: 32
+
+# ---------- 分块策略 ----------
+chunking:
+  faq:
+    method: "no_split"
+    min_chunk_length: 5
+  product_manual:
+    method: "structure_then_recursive"
+    structure_delimiter: "### "
+    chunk_size: 800
+    chunk_overlap: 100
+    min_chunk_length: 10
+  process_guide:
+    method: "recursive"
+    chunk_size: 600
+    chunk_overlap: 60
+    min_chunk_length: 15
+  regulation:
+    method: "recursive"
+    chunk_size: 500
+    chunk_overlap: 50
+    min_chunk_length: 10
+  glossary:
+    method: "no_split"
+    min_chunk_length: 5
+  default:
+    method: "recursive"
+    chunk_size: 600
+    chunk_overlap: 60
+    min_chunk_length: 20
