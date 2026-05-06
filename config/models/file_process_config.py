@@ -4,17 +4,22 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
+from config.global_constant.constants import KnowledgeFileSourceType
+
+
 class PreprocessingConfig(BaseModel):
     min_content_length: int = 10
     enable_advanced_cleaning: bool = True
 
 class FileSourceItem(BaseModel):
     loader_type: str
-    source_type: str
+    source_type: KnowledgeFileSourceType
 
 class MetadataExtractionConfig(BaseModel):
     product_keywords: Dict[str, List[str]] = Field(default_factory=dict)
     topic_keywords: Dict[str, List[str]] = Field(default_factory=dict)
+    default_confidence_by_source: Dict[str, float] = Field(default_factory=dict)
+    fallback_confidence: float = 0.7
 
 class ChunkingRule(BaseModel):
     method: str
@@ -29,7 +34,7 @@ class ChunkingConfig(BaseModel):
     strategies: Dict[str, ChunkingRule] = Field(default_factory=dict)
     default: ChunkingRule = Field(default_factory=lambda: ChunkingRule(method="recursive", chunk_size=600, chunk_overlap=60, min_chunk_length=20))
 
-class IndexingConfig(BaseModel):
+class FileProcessConfig(BaseModel):
     data_dir: Path = Path("./data/raw")
     stage1_output_dir: Path = Path("./data/stage1_output")
     stage2_output_dir: Path = Path("./data/stage2_output")

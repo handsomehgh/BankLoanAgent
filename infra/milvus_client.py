@@ -51,5 +51,20 @@ class MilvusClientManager:
             logger.info(f"Collection '{name}' has been loaded!")
         return self._collections[name]
 
+    def delete_collection(self, name: str) -> bool:
+        """delete collection by name"""
+        if utility.has_collection(name):
+            try:
+                utility.drop_collection(name)
+                if name in self._collections:
+                    self._collections.pop(name)
+                return True
+            except Exception as e:
+                logger.error(f"Failed to delete collection {name}: {e}")
+        else:
+            logger.error(f"Collection '{name}' doesn't exist!")
+            return False
+
+
     def has_collection(self, name: str) -> bool:
         return utility.has_collection(name)

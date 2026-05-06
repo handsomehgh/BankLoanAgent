@@ -1,5 +1,5 @@
 # Offline Index Construction Configuration
-data_dir: "./data/raw"
+data_dir: "./data/knowledge"
 stage1_output_dir: "./data/stage1_output"
 stage2_output_dir: "./data/stage2_output"
 
@@ -9,22 +9,30 @@ preprocessing:
 
 file_source_mapping:
   "faq.md":
-    loader_type: "faq"
+    loader_type: "qa"
     source_type: "faq"
   "products.md":
-    loader_type: "markdown"
+    loader_type: "mark_down"
     source_type: "product_manual"
   "process.md":
-    loader_type: "markdown"
+    loader_type: "mark_down"
     source_type: "process_guide"
   "regulations.md":
-    loader_type: "markdown"
+    loader_type: "mark_down"
     source_type: "regulation"
   "terms.md":
-    loader_type: "glossary"
+    loader_type: "word_expl"
     source_type: "glossary"
 
 metadata_extraction:
+  default_confidence_by_source:
+    faq: 0.8
+    product_manual: 0.9
+    process_guide: 0.85
+    regulation: 0.95
+    glossary: 0.9
+  fallback_confidence: 0.7
+
   product_keywords:
     "住房贷款": ["一手房", "二手房", "公积金", "按揭", "住房贷款", "首套房", "二套房"]
     "消费贷款": ["消费贷款", "装修贷", "教育贷款", "留学贷款", "汽车贷款", "购车", "出国留学"]

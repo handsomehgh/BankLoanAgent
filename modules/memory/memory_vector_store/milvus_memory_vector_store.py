@@ -13,12 +13,11 @@ from config.models.memory_config import MemorySystemConfig
 from infra.collections import CollectionNames
 from infra.milvus_client import MilvusClientManager
 from modules.memory.memory_constant.fields import MemoryFields
-from modules.module_services.embeddings import get_embeddings, RobustEmbeddings
+from modules.module_services.embeddings import RobustEmbeddings
 from utils.query.milvus_query_builder import MilvusQueryBuilder
 from utils.query.query_model import Query
 from modules.memory.models.memory_data.memory_schema import UserProfileMemory, InteractionLogMemory, \
-    ComplianceRuleMemory, \
-    BusinessKnowledge
+    ComplianceRuleMemory
 from modules.memory.models.memory_mappers.mappers import MemoryToStorageMapper
 from modules.memory.memory_vector_store.base_vector_store import BaseVectorStore
 from utils.retry import retry_on_failure
@@ -28,8 +27,7 @@ logger = logging.getLogger(__name__)
 _MODEL_CLASSES = {
     MemoryType.USER_PROFILE: UserProfileMemory,
     MemoryType.INTERACTION_LOG: InteractionLogMemory,
-    MemoryType.COMPLIANCE_RULE: ComplianceRuleMemory,
-    MemoryType.BUSINESS_KNOWLEDGE: BusinessKnowledge
+    MemoryType.COMPLIANCE_RULE: ComplianceRuleMemory
 }
 
 

@@ -3,23 +3,46 @@ retrieval_top_k: 5
 retrieval_fetch_k: 10
 retrieval_min_similarity: 0.3
 rag_max_context_length: 3000
+insert_batch_size: 50
 
 # ---------- 索引参数 ----------
 index_params:
   dense:
-    metric_type: "IP"
-    index_type: "IVF_FLAT"
-    nlist: 1024
+    metric_type: "COSINE"
+    index_type: "HNSW"
+    params:
+      M: 16
+      efConstruction: 200
   sparse:
-    metric_type: "IP"
+    metric_type: "BM25"
     index_type: "SPARSE_INVERTED_INDEX"
-    drop_ratio_build: 0.2
+    params:
+      drop_ratio_build: 0.2
+
 multi_vector:
   enable: true
   term_vector: true
   summary_vector: false
   faq_similar_vector: false
-  graph_embedding_dim: 256
+  graph_embedding_dim: 0
+
+  summary_config:
+    enable_source_filter: true
+    enabled_sources:
+      - product_manual
+      - process_guide
+      - regulation
+    min_chunk_length: 200
+    temperature: 0.1
+    max_output_tokens: 80
+    fallback_to_original: true
+
+  faq_similar_config:
+    num_variants: 3
+    temperature: 0.3
+    max_output_tokens: 150
+    fallback_to_original: true
+
 embedding:
   model_name: "BAAI/bge-large-zh-v1.5"
   device: "cpu"

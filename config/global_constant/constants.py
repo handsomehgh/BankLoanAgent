@@ -67,7 +67,7 @@ class ComplianceAction(str, Enum):
     REMIND = "remind"
     MASK = "mask"
 
-class SourceType(str, Enum):
+class KnowledgeFileSourceType(str,Enum):
     FAQ = "faq"
     PRODUCT_MANUAL = "product_manual"
     PROCESS_GUIDE = "process_guide"

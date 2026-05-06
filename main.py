@@ -1,11 +1,15 @@
 from pathlib import Path
 
 from config.global_constant.constants import RegistryModules
+from config.models.file_process_config import FileProcessConfig
 from config.registry import ConfigRegistry
 from config.settings import GlobalSettings
 from config.models.memory_config import MemorySystemConfig
 from config.models.retrieval_config import RetrievalConfig
 from config.models.llm_config import LLMConfig
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 def inject_sensitive_fields(cfg_registry: ConfigRegistry, settings: GlobalSettings):
     """
@@ -38,19 +42,19 @@ def load_config():
     # 注册所有模块
     registry.register_model(
         RegistryModules.MEMORY_SYSTEM, MemorySystemConfig,
-        Path("config/rules/memory_config.yaml")
+        Path(PROJECT_ROOT  / "config/rules/memory_system_config.yaml")
     )
     registry.register_model(
         RegistryModules.RETRIEVAL, RetrievalConfig,
-        Path("config/rules/retrieval_config.yaml")
+        Path(PROJECT_ROOT / "config/rules/retrieval_config.yaml")
     )
     registry.register_model(
         RegistryModules.LLM, LLMConfig,
-        Path("config/rules/llm_config.yaml")
+        Path(PROJECT_ROOT / "config/rules/llm_config.yaml")
     )
     registry.register_model(
-        RegistryModules.FILE_PROCESS, LLMConfig,
-        Path("config/rules/file_process_config.yaml")
+        RegistryModules.FILE_PROCESS, FileProcessConfig,
+        Path(PROJECT_ROOT / "config/rules/file_process_config.yaml")
     )
 
     # 加载 YAML
@@ -69,6 +73,3 @@ def load_config():
     except KeyboardInterrupt:
         observer.stop()
         observer.join()
-
-if __name__ == "__main__":
-    main()
