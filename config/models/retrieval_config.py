@@ -81,6 +81,32 @@ class CompressorConfig(BaseModel):
     model_name: str = "BAAI/bge-reranker-v2-m3"
 
 
+class RuleBasedRouterConfig(BaseModel):
+    strong_keywords: List[str] = Field(
+        default_factory=list,
+        description="strong business keywords,triggering search if any one is hit"
+    )
+    weak_keywords: List[str] = Field(
+        default_factory=list,
+        description="weak business keywords require matching with the query length threshold to trigger retrieval"
+    )
+    stop_patterns: List[str] = Field(
+        default_factory=list,
+        description="a list of regular expressions for non-business sentence patterns; if any one is matched, the search is skipped."
+    )
+    ambiguous_threshold: int = Field(
+        default=6,
+        description="when the query length is less than or equal to this value and only contains weak keywords, retrieval is not triggered"
+    )
+
+
+class RetrievalRoutingConfig(BaseModel):
+    """retrieve the overall routing configuration,supporting multiple strategy"""
+    enabled: bool = Field(default=True, description="whether to enable routing,if disabled,all queries will be covered")
+    strategy: str = Field(default="rule_based", description="route strategy: rule_based, ml_based")
+    rule_based: RuleBasedRouterConfig = Field(default_factory=RuleBasedRouterConfig)
+
+
 class RetrievalConfig(BaseModel):
     milvus_uri: str = "http://localhost:19530"
     sqlite_db_path: str = "./checkpoints.db"
@@ -115,3 +141,6 @@ class RetrievalConfig(BaseModel):
 
     # context compressor
     compressor: CompressorConfig = Field(default_factory=CompressorConfig)
+
+    # retrieve routing config
+    retrieval_routing: RetrievalRoutingConfig = Field(default_factory=RetrievalRoutingConfig)

@@ -7,6 +7,7 @@ class RegistryModules(str, Enum):
     RETRIEVAL = "retrieval"
     LLM = "llm"
     FILE_PROCESS = "file_process"
+    CACHE = "cache"
 
 class SpecialUserID(str, Enum):
     GLOBAL = "global"

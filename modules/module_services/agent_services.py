@@ -12,6 +12,7 @@ from modules.module_services.evidence_infer import EvidenceTypeInfer
 from modules.module_services.profile_extractor import ProfileExtractor
 from modules.module_services.sentiment_analyser import SentimentAnalyzer
 from modules.retrieval.retrieval_service import RetrievalService
+from modules.retrieval.router.retrieval_base_router import RetrievalRouter
 
 
 @dataclass
@@ -38,3 +39,6 @@ class AgentServices:
 
     # configure the registration center
     registry: ConfigRegistry
+
+    # retrieval router
+    retrieval_router: RetrievalRouter

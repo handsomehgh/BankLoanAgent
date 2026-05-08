@@ -1,12 +1,15 @@
 # author hgh
 # version 1.0
 import asyncio
+import hashlib
 import logging
+import threading
 from concurrent.futures.thread import ThreadPoolExecutor
 from typing import List, Optional, Dict
 
 from config.global_constant.constants import MemoryType
 from config.models.retrieval_config import RetrievalConfig
+from infra.cache.cache_manager import CacheManager
 from modules.retrieval.context_compressor import ContextCompressor
 from modules.retrieval.knowledge_model import BusinessKnowledge
 from modules.retrieval.knowledge_vector_store.knowledge_search_engine import KnowledgeSearchEngine
@@ -26,17 +29,69 @@ class RetrievalService:
             filter: QueryFilter,
             reranker: Reranker,
             compressor: ContextCompressor,
-            config: RetrievalConfig):
+            config: RetrievalConfig,
+            cache_manager: Optional[CacheManager] = None
+    ):
         self.engine = engine
         self.rewriter = rewriter
         self.filter = filter
         self.reranker = reranker
         self.compressor = compressor
+        self.cache_manager = cache_manager
+        self._locks: Dict[str, threading.Lock] = {}
+        self._locks_lock = threading.Lock()
         self.config = config
         self._executor = ThreadPoolExecutor(max_workers=3)
 
+    def _get_lock(self, key: str) -> threading.Lock:
+        with self._locks_lock:
+            if key not in self._locks:
+                self._locks[key] = threading.Lock()
+            return self._locks[key]
+
     def retrieve(self,query: str,context: Optional[Dict] = None) -> List[BusinessKnowledge]:
-        return asyncio.run(self._retrieve_async(query,context))
+        cache_key = None
+        if self.cache_manager:
+            query_hash = hashlib.md5(query.encode()).hexdigest()
+            filter_expr = self.filter.extract(query) if self.config.filter.enabled else None
+            filter_hash = hashlib.md5(filter_expr.encode()).hexdigest()
+            self.cache_manager.build_key("know",query_hash,filter_hash)
+
+        if cache_key:
+            cached = self.cache_manager.get(cache_key)
+            if cached is not None:
+                if isinstance(cached,bytes) and cached == b"__NULL__":
+                    return []
+            if cached:
+                return [BusinessKnowledge(**item) for item in cached]
+
+        if cache_key:
+            lock = self._get_lock(cache_key)
+            acquired = lock.acquire(blocking=False)
+            if not acquired:
+                with lock:
+                    pass
+                cached = self.cache_manager.get(cache_key)
+                if cached is not None:
+                    if isinstance(cached, bytes) and cached == b"__NULL__":
+                        return []
+                    if cached:
+                        return [BusinessKnowledge(**item) for item in cached]
+                return asyncio.run(self._retrieve_async(query, context))
+            else:
+                try:
+                    results = asyncio.run(self._retrieve_async(query, context))
+                    if cache_key:
+                        if results:
+                            ser = [item.model_dump(mode="json") for item in results]
+                            self.cache_manager.set(cache_key, ser)
+                        else:
+                            self.cache_manager.set_null(cache_key)
+                    return results
+                finally:
+                    lock.release()
+        else:
+            return asyncio.run(self._retrieve_async(query, context))
 
     async def _retrieve_async(self, query: str, context: Optional[Dict] = None) -> List[BusinessKnowledge]:
         #rewrite query

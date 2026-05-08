@@ -1,5 +1,11 @@
 # app.py
 import os
+from typing import Optional, Dict
+
+from infra.cache.cache_factory import CacheFactory
+from modules.retrieval.router.retrieval_base_router import RetrievalRouter
+from modules.retrieval.router.retrieval_rule_router import RuleBaseRetrievalRouter
+
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 import streamlit as st
@@ -56,6 +62,7 @@ memory_config = registry.get_config(RegistryModules.MEMORY_SYSTEM)
 print(f"=================={memory_config}")
 retrieval_config = registry.get_config(RegistryModules.RETRIEVAL)
 print(f"=================={retrieval_config}")
+cache_config = registry.get_config(RegistryModules.CACHE)
 
 # ===================== 创建 LLM 客户端 =====================
 creative_llm = RobustLLM(
@@ -131,6 +138,9 @@ if "agent" not in st.session_state:
         reranker = Reranker(retrieval_config.reranker)
         compressor = ContextCompressor(retrieval_config.compressor)
 
+        cache_factory = CacheFactory(cache_config)
+        rag_cache_manager = cache_factory.create("rag")
+
         knowledge_retriever = RetrievalService(
             engine=knowledge_engine,
             rewriter=rewriter,
@@ -138,6 +148,7 @@ if "agent" not in st.session_state:
             reranker=reranker,
             compressor=compressor,
             config=retrieval_config,
+            cache_manager=rag_cache_manager
         )
 
         # ---- 创建领域服务 ----
@@ -148,21 +159,35 @@ if "agent" not in st.session_state:
             max_interaction_length=memory_config.interaction_log_max_length
 
         )
+
         sentiment_analyzer = SentimentAnalyzer(
             llm_client=precise_llm,
             strong_keywords=memory_config.sentiment_rules.strong_keywords,
             prompt=DETECT_SENTIMENT_PROMPT
         )
+
         evidence_infer = EvidenceTypeInfer(
             llm_client=precise_llm,
             strong_keywords=memory_config.evidence_rules.strong_keywords,
             prompt=EVIDENCE_PROMPT
         )
+
         profile_extractor = ProfileExtractor(
             llm_client=precise_llm,
             extract_prompt=EXTRACT_PROMPT
         )
         profile_gate = ProfileGate(memory_config.memory_gate)
+
+        routing_config = retrieval_config.retrieval_routing
+        if routing_config.enabled:
+            retrieval_router = RuleBaseRetrievalRouter(routing_config.rule_based)
+        else:
+            class AlwaysRetrievalRouter(RetrievalRouter):
+                def should_retrieve(self, query: str, context: Optional[Dict] = None) -> bool:
+                    return True
+
+
+            retrieval_router = AlwaysRetrievalRouter()
 
         # ---- 组装服务容器 ----
         services = AgentServices(
@@ -176,7 +201,8 @@ if "agent" not in st.session_state:
             evidence_infer=evidence_infer,
             profile_extractor=profile_extractor,
             profile_gate=profile_gate,
-            registry=ConfigRegistry()
+            registry=ConfigRegistry(),
+            retrieval_router=retrieval_router
         )
 
         # ---- 构建 Agent 图 ----
