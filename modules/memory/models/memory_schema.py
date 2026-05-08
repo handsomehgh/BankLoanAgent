@@ -4,19 +4,13 @@ from typing import Optional, List, Any
 
 from pydantic import Field, field_validator
 
+from config.context_settings import get_enum_strictness
 from config.global_constant.constants import ComplianceAction, ComplianceSeverity
-from config.models.memory_config import MemorySystemConfig
-from config.registry import ConfigRegistry
 from modules.memory.memory_constant.constants import MemorySource, EvidenceType, MemoryStatus, InteractionEventType, \
     InteractionSentiment, ProfileEntityKey
-from modules.memory.models.memory_data.memory_base import MemoryBase
+from modules.memory.models.memory_base import MemoryBase
 
 logger = logging.getLogger(__name__)
-
-
-def _get_memory_system_config() -> MemorySystemConfig:
-    """获取记忆系统配置（每次调用可能返回最新版本）"""
-    return ConfigRegistry().get_config("memory_system")
 
 
 # ==================== user profile ====================
@@ -40,8 +34,7 @@ class UserProfileMemory(MemoryBase):
         try:
             return EvidenceType(v)
         except ValueError:
-            memory_config = _get_memory_system_config()
-            if memory_config.strict_enum_validation:
+            if get_enum_strictness():
                 raise ValueError(f"Invalid evidence_type '{v}'. Must be one of {[e.value for e in EvidenceType]}")
             logger.warning(f"Invalid evidence_type '{v}', fallback to EXPLICIT_STATEMENT")
             return EvidenceType.EXPLICIT_STATEMENT
@@ -64,8 +57,7 @@ class InteractionLogMemory(MemoryBase):
         try:
             return InteractionEventType(v)
         except ValueError:
-            memory_config = _get_memory_system_config()
-            if memory_config.strict_enum_validation:
+            if get_enum_strictness():
                 raise ValueError(f"Invalid event_type '{v}'. Must be one of {[e.value for e in InteractionEventType]}")
             logger.warning(f"Invalid event_type '{v}', fallback to INQUIRY")
             return InteractionEventType.INQUIRY
@@ -80,8 +72,7 @@ class InteractionLogMemory(MemoryBase):
         try:
             return InteractionSentiment(v)
         except ValueError:
-            memory_config = _get_memory_system_config()
-            if memory_config.strict_enum_validation:
+            if get_enum_strictness():
                 raise ValueError(f"Invalid sentiment '{v}'. Must be one of {[e.value for e in InteractionSentiment]}")
             logger.warning(f"Invalid sentiment '{v}', ignoring sentiment")
             return None
@@ -116,8 +107,7 @@ class ComplianceRuleMemory(MemoryBase):
         try:
             return ComplianceAction(v)
         except ValueError:
-            memory_config = _get_memory_system_config()
-            if memory_config.strict_enum_validation:
+            if get_enum_strictness():
                 raise ValueError(f"Invalid action '{v}'. Must be one of {[e.value for e in ComplianceAction]}")
             logger.warning(f"Invalid action '{v}', fallback to WARN")
             return ComplianceAction.WARN
@@ -130,10 +120,7 @@ class ComplianceRuleMemory(MemoryBase):
         try:
             return ComplianceSeverity(v)
         except ValueError:
-            memory_config = _get_memory_system_config()
-            if memory_config.strict_enum_validation:
+            if get_enum_strictness():
                 raise ValueError(f"Invalid severity '{v}'. Must be one of {[e.value for e in ComplianceSeverity]}")
             logger.warning(f"Invalid severity '{v}', fallback to MEDIUM")
             return ComplianceSeverity.MEDIUM
-
-

@@ -14,12 +14,12 @@ from infra.collections import CollectionNames
 from infra.milvus_client import MilvusClientManager
 from modules.memory.memory_constant.fields import MemoryFields
 from modules.module_services.embeddings import RobustEmbeddings
-from utils.query.milvus_query_builder import MilvusQueryBuilder
-from utils.query.query_model import Query
-from modules.memory.models.memory_data.memory_schema import UserProfileMemory, InteractionLogMemory, \
+from modules.memory.models.memory_schema import UserProfileMemory, InteractionLogMemory, \
     ComplianceRuleMemory
-from modules.memory.models.memory_mappers.mappers import MemoryToStorageMapper
 from modules.memory.memory_vector_store.base_vector_store import BaseVectorStore
+from utils.model_mapper.model_to_storage import MemoryToStorageMapper
+from utils.query_utils.milvus_query_builder import MilvusQueryBuilder
+from utils.query_utils.query_model import Query
 from utils.retry import retry_on_failure
 
 logger = logging.getLogger(__name__)
@@ -128,7 +128,7 @@ class MilvusMemoryVectorStore(BaseVectorStore):
             strategy = search_strategy
 
         logger.info(
-            f"Search strategy: {strategy.value} for query "
+            f"Search strategy: {strategy.value} for query_utils "
             f"'{query[:60]}...' in {CollectionNames.for_type(memory_type)}"
         )
 
@@ -161,7 +161,7 @@ class MilvusMemoryVectorStore(BaseVectorStore):
         coll_name = CollectionNames.for_type(memory_type)
         collection = self.client.get_collection(coll_name)
 
-        # organize query conditions
+        # organize query_utils conditions
         parts = []
         if where:
             from_where = self._query_builder.build(where)
@@ -181,7 +181,7 @@ class MilvusMemoryVectorStore(BaseVectorStore):
         if limit is not None:
             query_params["limit"] = limit
 
-        # execute query
+        # execute query_utils
         results = collection.query(**query_params)
         return results
 
@@ -237,7 +237,7 @@ class MilvusMemoryVectorStore(BaseVectorStore):
         coll_name = CollectionNames.for_type(memory_type)
         collection = self.client.get_collection(coll_name)
 
-        # vectorize query content
+        # vectorize query_utils content
         dense_vec = self._embed_text([query])[0]
 
         # organize search param
@@ -342,12 +342,12 @@ class MilvusMemoryVectorStore(BaseVectorStore):
         return [candidates[i] for i in select_indices]
 
     def _infer_strategy(self, query, memory_type) -> SearchStrategy:
-        """dynamically select retrieval strategies based on query content and memory type"""
+        """dynamically select retrieval strategies based on query_utils content and memory type"""
         # global configuration override
         if self.config.default_search_strategy != SearchStrategy.AUTO.value:
             return SearchStrategy(self.config.default_search_strategy)
 
-        # query feature recognition
+        # query_utils feature recognition
         if len(query) < 5 and any(c.isdigit() or c.isascii() for c in query):
             return SearchStrategy.KEYWORD
 

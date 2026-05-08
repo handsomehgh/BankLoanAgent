@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 
 from config.global_constant.constants import MemoryType
-from utils.query.query_model import Query
+from utils.query_utils.query_model import Query
 
 
 class BaseVectorStore(ABC):
@@ -40,8 +40,8 @@ class BaseVectorStore(ABC):
 
         Args:
             memory_type: the type of collection
-            query: query text
-            where: query Conditions
+            query: query_utils text
+            where: query_utils Conditions
             limit: the number of return records
             search_strategy: the search strategy
         """
@@ -61,7 +61,7 @@ class BaseVectorStore(ABC):
         Args:
             memory_type: the type of collection
             ids: list of ids
-            where: query conditions
+            where: query_utils conditions
             limit: the number of return records
             include: the content included in the return result
 

@@ -30,12 +30,12 @@ class ConfigRegistry:
         self._file_paths[module] = yaml_path
 
     def load_all(self):
+        print(f"models------------{self._models}")
         for module in self._models:
             self._load_module(module)
 
     def _load_module(self, module: str):
         path = self._file_paths[module]
-        print("--------------------")
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 data = yaml.safe_load(f)

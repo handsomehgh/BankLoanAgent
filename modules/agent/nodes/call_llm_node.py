@@ -9,21 +9,20 @@ from config.global_constant.constants import MemoryType
 from config.models.memory_config import MemorySystemConfig
 from modules.agent.constants import StateFields, MessageCommonFields
 from modules.agent.state import AgentState
-from modules.module_services.chat_models import get_llm
+from modules.module_services.chat_models import RobustLLM
 from config.prompts.system_prompt import SYSTEM_TEMPLATE
 
 logger = logging.getLogger(__name__)
-llm = get_llm()
 
-
-def call_model_node(state: AgentState, config: RunnableConfig, memory_config: MemorySystemConfig) -> dict:
+def call_model_node(state: AgentState, config: RunnableConfig, memory_config: MemorySystemConfig,llm_client: RobustLLM) -> dict:
     """call llm"""
     print(f"=======================\n{state}\n==========================")
     formatted = state.get(StateFields.FORMATTED_CONTEXT, {})
     system = SYSTEM_TEMPLATE.format(
         user_profile=formatted.get(MemoryType.USER_PROFILE.value, "暂无"),
         compliance_rule=formatted.get(MemoryType.COMPLIANCE_RULE.value, "暂无"),
-        interaction_log=formatted.get(MemoryType.INTERACTION_LOG.value, "暂无")
+        interaction_log=formatted.get(MemoryType.INTERACTION_LOG.value, "暂无"),
+        business_knowledge=formatted.get(MemoryType.BUSINESS_KNOWLEDGE.value,"暂无")
     )
 
     messages = state.get(StateFields.MESSAGES, [])
@@ -31,7 +30,7 @@ def call_model_node(state: AgentState, config: RunnableConfig, memory_config: Me
     if len(messages) > memory_config.max_context_messages:
         recent = messages[-memory_config.max_context_messages:]
     full_messages = [SystemMessage(content=system)] + recent
-    response = llm.invoke_with_fallback(full_messages,
+    response = llm_client.invoke_with_fallback(full_messages,
                                         fallback_response="Sorry, I am temporarily unable to handle your request. Please try again later.")
 
     # assign global incremental message sequence number for AiMessage

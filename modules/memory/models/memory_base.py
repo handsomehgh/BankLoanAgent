@@ -1,21 +1,15 @@
+import contextvars
 import logging
 from datetime import datetime
 from typing import Dict, Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from config.models.memory_config import MemorySystemConfig
-from config.registry import ConfigRegistry
+from config.context_settings import get_enum_strictness
 from modules.memory.memory_constant.constants import MemoryStatus
 from modules.memory.memory_constant.fields import MemoryFields
 
 logger = logging.getLogger(__name__)
-
-
-def _get_memory_system_config() -> MemorySystemConfig:
-    """获取记忆系统配置（每次调用可能返回最新版本）"""
-    return ConfigRegistry().get_config("memory_system")
-
 
 class MemoryBase(BaseModel):
     """common memory fields"""
@@ -48,8 +42,7 @@ class MemoryBase(BaseModel):
         try:
             return MemoryStatus(v)
         except ValueError:
-            memory_config = _get_memory_system_config()
-            if memory_config.strict_enum_validation:
+            if get_enum_strictness():
                 raise ValueError(f"Invalid status '{v}'. Must be one of {[e.value for e in MemoryStatus]}")
             logger.warning(f"Invalid status '{v}', fallback to ACTIVE")
             return MemoryStatus.ACTIVE

@@ -27,4 +27,4 @@ class BusinessKnowledge(BaseModel):
     regulation_names: List[str] = Field(default=list, description="regulation names")
     created_at: datetime = Field(default_factory=datetime.now, description="chunk creation time")
     updated_at: datetime = Field(default_factory=datetime.now, description="chunk update time")
-    extra: Dict[str, Any] = Field(default=dict, description="extra data")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="extra data")

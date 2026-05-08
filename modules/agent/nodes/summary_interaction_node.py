@@ -13,14 +13,19 @@ from modules.agent.constants import StateFields
 from modules.agent.state import AgentState
 from modules.memory.memory_business_store.base_memory_store import BaseMemoryStore
 from modules.memory.memory_constant.constants import InteractionEventType, MemorySource, MemoryStatus
-from modules.memory.memory_utils.base_memory_utils import get_message_index, format_message, detect_sentiment
-from modules.module_services.chat_models import get_llm
+from modules.memory.memory_utils.base_memory_utils import get_message_index, format_message
+from modules.module_services.SummaryGenerator import SummaryGenerator
+from modules.module_services.sentiment_analyser import SentimentAnalyzer
 
 logger = logging.getLogger(__name__)
-llm = get_llm()
 
-
-def log_interaction_node(state: AgentState, config: RunnableConfig, memory_store: BaseMemoryStore,memory_config: MemorySystemConfig):
+def log_interaction_node(
+        state: AgentState,
+        config: RunnableConfig,
+        memory_store: BaseMemoryStore,
+        memory_config: MemorySystemConfig,
+        summary_generator: SummaryGenerator,
+        sentiment_analyzer: SentimentAnalyzer):
     """generate a conversation summary and store it in the interaction memory"""
     # obtain session_id
     configurable = config.get(ConfigFields.CONFIGURABLE, {})
@@ -29,7 +34,7 @@ def log_interaction_node(state: AgentState, config: RunnableConfig, memory_store
     # No message returned, interaction_logged flag is false
     messages = state.get(StateFields.MESSAGES, [])
     if not messages:
-        return {"interaction_logged": False}
+        return {StateFields.INTERACTION_LOGGED.value: False}
 
     # cursor
     last_logged_index = state.get(StateFields.LAST_LOGGED_MESSAGE_INDEX)
@@ -50,13 +55,13 @@ def log_interaction_node(state: AgentState, config: RunnableConfig, memory_store
     # No messages to extract, return false
     new_context = messages[start_pos:]
     if not new_context:
-        return {"interaction_logged": False}
+        return {StateFields.INTERACTION_LOGGED.value: False}
 
     # Returning false if the new user message is less than the minimum withdrawable amount
     new_user_count = sum(1 for m in new_context if isinstance(m, HumanMessage))
     if new_user_count < memory_config.interaction_log_min_new_msgs:
         logger.debug(f"Only {new_user_count} new user msgs, threshold {memory_config.interaction_log_min_new_msgs}")
-        return {"interaction_logged": False}
+        return {StateFields.INTERACTION_LOGGED.value: False}
 
     # If the number of messages to be extracted is greater than the maximum extractable number,only extract the maximum extractable number
     if len(new_context) > memory_config.interaction_log_max_context:
@@ -69,17 +74,12 @@ def log_interaction_node(state: AgentState, config: RunnableConfig, memory_store
         format_message(m)
         for m in new_context
     )
-    try:
-        summary_prompt = f"请用一句话总结以下对话核心内容，不要包含冗余信息:\n{conversation}\n\n摘要:"
-        summary = llm.invoke([HumanMessage(content=summary_prompt)],
-                             fallback_response="Failed to generate conversation summary").content
-    except Exception as e:
-        logger.error(f"Summary generation failed: {e}")
-        user_parts = [m.content for m in new_context if isinstance(m, HumanMessage)]
-        summary = f"用户询问：{'；'.join(user_parts[:2])}" if user_parts else "对话摘要生成失败"
+
+    #summary interactions
+    summary = summary_generator.generate(conversation,new_context)
 
     # detect sentiment
-    sentiment = detect_sentiment(summary,memory_config.sentiment_rules.strong_keywords)
+    sentiment = sentiment_analyzer.analyze(summary)
 
     # build log memory data
     metadata = {

@@ -5,7 +5,6 @@ import logging
 from typing import Dict, Optional
 
 from config.models.retrieval_config import RetrievalConfig
-from modules.module_services.chat_models import get_llm
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +17,7 @@ SUMMARY_PROMPT_TEMPLATE = """请用一句简洁的话概括以下银行个人贷
 
 
 class SummaryKnowledgeGenerator:
-    def __init__(self, config: RetrievalConfig):
+    def __init__(self, config: RetrievalConfig,llm_client):
         summary_config = config.multi_vector.summary_config
         self.enabled_sources = summary_config.enabled_sources or []
         self.min_chunk_length = summary_config.min_chunk_length or 200
@@ -26,7 +25,7 @@ class SummaryKnowledgeGenerator:
         self.fallback_to_original = summary_config.fallback_to_original or True
         self.enable_source_filter = summary_config.enable_source_filter or True
 
-        self.llm_client = get_llm(summary_config.temperature or 0.1)
+        self.llm_client = llm_client
 
         self._cache: Dict[str, str] = {}
 

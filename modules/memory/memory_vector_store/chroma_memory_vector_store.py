@@ -10,10 +10,10 @@ from chromadb.errors import ChromaError
 from config.global_constant.constants import VectorQueryFields, MemoryType
 from infra.collections import CollectionNames
 from modules.memory.memory_constant.fields import MemoryFields
-from utils.query.chroma_query_builder import ChromaQueryBuilder
-from utils.query.query_model import Query
-from modules.memory.models.memory_mappers.mappers import MemoryToStorageMapper
 from modules.memory.memory_vector_store.base_vector_store import BaseVectorStore
+from utils.model_mapper.model_to_storage import MemoryToStorageMapper
+from utils.query_utils.chroma_query_builder import ChromaQueryBuilder
+from utils.query_utils.query_model import Query
 from utils.retry import retry_on_failure
 
 logger = logging.getLogger(__name__)
@@ -132,7 +132,7 @@ class ChromaVectorStore(BaseVectorStore):
             VectorQueryFields.METADATAS.value,
         ]
 
-        # execute query
+        # execute query_utils
         raw_results = collection.get(**kwargs)
 
         adapted_results = {

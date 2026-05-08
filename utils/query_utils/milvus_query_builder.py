@@ -2,8 +2,8 @@
 # version 1.0
 from typing import Any
 
-from utils.query.query_model import Query
-from utils.query.query_builder import QueryBuilder
+from utils.query_utils.query_builder import QueryBuilder
+from utils.query_utils.query_model import Query
 
 
 class MilvusQueryBuilder(QueryBuilder):
@@ -19,6 +19,8 @@ class MilvusQueryBuilder(QueryBuilder):
                         f'"{v}"' if isinstance(v, str) else str(v) for v in cond.value
                     )
                     parts.append(f'{cond.field} in [{values}]')
+            if cond.op.upper() == "ARRAY_CONTAINS":
+                parts.append(f'ARRAY_CONTAINS({cond.field},"{cond.value}")')
             else:
                 val = f'"{cond.value}"' if isinstance(cond.value, str) else str(cond.value)
                 parts.append(f'{cond.field} {cond.op} {val}')

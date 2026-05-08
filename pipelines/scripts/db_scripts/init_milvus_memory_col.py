@@ -101,7 +101,7 @@ BM25_FUNCTION = Function(
     output_field_names=["sparse_vector"]
 )
 
-# the scalar fields that need to create dictionary indexes(choose based on query frequency)
+# the scalar fields that need to create dictionary indexes(choose based on query_utils frequency)
 SCALAR_INDEX_FIELDS = {
     MemoryType.USER_PROFILE.value: ["user_id", "entity_key", "status", "confidence"],
     MemoryType.INTERACTION_LOG.value: ["user_id", "session_id", "timestamp", "status", "confidence"],

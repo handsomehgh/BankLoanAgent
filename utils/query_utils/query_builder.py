@@ -3,11 +3,11 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from utils.query.query_model import Query
+from utils.query_utils.query_model import Query
 
 
 class QueryBuilder(ABC):
     @abstractmethod
     def build(self,query: Query) -> Any:
-        """convert Query to database query format(chroma,milvus)"""
+        """convert Query to database query_utils format(chroma,milvus)"""
         pass

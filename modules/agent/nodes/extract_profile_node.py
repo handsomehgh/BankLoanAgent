@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import List, Optional
 
 from langchain_core.messages import HumanMessage, BaseMessage
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableConfig
 
 from config.global_constant.fields import CommonFields
@@ -17,13 +16,12 @@ from exceptions.exception import MemoryWriteFailedError
 from modules.memory.memory_business_store.base_memory_store import BaseMemoryStore
 from modules.memory.memory_constant.constants import ProfileEntityKey, MemorySource, MemoryStatus
 from modules.memory.memory_utils.base_memory_utils import get_message_index, format_message, \
-    safe_parse_extraction_output, infer_evidence_type
+    safe_parse_extraction_output
 from modules.memory.memory_utils.profile_gate_util import ProfileGate
-from modules.module_services.chat_models import get_llm
-from config.prompts.extract_prompt import EXTRACT_PROMPT
+from modules.module_services.evidence_infer import EvidenceTypeInfer
+from modules.module_services.profile_extractor import ProfileExtractor
 
 logger = logging.getLogger(__name__)
-llm = get_llm()
 
 
 def _get_new_user_messages(
@@ -69,7 +67,9 @@ def extract_profile_node(
         config: RunnableConfig,
         memory_store: BaseMemoryStore,
         profile_gate: ProfileGate,
-        memory_config: MemorySystemConfig
+        memory_config: MemorySystemConfig,
+        evidence_infer: EvidenceTypeInfer,
+        profile_extractor: ProfileExtractor
 ) -> dict:
     """extract user profile and save to store"""
     # get user id
@@ -130,15 +130,7 @@ def extract_profile_node(
 
     # llm extract
     logger.info(f"extraction_llm_call user_id={user_id} msg_count={len(new_user_messages)}")
-    extract_str = ""
-    try:
-        chain = EXTRACT_PROMPT | llm.llm | StrOutputParser()
-        extract_str = chain.invoke({
-            PromptKeys.CONVERSATION.value: conversations,
-            PromptKeys.KNOWN_PROFILE.value: known_profile
-        })
-    except Exception as e:
-        logger.error(f"extraction_llm_error user_id={user_id} error={e}")
+    extract_str = profile_extractor.extract(conversations, known_profile)
 
     # parsing,verification
     items = safe_parse_extraction_output(extract_str)
@@ -154,8 +146,8 @@ def extract_profile_node(
             logger.warning(f"Ignored invalid entity_key '{entity_key_raw}'")
             continue
 
-        evidence_type = infer_evidence_type(content, [m.content for m in new_user_messages],
-                                            memory_config.evidence_rules.strong_keywords)
+        #infer evidence type
+        evidence_type = evidence_infer.infer(content,[m.content for m in new_user_messages])
 
         metadata = {
             CommonFields.SOURCE: MemorySource.CHAT_EXTRACTION.value,

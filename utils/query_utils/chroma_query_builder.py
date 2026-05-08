@@ -2,12 +2,12 @@
 # version 1.0
 from typing import Dict, Any
 
-from utils.query.query_model import Query
-from utils.query.query_builder import QueryBuilder
+from utils.query_utils.query_builder import QueryBuilder
+from utils.query_utils.query_model import Query
 
 
 class ChromaQueryBuilder(QueryBuilder):
-    """convert general query to chroma query"""
+    """convert general query_utils to chroma query_utils"""
     def build(self,query:Query) -> Dict[str,Any]:
         if not query.conditions:
             return {}

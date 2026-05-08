@@ -49,7 +49,7 @@ class BaseMemoryStore(ABC):
 
         Args:
             user_id: user unique id
-            query: search query text
+            query: search query_utils text
             limit: number of results to return
             memory_type: filter by memory type(such as "user_profile")
             min_confidence: minimum confidence threshold

@@ -13,7 +13,7 @@ from config.global_constant.fields import CommonFields
 from config.registry import ConfigRegistry
 from infra.collections import CollectionNames
 from infra.milvus_client import MilvusClientManager
-from modules.module_services.embeddings import get_embeddings, RobustEmbeddings
+from modules.module_services.embeddings import RobustEmbeddings
 from pipelines.constant import FileMetadata
 from utils.config_utils.get_config import get_config
 from utils.faq_similar_generator import FaqSimilarGenerator
@@ -249,6 +249,12 @@ class RAGIndexer:
 
 if __name__ == "__main__":
     registry = get_config()
-    embedder = get_embeddings()
+    llm_config = registry.get_config(RegistryModules.LLM)
+    embedder = RobustEmbeddings(
+        api_key=llm_config.alibaba_api_key,
+        model_name=llm_config.alibaba_emb_name,
+        backup_model_name=llm_config.alibaba_emb_backup,
+        dimensions=llm_config.dimension
+    )
     indexer = RAGIndexer(registry=registry, embedder=embedder)
     indexer.index()

@@ -8,7 +8,7 @@ from typing import Literal, Any, List
 class Condition:
     """single filter condition"""
     field: str
-    op: Literal["==", "!=", ">=", "<=", "in"] = "=="
+    op: Literal["==", "!=", ">=", "<=", "in","array_contains"] = "=="
     value: Any = None
 
 @dataclass

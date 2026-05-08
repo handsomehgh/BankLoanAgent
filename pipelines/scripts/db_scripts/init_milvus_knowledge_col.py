@@ -3,7 +3,7 @@
 import logging
 
 from pymilvus import FieldSchema, DataType, Function, FunctionType, CollectionSchema, Collection, MilvusException
-from pymilvus.orm import utility, collection
+from pymilvus.orm import utility
 
 from config.global_constant.constants import MemoryType, RegistryModules
 from config.global_constant.fields import CommonFields
@@ -180,7 +180,7 @@ if __name__ == '__main__':
     # utility.drop_collection(CollectionNames.for_type(MemoryType.BUSINESS_KNOWLEDGE))
     # flag = client.has_collection(CollectionNames.for_type(MemoryType.BUSINESS_KNOWLEDGE))
     # col = client.get_collection(CollectionNames.for_type(MemoryType.BUSINESS_KNOWLEDGE))
-    # res = col.query("id != '1'",["id","text","status","confidence","source_type", "product_type", "status", "source_file","entity_id", "topics", "regulation_names"])
+    # res = col.query_utils("id != '1'",["id","text","status","confidence","source_type", "product_type", "status", "source_file","entity_id", "topics", "regulation_names"])
     # for r in res:
     #     print(r)
     # print(flag)

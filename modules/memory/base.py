@@ -20,7 +20,7 @@ class BaseRetriever(ABC):
         retrieve multi-source memory
 
         Args:
-            query: query text
+            query: query_utils text
             user_id: unique id of user
             top_k: the maximum number returned for each type of memory
             memory_types: list of memory types to be retrieved(such as "user_profile","business_knowledge")

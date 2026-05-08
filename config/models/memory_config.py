@@ -53,7 +53,9 @@ class MemorySystemConfig(BaseModel):
 
     # context window & log interaction max context
     max_context_messages: int = 10
+    max_summary_length: int = 500
     interaction_log_max_context: int = 50
+    interaction_log_max_length: int = 1500
     interaction_log_min_new_msgs: int = 3
     profile_extraction_fallback_window: int = 10
 

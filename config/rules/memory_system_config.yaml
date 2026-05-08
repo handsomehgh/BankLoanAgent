@@ -17,7 +17,9 @@ memory_min_similarity: 0.3
 
 # ---------- 上下文窗口与日志 ----------
 max_context_messages: 10
+max_summary_length: 500
 interaction_log_max_context: 50
+interaction_log_max_length: 2000
 interaction_log_min_new_msgs: 3
 profile_extraction_fallback_window: 10
 

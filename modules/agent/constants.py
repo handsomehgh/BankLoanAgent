@@ -3,7 +3,8 @@
 from enum import Enum
 
 class AgentNodeName(str, Enum):
-    RETRIEVE = "retrieve"
+    RETRIEVE_MEMORY = "retrieve_memory"
+    RETRIEVE_KNOWLEDGE = "retrieve_knowledge"
     COMPLIANCE_GUARD = "compliance_guard"
     CALL_MODEL = "call_model"
     EXTRACT_PROFILE = "extract_profile"

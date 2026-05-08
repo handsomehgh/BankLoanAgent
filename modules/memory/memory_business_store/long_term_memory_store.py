@@ -18,13 +18,14 @@ from exceptions.exception import MemoryWriteFailedError, MemoryRetrievalError, M
 from modules.memory.memory_constant.constants import MemoryStatus, EvidenceType, InteractionEventType, \
     InteractionSentiment, ProfileEntityKey, MemorySource
 from modules.memory.memory_constant.fields import MemoryFields
-from utils.query.query_model import Condition, Query
-from modules.memory.models.memory_mappers.mappers import StorageToMemoryMapper, MemoryToStorageMapper
 from modules.memory.memory_business_store.base_memory_store import BaseMemoryStore
 from modules.memory.memory_vector_store.base_vector_store import BaseVectorStore
-from modules.memory.models.memory_data.memory_base import MemoryBase
-from modules.memory.models.memory_data.memory_schema import UserProfileMemory, InteractionLogMemory, \
+from modules.memory.models.memory_base import MemoryBase
+from modules.memory.models.memory_schema import UserProfileMemory, InteractionLogMemory, \
     ComplianceRuleMemory
+from utils.model_mapper.model_to_storage import MemoryToStorageMapper
+from utils.model_mapper.storage_to_model import StorageToMemoryMapper
+from utils.query_utils.query_model import Query, Condition
 from utils.retry import retry_on_failure
 
 logger = logging.Logger(__name__)
@@ -206,9 +207,9 @@ class LongTermMemoryStore(BaseMemoryStore):
             min_confidence: Optional[float] = None,
             apply_decay: bool = False
     ) -> List[Dict[str, Any]]:
-        """search memory by query"""
+        """search memory by query_utils"""
 
-        # build query conditions
+        # build query_utils conditions
         conditions = [
             Condition(field=MemoryFields.USER_ID, op="==", value=user_id),
             Condition(field=MemoryFields.STATUS, op="==", value=MemoryStatus.ACTIVE.value)
@@ -220,7 +221,7 @@ class LongTermMemoryStore(BaseMemoryStore):
         # the number of result
         fetch_limit = limit * 2 if apply_decay else limit
 
-        # execute query
+        # execute query_utils
         try:
             results = self.vector_store.search(
                 memory_type=memory_type,
@@ -273,7 +274,7 @@ class LongTermMemoryStore(BaseMemoryStore):
     ) -> List[Dict[str, Any]]:
         """get memory by entity key"""
 
-        # build query conditions
+        # build query_utils conditions
         where = Query(conditions=[
             Condition(field=MemoryFields.USER_ID, op="==", value=user_id),
             Condition(field=MemoryFields.ENTITY_KEY, op="==", value=entity_key.value),
@@ -328,7 +329,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             conditions.append(Condition(field=MemoryFields.USER_ID, op="==", value=user_id))
         where = Query(conditions=conditions, logic="AND")
 
-        # query the memories that need to be forgotten
+        # query_utils the memories that need to be forgotten
         try:
             res = self.vector_store.get(
                 memory_type=MemoryType.USER_PROFILE,
@@ -400,13 +401,13 @@ class LongTermMemoryStore(BaseMemoryStore):
 
     def get_recent_interactions(self, user_id: str, limit: int = 5) -> List[Dict[str, Any]]:
 
-        # build query condition
+        # build query_utils condition
         where = Query(conditions=[
             Condition(field=MemoryFields.USER_ID, op="==", value=user_id),
             Condition(field=MemoryFields.STATUS, op="==", value=MemoryStatus.ACTIVE.value)
         ])
 
-        # execute query
+        # execute query_utils
         try:
             results = self.vector_store.get(
                 memory_type=MemoryType.INTERACTION_LOG,
@@ -499,7 +500,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             conditions.append(Condition(field=MemoryFields.STATUS, op="==", value=status.value))
         where = Query(conditions=conditions, logic="AND")
 
-        # execute query
+        # execute query_utils
         try:
             results = self.vector_store.get(
                 memory_type=MemoryType.USER_PROFILE,

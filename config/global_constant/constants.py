@@ -32,6 +32,7 @@ class VectorQueryFields(str, Enum):
     SCORE = "score"
     DENSE_VECTOR = "dense_vector"
     SPARSE_VECTOR = "sparse_vector"
+    TERM_VECTOR = "term_vector"
     DISTANCE = "distance"
     DISTANCES = "distances"
     DOCUMENTS = "documents"

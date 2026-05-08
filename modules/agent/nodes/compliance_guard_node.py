@@ -11,13 +11,11 @@ from config.global_constant.constants import MemoryType, ComplianceAction, Compl
 from config.models.memory_config import MemorySystemConfig
 from modules.agent.constants import StateFields
 from modules.agent.state import AgentState
-from modules.memory.memory_business_store.base_memory_store import BaseMemoryStore
 
 logger = logging.getLogger(__name__)
 
 
-def compliance_guard_node(state: AgentState, config: RunnableConfig, memory_store: BaseMemoryStore,
-                          memory_config: MemorySystemConfig) -> dict:
+def compliance_guard_node(state: AgentState, config: RunnableConfig, memory_config: MemorySystemConfig) -> dict:
     """
     compliance check node:
     scan user input and draft response before generating answers to intercept non-compliant content
