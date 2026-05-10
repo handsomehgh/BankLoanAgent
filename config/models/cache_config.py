@@ -1,5 +1,6 @@
 # author hgh
 # version 1.0
+import logging
 from typing import Optional, Dict, Any
 
 from pydantic import BaseModel, Field
@@ -27,6 +28,7 @@ class L2Config(BaseModel):
     socket_timeout: float = 0.1
 
     def create_backend(self) -> Optional[RedisCacheBackend]:
+        logging.info(f"whether open redis cache: {self.enabled}")
         if not self.enabled:
             return None
 

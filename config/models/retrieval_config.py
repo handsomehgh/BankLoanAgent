@@ -80,15 +80,18 @@ class CompressorConfig(BaseModel):
     fallback_to_full: bool = True
     model_name: str = "BAAI/bge-reranker-v2-m3"
 
+class WeakSignalItem(BaseModel):
+    words: List[str] = Field(...)
+    score: int = Field(...)
 
 class RuleBasedRouterConfig(BaseModel):
     strong_keywords: List[str] = Field(
         default_factory=list,
         description="strong business keywords,triggering search if any one is hit"
     )
-    weak_keywords: List[str] = Field(
+    weak_signals: List[WeakSignalItem] = Field(
         default_factory=list,
-        description="weak business keywords require matching with the query length threshold to trigger retrieval"
+        description="weak business keywords,triggering search if any one is hit"
     )
     stop_patterns: List[str] = Field(
         default_factory=list,
@@ -98,7 +101,10 @@ class RuleBasedRouterConfig(BaseModel):
         default=6,
         description="when the query length is less than or equal to this value and only contains weak keywords, retrieval is not triggered"
     )
-
+    weak_signal_threshold: int = Field(
+        default=4,
+        description="weak word score"
+    )
 
 class RetrievalRoutingConfig(BaseModel):
     """retrieve the overall routing configuration,supporting multiple strategy"""

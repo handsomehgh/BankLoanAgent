@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from config.global_constant.constants import RegistryModules
+from config.models.cache_config import CacheConfig
 from config.models.file_process_config import FileProcessConfig
 from config.models.llm_config import LLMConfig
 from config.models.memory_config import MemorySystemConfig
@@ -22,11 +23,13 @@ def get_config() -> ConfigRegistry:
     path2 = Path(PROJECT_ROOT / "config" / "rules" / "llm_config.yaml")
     path3 = Path(PROJECT_ROOT / "config" / "rules" / "retrieval_config.yaml")
     path4 = Path(PROJECT_ROOT / "config" / "rules" / "file_process_config.yaml")
+    path5 = Path(PROJECT_ROOT / "config" / "rules" / "cache.yaml")
 
     registry.register_model(RegistryModules.MEMORY_SYSTEM, MemorySystemConfig, path1)
     registry.register_model(RegistryModules.LLM, LLMConfig, path2)
     registry.register_model(RegistryModules.RETRIEVAL, RetrievalConfig, path3)
     registry.register_model(RegistryModules.FILE_PROCESS, FileProcessConfig, path4)
+    registry.register_model(RegistryModules.CACHE, CacheConfig, path5)
     registry.load_all()
 
     inject_sensitive_fields(registry, settings)

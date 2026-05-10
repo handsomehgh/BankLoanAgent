@@ -48,7 +48,7 @@ class ProfileExtractor:
                 "conversation": conversation,
                 "known_profile": known_profile
             })
-            logger.debug(f"Profile extraction raw output: {extract_str[:200]}...")
+            logger.debug(f"Profile extraction raw output: {extract_str[:100]}...")
             return extract_str
         except Exception as e:
             logger.error(f"Profile extraction LLM call failed: {e}")

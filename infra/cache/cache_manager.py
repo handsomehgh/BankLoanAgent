@@ -42,9 +42,6 @@ class CacheManager:
         segments = [self.namespace] + list(parts) + [f"v{self.version}"]
         return ":".join(segments)
 
-    def _make_key(self, key: str) -> str:
-        return f"{self.namespace}:{key}"
-
     def _apply_jitter(self, ttl: int) -> int:
         if not ttl or ttl <= 0:
             return ttl
@@ -53,46 +50,87 @@ class CacheManager:
         return max(1, ttl + offset)
 
     def get(self, key: str) -> Optional[Any]:
-        full_key = self._make_key(key)
         raw = None
 
         if self.l1:
-            raw = self.l1.get(full_key)
+            try:
+                raw = self.l1.get(key)
+                if raw is not None:
+                    logger.debug(f"[Cache] L1 hit: {key}")
+            except Exception as e:
+                logger.warning(f"[Cache] L1 get failed, key={key}: {e}")
 
         if raw is None and self.l2:
-            raw = self.l2.get(full_key)
-            if raw is not None and self.l1:
-                self.l1.set(full_key, raw)
+            try:
+                raw = self.l2.get(key)
+                if raw is not None:
+                    logger.debug(f"[Cache] L2 hit: {key}")
+                    # 回填 L1（回填失败仅警告）
+                    if self.l1:
+                        try:
+                            self.l1.set(key, raw)
+                        except Exception as e:
+                            logger.warning(f"[Cache] L1 backfill failed, key={key}: {e}")
+            except Exception as e:
+                logger.warning(f"[Cache] L2 get failed, key={key}: {e}")
+
         if raw is None:
             return None
-        if raw == _NULL_MARKER:
+
+        if isinstance(raw, bytes) and raw == _NULL_MARKER:
+            logger.debug(f"[Cache] null value hit: {key}")
             return _NULL_MARKER
-        return self._deserialize(raw)
+
+        try:
+            return self._deserialize(raw)
+        except Exception as e:
+            logger.warning(f"[Cache] Deserialize failed, key={key}: {e}")
+            self._delete(key)
+            return None
 
     def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
-        full_key = self._make_key(key)
         if isinstance(value, bytes) and value == _NULL_MARKER:
             serialized = _NULL_MARKER
         else:
-            serialized = self._serialize(value)
-            if len(serialized) > self.compression_threshold:
-                serialized = zlib.compress(serialized)
+            try:
+                serialized = self._serialize(value)
+                if len(serialized) > self.compression_threshold:
+                    serialized = zlib.compress(serialized)
+            except Exception as e:
+                logger.warning(f"[Cache] Serialize failed, key={key}: {e}")
+                return
+
         ttl = ttl or self.default_ttl
         ttl = self._apply_jitter(ttl)
+
         if self.l1:
-            self.l1.set(full_key, serialized)
+            try:
+                self.l1.set(key, serialized)
+            except Exception as e:
+                logger.warning(f"[Cache] L1 set failed, key={key}: {e}")
+
         if self.l2:
-            self.l2.set(full_key, serialized, ttl)
+            try:
+                self.l2.set(key, serialized, ttl)
+            except Exception as e:
+                logger.warning(f"[Cache] L2 set failed, key={key}: {e}")
 
     def set_null(self, key: str, ttl: Optional[int] = None) -> None:
-        self.set(key, _NULL_MARKER, self.null_ttl)
+        self.set(key, _NULL_MARKER, ttl or self.null_ttl)
 
     def _delete(self, key: str) -> None:
-        full_key = self._make_key(key)
+        final_key = self.build_key(key)
         if self.l1:
-            self.l1.delete(full_key)
+            try:
+                self.l1.delete(final_key)
+            except Exception as e:
+                logger.warning(f"[Cache] L1 delete failed, key={final_key}: {e}")
+
         if self.l2:
-            self.l2.delete(full_key)
+            try:
+                self.l2.delete(key)
+            except Exception as e:
+                logger.warning(f"[Cache] L2 delete failed, key={key}: {e}")
 
     def _serialize(self, value: Any) -> bytes:
         return json.dumps(value, ensure_ascii=False).encode("utf-8")

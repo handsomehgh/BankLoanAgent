@@ -80,7 +80,7 @@ class InteractionLogMemory(MemoryBase):
 
 # ==================== compliance rule ====================
 class ComplianceRuleMemory(MemoryBase):
-    source: MemorySource = Field(default=MemorySource.ADMIN_IMPORT, description="source of compliance rule")
+    source: str = Field(..., description="source of compliance rule")
     rule_id: str = Field(..., description="unique rule id")
     rule_name: str = Field(..., description="rule name")
     rule_type: str = Field(..., description="type of rule")

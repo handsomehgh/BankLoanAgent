@@ -2,8 +2,6 @@
 # version 1.0
 import json
 import logging
-import threading
-import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +10,7 @@ from typing import Optional, Dict, Any, List
 import numpy as np
 from chromadb.errors import ChromaError
 
-from config.global_constant.constants import VectorQueryFields, MemoryType, ComplianceSeverity
+from config.global_constant.constants import VectorQueryFields, MemoryType, ComplianceSeverity, CacheNamespace
 from config.models.memory_config import MemorySystemConfig
 from exceptions.exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
 from modules.memory.memory_constant.constants import MemoryStatus, EvidenceType, InteractionEventType, \
@@ -23,6 +21,7 @@ from modules.memory.memory_vector_store.base_vector_store import BaseVectorStore
 from modules.memory.models.memory_base import MemoryBase
 from modules.memory.models.memory_schema import UserProfileMemory, InteractionLogMemory, \
     ComplianceRuleMemory
+from utils.cache_utils.cache_decorator import custom_cached
 from utils.model_mapper.model_to_storage import MemoryToStorageMapper
 from utils.model_mapper.storage_to_model import StorageToMemoryMapper
 from utils.query_utils.query_model import Query, Condition
@@ -46,11 +45,6 @@ class LongTermMemoryStore(BaseMemoryStore):
         # dead letter queue
         self.dlq_path = Path(self.config.memory_dlq_path)
         self.dlq_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # compliance rules cache
-        self._compliance_rule_cache: Optional[List[Dict[str, Any]]] = None
-        self._compliance_cache_time: float = 0
-        self._compliance_cache_lock = threading.Lock()
 
         logger.info("LongTermMemoryStore initialized with vector_store")
 
@@ -399,7 +393,14 @@ class LongTermMemoryStore(BaseMemoryStore):
         except Exception as e:
             logger.warning(f"Failed to update access time for {memory_id}: {e}")
 
-    def get_recent_interactions(self, user_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+    @custom_cached(
+        namespace=CacheNamespace.RECENT_INTERACTION,
+        ttl=120,
+        null_ttl=30,
+        empty_result_factory=list,
+        ignore_args=[0,2]
+    )
+    def get_recent_interactions(self, user_id: str, limit: int = 5) -> Optional[List[Dict[str, Any]]]:
 
         # build query_utils condition
         where = Query(conditions=[
@@ -414,6 +415,8 @@ class LongTermMemoryStore(BaseMemoryStore):
                 where=where,
                 limit=limit * 3
             )
+            if not results:
+                return []
         except Exception as e:
             logger.error(f"Failed to retrieve interactions: {e}")
             return []
@@ -434,38 +437,14 @@ class LongTermMemoryStore(BaseMemoryStore):
         memories.sort(key=get_timestamp, reverse=True)
         return memories[:limit]
 
+    @custom_cached(
+        namespace=CacheNamespace.COMPLIANCE,
+        ttl=600,
+        null_ttl=60,
+        empty_result_factory=list,
+        ignore_args=[0, 1]
+    )
     def get_active_compliance_rules(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """get all active compliance rules with caching"""
-        now = time.time()
-        cache_ttl = self.config.compliance_cache_ttl
-
-        # attempt to get cache
-        with self._compliance_cache_lock:
-            if (self._compliance_rule_cache is not None and
-                    cache_ttl > 0 and
-                    (now - self._compliance_cache_time) < cache_ttl):
-                logger.debug("Returning compliance rules from cache")
-                return list(self._compliance_rule_cache)
-
-        # cache miss,fetch again
-        try:
-            fresh_rules = self._get_active_compliance_rules_uncached(limit)
-        except Exception as e:
-            logger.error(f"Failed to retrieve compliance rules: {e}")
-            with self._compliance_cache_lock:
-                if self._compliance_rule_cache is not None:
-                    logger.warning("Using stale compliance cache due to retrieval error")
-                    return list(self._compliance_rule_cache)
-            return []
-
-        # update cache
-        with self._compliance_cache_lock:
-            self._compliance_rule_cache = fresh_rules
-            self._compliance_cache_time = now
-
-        return fresh_rules
-
-    def _get_active_compliance_rules_uncached(self, limit: int = 10) -> List[Dict[str, Any]]:
         where = Query(conditions=[Condition(field=MemoryFields.STATUS, op="==", value=MemoryStatus.ACTIVE.value)])
 
         try:
@@ -528,7 +507,13 @@ class LongTermMemoryStore(BaseMemoryStore):
             })
         return memories
 
-    def get_profile_summary(self, user_id: str, max_chars: int = 500) -> str:
+    @custom_cached(
+        namespace=CacheNamespace.PROFILE_SUMMARY,
+        ttl=60,
+        null_ttl=60,
+        ignore_args=[0,2]
+    )
+    def get_profile_summary(self, user_id: str, max_chars: int = 500) -> Optional[str]:
         """
         Get a brief summary of the user's current active profile for extracting node injection prompts
 
@@ -543,8 +528,7 @@ class LongTermMemoryStore(BaseMemoryStore):
         try:
             memories = self.get_all_user_profile_memories(user_id, MemoryStatus.ACTIVE)
             if not memories:
-                return "暂无已知用户画像"
-
+                return None
             # messages are sorted by last accessed time or creation time
             def get_ts(mem):
                 meta = mem.get(MemoryFields.METADATA, {})
@@ -587,12 +571,12 @@ class LongTermMemoryStore(BaseMemoryStore):
                 total_chars += len(line) + 1
 
             if not lines:
-                return "暂无已知用户画像"
+                return None
             result = "\n".join(lines)
             return result
         except Exception as e:
             logger.error(f"Failed to get user profile summary: {e}")
-            return "暂无已知用户画像"
+            return None
 
     def get_extraction_cursor(self, user_id: str) -> Optional[int]:
         logger.info(f"get_extraction_cursor called for {user_id} (not implemented)")

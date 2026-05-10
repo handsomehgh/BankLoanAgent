@@ -47,8 +47,13 @@ def retrieval_knowledge_node(
         logger.warning("Empty user query, skip retrieval")
         return _empty_result_for_knowledge(state)
 
+    formatted_context = state.get(StateFields.FORMATTED_CONTEXT, {})
+    last_summary = formatted_context.get(MemoryType.INTERACTION_LOG.value, "")
+    placeholder_summaries = ("暂无相关记录", "暂无信息")
+    context = {"last_summary": last_summary} if last_summary and last_summary not in placeholder_summaries else None
+
     try:
-        knowledge_list: list = retrieval_service.retrieve(user_query)
+        knowledge_list: list = retrieval_service.retrieve(user_query,context)
         logger.info(f"Retrieval success: {len(knowledge_list)} documents")
     except Exception as e:
         logger.error(f"Retrieval failed: {e}", exc_info=True)
@@ -63,8 +68,8 @@ def retrieval_knowledge_node(
     existing_formatted[MemoryType.BUSINESS_KNOWLEDGE] = formatted
 
     return {
-        StateFields.RETRIEVED_CONTEXT.value: {MemoryType.BUSINESS_KNOWLEDGE.value,existing_context},
-        StateFields.FORMATTED_CONTEXT.value: {MemoryType.BUSINESS_KNOWLEDGE.value,existing_formatted},
+        StateFields.RETRIEVED_CONTEXT.value: existing_context,
+        StateFields.FORMATTED_CONTEXT.value: existing_formatted
     }
 
 
@@ -72,7 +77,7 @@ def _empty_result_for_knowledge(state: AgentState) -> dict:
     existing_context = state.get(StateFields.RETRIEVED_CONTEXT, {})
     existing_formatted = state.get(StateFields.FORMATTED_CONTEXT, {})
     existing_context[MemoryType.BUSINESS_KNOWLEDGE.value] = []
-    existing_formatted[MemoryType.BUSINESS_KNOWLEDGE.value] = "暂无相关知识"
+    existing_formatted[MemoryType.BUSINESS_KNOWLEDGE.value] = "无"
     return {
         StateFields.RETRIEVED_CONTEXT.value: existing_context,
         StateFields.FORMATTED_CONTEXT.value: existing_formatted

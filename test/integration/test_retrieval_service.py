@@ -4,7 +4,14 @@ RetrievalService 集成测试（真实环境）
 需要 Milvus 服务运行，且知识库已索引完毕；LLM 与 Embedding 服务可用。
 """
 import os
+
+from modules.retrieval.router.retrieval_rule_router import RuleBaseRetrievalRouter
+
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
+from infra.cache.cache_factory import CacheFactory
+from modules.module_services.chat_models import RobustLLM
+from modules.module_services.embeddings import RobustEmbeddings
 
 import pytest
 from config.global_constant.constants import RegistryModules
@@ -16,7 +23,6 @@ from modules.retrieval.context_compressor import ContextCompressor
 from modules.retrieval.retrieval_service import RetrievalService
 from modules.retrieval.knowledge_model import BusinessKnowledge
 from infra.milvus_client import MilvusClientManager
-from modules.module_services.embeddings import get_embeddings
 from utils.config_utils.get_config import get_config
 
 @pytest.fixture(scope="module")
@@ -24,17 +30,44 @@ def retrieval_service():
     """初始化完整的 RetrievalService，复用全局配置和 Milvus 连接"""
     registry = get_config()
     retrieval_config = registry.get_config(RegistryModules.RETRIEVAL)
+    llm_config = registry.get_config(RegistryModules.LLM)
+    cache_config = registry.get_config(RegistryModules.CACHE)
 
     # 基础组件
     milvus_client = MilvusClientManager(uri=retrieval_config.milvus_uri)
-    embedder = get_embeddings()
+
+    embedder = RobustEmbeddings(
+        api_key=llm_config.alibaba_api_key,
+        model_name=llm_config.alibaba_emb_name,
+        backup_model_name=llm_config.alibaba_emb_backup,
+        dimensions=llm_config.dimension
+    )
+
     engine = KnowledgeSearchEngine(milvus_client, embedder, retrieval_config)
 
+    cache_factory = CacheFactory(cache_config)
+    rag_cache_manager = cache_factory.create("rag")
+
+    creative_llm = RobustLLM(
+        temperature=llm_config.creative_temperature,
+        api_key=llm_config.deepseek_api_key,
+        base_url=llm_config.deepseek_base_url,
+        model=llm_config.deepseek_llm_name,
+        provider=llm_config.openai_provider
+    )
+    precise_llm = RobustLLM(
+        temperature=llm_config.precise_temperature,
+        api_key=llm_config.deepseek_api_key,
+        base_url=llm_config.deepseek_base_url,
+        model=llm_config.deepseek_llm_name,
+        provider=llm_config.openai_provider
+    )
     # 业务组件
-    rewriter = QueryRewriter(retrieval_config.rewriter)
-    query_filter = QueryFilter(retrieval_config.filter)
+    rewriter = QueryRewriter(retrieval_config.rewriter,creative_llm)
+    query_filter = QueryFilter(retrieval_config.filter,precise_llm)
     reranker = Reranker(retrieval_config.reranker)
     compressor = ContextCompressor(retrieval_config.compressor)
+    router = RuleBaseRetrievalRouter(retrieval_config.retrieval_routing.rule_based)
 
     service = RetrievalService(
         engine=engine,
@@ -43,6 +76,8 @@ def retrieval_service():
         reranker=reranker,
         compressor=compressor,
         config=retrieval_config,
+        cache_manager=rag_cache_manager,
+        retrieve_router=router
     )
     return service
 
@@ -52,7 +87,7 @@ class TestRetrievalService:
 
     def test_basic_retrieval(self, retrieval_service):
         """正常语义检索：返回 BusinessKnowledge 列表且包含相关结果"""
-        query = "住房贷款的利率是多少"
+        query = "我想先了解一下公积金贷"
         results = retrieval_service.retrieve(query)
         print(f"==========={results}")
 

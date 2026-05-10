@@ -48,21 +48,24 @@ def retrieve_memory_node(state: AgentState, config: RunnableConfig, retrieval: B
         context = retrieval.retrieve(query=user_query, user_id=user_id, memory_types=memory_types)
     except Exception as e:
         logger.error(f"Retrieval failed, using empty context: {e}")
-        context = {MemoryType.USER_PROFILE.value: [], MemoryType.COMPLIANCE_RULE.value: [],
-                   MemoryType.INTERACTION_LOG.value: []}
+        empty_formatted = {
+            MemoryType.USER_PROFILE.value: "暂无相关记录",
+            MemoryType.COMPLIANCE_RULE.value: "暂无相关记录",
+            MemoryType.INTERACTION_LOG.value: "暂无相关记录"
+        }
         return {
-            StateFields.RETRIEVED_CONTEXT.value: context,
-            StateFields.FORMATTED_CONTEXT.value: {
-                MemoryType.USER_PROFILE.value: "暂无相关信息",
-                MemoryType.COMPLIANCE_RULE.value: "暂无相关信息",
-                MemoryType.INTERACTION_LOG.value: "暂无相关信息"
+            StateFields.RETRIEVED_CONTEXT.value: {
+                MemoryType.USER_PROFILE.value: [],
+                MemoryType.COMPLIANCE_RULE.value: [],
+                MemoryType.INTERACTION_LOG.value: []
             },
+            StateFields.FORMATTED_CONTEXT.value: empty_formatted,
             StateFields.ERROR.value: f"Retrieval error: {e}",
             StateFields.NEXT_MESSAGE_INDEX.value: next_index if updated else state.get(StateFields.NEXT_MESSAGE_INDEX)
         }
 
     def fmt(mems):
-        return "\n".join(f"- {m[CommonFields.TEXT]}" for m in mems) if mems else "暂无相关信息"
+        return "\n".join(f"- {m[CommonFields.TEXT]}" for m in mems) if mems else "暂无相关记录"
 
     formatted = {
         MemoryType.USER_PROFILE.value: fmt(context.get(MemoryType.USER_PROFILE.value, [])),

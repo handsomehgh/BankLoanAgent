@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 def format_context(docs: List[BusinessKnowledge],max_context_length: int = 2000) -> str:
     """format the knowledge text"""
     if not docs:
-        return "暂无相关知识。"
+        return "无。"
 
     blocks = []
     total_chars = 0

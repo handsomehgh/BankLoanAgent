@@ -26,8 +26,9 @@ class QueryFilter:
         if not self.config.enabled:
             return None
         try:
-            prompt = EXTRACT_FILTER_PROMPT + f"\n\n用户问题：{query}"
-            response = self.llm.invoke(prompt)
+            messages = EXTRACT_FILTER_PROMPT.invoke({"query": query}).to_messages()
+            response = self.llm.invoke(messages)
+            logger.info(f"Knowledge filter llm extract result: {response} ")
             raw = response.content.strip()
             if raw.startswith("```"):
                 raw = raw.split("```")[1]

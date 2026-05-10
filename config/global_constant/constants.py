@@ -76,4 +76,9 @@ class KnowledgeFileSourceType(str,Enum):
     REGULATION = "regulation"
     GLOSSARY = "glossary"
 
+class CacheNamespace(str,Enum):
+    RAG = "rag"
+    COMPLIANCE = "compliance"
+    PROFILE_SUMMARY = "profile_summary"
+    RECENT_INTERACTION = "recent_interaction"
 

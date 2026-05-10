@@ -1,19 +1,19 @@
 # app.py
 import os
-from typing import Optional, Dict
 
-from infra.cache.cache_factory import CacheFactory
-from modules.retrieval.router.retrieval_base_router import RetrievalRouter
-from modules.retrieval.router.retrieval_rule_router import RuleBaseRetrievalRouter
+from infra.cache.cache_registry import cache_register
 
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
+from modules.retrieval.router.retrieval_rule_router import RuleBaseRetrievalRouter
+from infra.cache.cache_factory import CacheFactory
 
 import streamlit as st
 import logging
 import uuid
 from langchain_core.messages import HumanMessage, AIMessage
 
-from config.global_constant.constants import RegistryModules, MemoryType
+from config.global_constant.constants import RegistryModules, MemoryType, CacheNamespace
 from config.prompts.detect_evidence_prompt import EVIDENCE_PROMPT
 from config.prompts.detect_setiment_prompt import DETECT_SENTIMENT_PROMPT
 from config.prompts.summary_interaction_prompt import SUMMARY_INTERACTION_PROMPT
@@ -63,7 +63,19 @@ print(f"=================={memory_config}")
 retrieval_config = registry.get_config(RegistryModules.RETRIEVAL)
 print(f"=================={retrieval_config}")
 cache_config = registry.get_config(RegistryModules.CACHE)
+print(f"=================={cache_config}")
 
+#============== registry cache manager ===================
+factory = CacheFactory(cache_config)
+rag_cache = factory.create(CacheNamespace.RAG)
+compliance_cache = factory.create(CacheNamespace.COMPLIANCE)
+profile_sum_cache = factory.create(CacheNamespace.PROFILE_SUMMARY)
+log_cache = factory.create(CacheNamespace.RECENT_INTERACTION)
+
+cache_register(CacheNamespace.RAG, rag_cache)
+cache_register(CacheNamespace.COMPLIANCE, compliance_cache)
+cache_register(CacheNamespace.PROFILE_SUMMARY, profile_sum_cache)
+cache_register(CacheNamespace.RECENT_INTERACTION, log_cache)
 # ===================== 创建 LLM 客户端 =====================
 creative_llm = RobustLLM(
     temperature=llm_config.creative_temperature,
@@ -138,8 +150,10 @@ if "agent" not in st.session_state:
         reranker = Reranker(retrieval_config.reranker)
         compressor = ContextCompressor(retrieval_config.compressor)
 
+        router = RuleBaseRetrievalRouter(retrieval_config.retrieval_routing.rule_based)
+
         cache_factory = CacheFactory(cache_config)
-        rag_cache_manager = cache_factory.create("rag")
+        rag_cache_manager = cache_factory.create(CacheNamespace.RAG)
 
         knowledge_retriever = RetrievalService(
             engine=knowledge_engine,
@@ -148,7 +162,8 @@ if "agent" not in st.session_state:
             reranker=reranker,
             compressor=compressor,
             config=retrieval_config,
-            cache_manager=rag_cache_manager
+            cache_manager=rag_cache_manager,
+            retrieve_router=router
         )
 
         # ---- 创建领域服务 ----
@@ -178,17 +193,6 @@ if "agent" not in st.session_state:
         )
         profile_gate = ProfileGate(memory_config.memory_gate)
 
-        routing_config = retrieval_config.retrieval_routing
-        if routing_config.enabled:
-            retrieval_router = RuleBaseRetrievalRouter(routing_config.rule_based)
-        else:
-            class AlwaysRetrievalRouter(RetrievalRouter):
-                def should_retrieve(self, query: str, context: Optional[Dict] = None) -> bool:
-                    return True
-
-
-            retrieval_router = AlwaysRetrievalRouter()
-
         # ---- 组装服务容器 ----
         services = AgentServices(
             creative_llm=creative_llm,
@@ -201,8 +205,7 @@ if "agent" not in st.session_state:
             evidence_infer=evidence_infer,
             profile_extractor=profile_extractor,
             profile_gate=profile_gate,
-            registry=ConfigRegistry(),
-            retrieval_router=retrieval_router
+            registry=ConfigRegistry()
         )
 
         # ---- 构建 Agent 图 ----

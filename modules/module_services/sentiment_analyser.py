@@ -59,12 +59,13 @@ class SentimentAnalyzer:
             # invoke llm
             messages = self.prompt.invoke({CommonFields.TEXT: text_lower[:500]}).to_messages()
             response = self.llm_client.invoke(messages).content.strip().lower()
+            logger.info(f"LLM classified sentiment: {response}")
 
             valid_sentiments = [s.value for s in InteractionSentiment]
             if response in valid_sentiments:
                 self._cache[cache_key] = response
-            logger.debug(f"LLM classified sentiment: {response}")
+            logger.info(f"LLM classified final sentiment: {response}")
             return response
         except Exception as e:
             logger.error(f"Failed to detect sentiment: {e}")
-        return InteractionSentiment.NEUTRAL
+        return InteractionSentiment.NEUTRAL.value

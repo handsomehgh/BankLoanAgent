@@ -2,6 +2,7 @@ from pathlib import Path
 
 from config.context_settings import set_enum_strictness
 from config.global_constant.constants import RegistryModules
+from config.models.cache_config import CacheConfig
 from config.models.file_process_config import FileProcessConfig
 from config.registry import ConfigRegistry
 from config.settings import GlobalSettings
@@ -45,6 +46,10 @@ def load_config():
     registry.register_model(
         RegistryModules.FILE_PROCESS, FileProcessConfig,
         Path(PROJECT_ROOT / "config/rules/file_process_config.yaml")
+    )
+    registry.register_model(
+        RegistryModules.CACHE, CacheConfig,
+        Path(PROJECT_ROOT / "config/rules/cache.yaml")
     )
 
     # 加载 YAML

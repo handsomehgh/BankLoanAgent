@@ -12,7 +12,8 @@ from config.models.memory_config import MemorySystemConfig
 from modules.agent.constants import StateFields
 from modules.agent.state import AgentState
 from modules.memory.memory_business_store.base_memory_store import BaseMemoryStore
-from modules.memory.memory_constant.constants import InteractionEventType, MemorySource, MemoryStatus
+from modules.memory.memory_constant.constants import InteractionEventType, MemorySource, MemoryStatus, \
+    InteractionSentiment
 from modules.memory.memory_utils.base_memory_utils import get_message_index, format_message
 from modules.module_services.SummaryGenerator import SummaryGenerator
 from modules.module_services.sentiment_analyser import SentimentAnalyzer
@@ -83,12 +84,12 @@ def log_interaction_node(
 
     # build log memory data
     metadata = {
-        CommonFields.SOURCE: MemorySource.AUTO_SUMMARY.value,
-        CommonFields.STATUS: MemoryStatus.ACTIVE.value,
+        CommonFields.SOURCE: MemorySource.AUTO_SUMMARY,
+        CommonFields.STATUS: MemoryStatus.ACTIVE,
         CommonFields.CONFIDENCE: 1.0,
-        CommonFields.EVENT_TYPE: InteractionEventType.INQUIRY.value,
+        CommonFields.EVENT_TYPE: InteractionEventType.INQUIRY,
         CommonFields.SESSION_ID: session_id,
-        CommonFields.SENTIMENT: sentiment,
+        CommonFields.SENTIMENT: InteractionSentiment(sentiment),
         CommonFields.KEY_ENTITIES: [],
         CommonFields.TIMESTAMP: datetime.now().isoformat(),
     }

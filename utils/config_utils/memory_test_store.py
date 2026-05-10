@@ -10,7 +10,7 @@ from infra.milvus_client import MilvusClientManager
 from main import inject_sensitive_fields
 from modules.memory.memory_business_store.long_term_memory_store import LongTermMemoryStore
 from modules.memory.memory_vector_store.milvus_memory_vector_store import MilvusMemoryVectorStore
-from modules.module_services.embeddings import get_embeddings, RobustEmbeddings
+from modules.module_services.embeddings import RobustEmbeddings
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 

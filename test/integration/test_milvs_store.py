@@ -3,18 +3,40 @@
 import logging
 import time
 
-from config.global_constant.constants import MemoryType
+from config.global_constant.constants import MemoryType, RegistryModules
 from config.global_constant.fields import CommonFields
+from infra.milvus_client import MilvusClientManager
 from modules.memory.memory_business_store.long_term_memory_store import LongTermMemoryStore
 from modules.memory.memory_constant.constants import ProfileEntityKey, MemorySource, EvidenceType, MemoryStatus
 from modules.memory.memory_constant.fields import MemoryFields
-from utils.config_utils.memory_test_store import create_test_memory_store
+from modules.memory.memory_vector_store.milvus_memory_vector_store import MilvusMemoryVectorStore
+from modules.module_services.embeddings import RobustEmbeddings
+from utils.config_utils.get_config import get_config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def get_store() -> LongTermMemoryStore:
-    return create_test_memory_store("http://192.168.24.128:19530")
+    registry = get_config()
+    llm_config = registry.get_config(RegistryModules.LLM)
+    retrieval_config = registry.get_config(RegistryModules.RETRIEVAL)
+    memory_config = registry.get_config(RegistryModules.MEMORY_SYSTEM)
+    embedder = RobustEmbeddings(
+        api_key=llm_config.alibaba_api_key,
+        model_name=llm_config.alibaba_emb_name,
+        backup_model_name=llm_config.alibaba_emb_backup,
+        dimensions=llm_config.dimension
+    )
+    milvus_client = MilvusClientManager(retrieval_config.milvus_uri)
+    vector_store = MilvusMemoryVectorStore(
+        milvus_client=milvus_client, embed=embedder, config=memory_config
+    )
+
+    store = LongTermMemoryStore(
+        vector_store=vector_store, config=memory_config
+    )
+    return store
+
 
 def cleanup_user(store: LongTermMemoryStore,user_id: str):
     """delete all memory data of the specified user and clean testing traces"""
@@ -328,7 +350,7 @@ if __name__ == '__main__':
     # test_conflict_resolution()
     # test_get_by_entity()
     # test_get_active_compliance_rules()
-    test_get_user_profile_memories()
+    # test_get_user_profile_memories()
     # store = get_store()
     # # test_apply_forget()
     # user_id = "test_user_entity"
@@ -336,3 +358,6 @@ if __name__ == '__main__':
     # res = store.get_all_user_profile_memories(user_id,MemoryType.USER_PROFILE)
     # print(res)
     # print_memory("11",res)
+    store = get_store()
+    result = store.get_all_user_profile_memories("test_user_007")
+    print(result)

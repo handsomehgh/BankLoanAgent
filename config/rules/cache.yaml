@@ -1,27 +1,41 @@
-cache:
-  namespaces:
-    rag:
-      l1:
-        maxsize: 1024
-        ttl: 900
-      l2:
-        ttl: 1800
+l1_defaults:
+  maxsize: 512
+  ttl: 600
+l2_defaults:
+  enabled: true
+  backend: "redis"
+  host: 192.168.24.128
+  port: 6379
+  db: 0
+  password: "hgh970228"
+  ttl: 3600
+  connection_pool:
+    max_connections: 20
+  socket_timeout: 0.1
 
-  l1_defaults:
-    maxsize: 512
-    ttl: 600
-  l2_defaults:
-    enabled: false
-    backend: "redis"
-    host: "localhost"
-    port: 6379
-    db: 1
-    password: ""
-    ttl: 3600
-    connection_pool:
-      max_connections: 20
-    socket_timeout: 0.1
-  knowledge_base_version: 1
-  compression_threshold: 4096
-  null_ttl: 60
-  ttl_jitter: 0.1
+
+knowledge_base_version: 1
+compression_threshold: 4096
+null_ttl: 60
+ttl_jitter: 0.1
+
+
+namespaces:
+  rag:
+    l1:
+      maxsize: 1024
+      ttl: 900
+    l2:
+      ttl: 1800
+  compliance:
+    l1:
+      maxsize: 1
+      ttl: 300
+  profile_summary:
+    l1:
+      maxsize: 512
+      ttl: 60
+  recent_interaction:
+    l1:
+      maxsize: 512
+      ttl: 60

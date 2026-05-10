@@ -59,6 +59,7 @@ class RedisCacheBackend(CacheBackend):
             return
         data = _CURRENT_DATA_VERSION + value
         try:
+            logger.info(f"Preparing to write to RAG redis  cache,key -> {key},value -> {data}")
             if ttl:
                 self._client.setex(key,ttl,data)
             else:

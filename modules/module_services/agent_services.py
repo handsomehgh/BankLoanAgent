@@ -39,6 +39,3 @@ class AgentServices:
 
     # configure the registration center
     registry: ConfigRegistry
-
-    # retrieval router
-    retrieval_router: RetrievalRouter

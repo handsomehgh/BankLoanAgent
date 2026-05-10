@@ -2,11 +2,10 @@
 # version 1.0
 from functools import partial
 
-from langchain_core.messages import HumanMessage
 from langgraph.constants import END
 from langgraph.graph import StateGraph
 
-from config.global_constant.constants import RegistryModules
+from config.global_constant.constants import RegistryModules, MemoryType
 from modules.agent.constants import AgentNodeName, StateFields
 from modules.agent.checkpointer import get_checkpointer
 from modules.agent.nodes.call_llm_node import call_model_node
@@ -66,25 +65,12 @@ def build_graph(services: AgentServices):
     # enter compliance check after the search is completed
     workflow.add_edge(AgentNodeName.RETRIEVE_MEMORY, AgentNodeName.COMPLIANCE_GUARD)
 
-    # retrieval knowledge router
-    retrieve_router = services.retrieval_router
-    def routing_decision(state: AgentState) -> str:
-        messages = state.get(StateFields.MESSAGES.value,[])
-        query = ""
-        for msg in messages:
-            if isinstance(msg, HumanMessage):
-                query = msg.content
-                break
-        return (AgentNodeName.RETRIEVE_KNOWLEDGE if retrieve_router.should_retrieve(query) else AgentNodeName.CALL_MODEL)
-
-
     # conditional edge after compliance check,if intercepted,it ends directly,otherwise,it enters retrieval knowledge node
     workflow.add_conditional_edges(
         AgentNodeName.COMPLIANCE_GUARD,
-        lambda s: END if s.get(StateFields.SHOULD_SKIP_LLM) else routing_decision(s),
+        lambda s: END if s.get(StateFields.SHOULD_SKIP_LLM) else AgentNodeName.RETRIEVE_KNOWLEDGE,
         {
             AgentNodeName.RETRIEVE_KNOWLEDGE: AgentNodeName.RETRIEVE_KNOWLEDGE,
-            AgentNodeName.CALL_MODEL: AgentNodeName.CALL_MODEL,
             END: END
         }
     )

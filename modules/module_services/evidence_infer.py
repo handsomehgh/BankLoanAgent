@@ -57,9 +57,10 @@ class EvidenceTypeInfer:
 
         try:
             response = self.llm_client.invoke(messages).content.strip().lower()
+            logger.info(f"LLM classified evidence type: {response}")
             if response in valid_types:
                 self._cache[cache_key] = response
-                logger.debug(f"LLM classified evidence type: {response}")
+                logger.info(f"LLM classified final evidence type: {response}")
                 return response
         except Exception as e:
             logger.error(f"Failed to infer evidence type: {e}")

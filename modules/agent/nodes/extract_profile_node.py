@@ -10,11 +10,11 @@ from langchain_core.runnables import RunnableConfig
 from config.global_constant.fields import CommonFields
 from config.global_constant.constants import MemoryType
 from config.models.memory_config import MemorySystemConfig
-from modules.agent.constants import MessageCommonFields, StateFields, PromptKeys
+from modules.agent.constants import MessageCommonFields, StateFields
 from modules.agent.state import AgentState
 from exceptions.exception import MemoryWriteFailedError
 from modules.memory.memory_business_store.base_memory_store import BaseMemoryStore
-from modules.memory.memory_constant.constants import ProfileEntityKey, MemorySource, MemoryStatus
+from modules.memory.memory_constant.constants import ProfileEntityKey, MemorySource, MemoryStatus, EvidenceType
 from modules.memory.memory_utils.base_memory_utils import get_message_index, format_message, \
     safe_parse_extraction_output
 from modules.memory.memory_utils.profile_gate_util import ProfileGate
@@ -150,10 +150,10 @@ def extract_profile_node(
         evidence_type = evidence_infer.infer(content,[m.content for m in new_user_messages])
 
         metadata = {
-            CommonFields.SOURCE: MemorySource.CHAT_EXTRACTION.value,
+            CommonFields.SOURCE: MemorySource.CHAT_EXTRACTION,
             CommonFields.CONFIDENCE: item.get(CommonFields.CONFIDENCE, 0.7),
-            CommonFields.STATUS: MemoryStatus.ACTIVE.value,
-            CommonFields.EVIDENCE_TYPE: evidence_type,
+            CommonFields.STATUS: MemoryStatus.ACTIVE,
+            CommonFields.EVIDENCE_TYPE: EvidenceType(evidence_type),
             CommonFields.EFFECTIVE_DATE: datetime.now().isoformat(),
             CommonFields.EXPIRES_AT: None,
         }
