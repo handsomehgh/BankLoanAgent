@@ -50,10 +50,7 @@ class EvidenceTypeInfer:
         # 3. LLM judge
         conversation = "\n".join(user_messages[-3:])
         valid_types = [e.value for e in EvidenceType]
-        messages = self.prompt.invoke({
-            "valid_types": valid_types,
-            "conversation": conversation
-        }).to_messages()
+        messages = self.prompt.invoke({"conversation": conversation}).to_messages()
 
         try:
             response = self.llm_client.invoke(messages).content.strip().lower()
