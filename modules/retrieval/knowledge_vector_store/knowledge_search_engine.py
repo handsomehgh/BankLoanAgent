@@ -59,6 +59,7 @@ class KnowledgeSearchEngine:
             the model list of knowledge
         """
         top_k = top_k or self.config.search.dense_top_k
+        logger.info("Dense search starting: query='%s...', top_k=%d, filter=%s", query[:60], top_k,filter_expr or 'None')
         try:
             query_vector = self.embedder.embed_documents([query])[0]
             search_params = {
@@ -74,14 +75,16 @@ class KnowledgeSearchEngine:
                 expr=filter_expr,
                 output_fields=output_fields
             )
+            logger.info("Dense search returned %d results", len(result[0]))
 
             return self._parse_search_result(result,output_fields)
         except MilvusException as e:
-            logger.error(f"Dense search failed: {e}")
+            logger.error("Dense search failed: %s", e, exc_info=True)
             return []
 
     def sparse_search(self,query: str,top_k: Optional[int] = None,filter_expr: Optional[str] = None) -> List[Dict]:
         top_k = top_k or self.config.search.sparse_top_k
+        logger.info("Sparse search starting: query='%s...', top_k=%d, filter=%s", query[:60], top_k,filter_expr or 'None')
         try:
             search_params = {
                 "metric_type": self.config.search.bm25_metric_type
@@ -95,13 +98,15 @@ class KnowledgeSearchEngine:
                 expr=filter_expr,
                 output_fields=output_fields
             )
+            logger.info("Sparse search returned %d results", len(results[0]))
             return self._parse_search_result(results,output_fields)
         except MilvusException as e:
-            logger.error(f"Sparse (BM25) search failed: {e}")
+            logger.error("Sparse search failed: %s", e, exc_info=True)
             return []
 
     def term_search(self,query: str,top_k: Optional[int] = None,filter_expr: Optional[str] = None) -> List[Dict]:
         top_k = top_k or self.config.search.term_top_k
+        logger.info("Term search starting: query='%s...', top_k=%d, filter=%s", query[:60], top_k,filter_expr or 'None')
         try:
             query_vector = self.embedder.embed_documents([query])[0]
             search_params = {
@@ -117,9 +122,10 @@ class KnowledgeSearchEngine:
                 expr=filter_expr,
                 output_fields=output_fields
             )
+            logger.info("Term search returned %d results", len(results[0]))
             return self._parse_search_result(results,output_fields)
         except MilvusException as e:
-            logger.error(f"Term search failed: {e}")
+            logger.error("Term search failed: %s", e, exc_info=True)
             return []
 
 

@@ -21,14 +21,18 @@ class QueryFilter:
     def __init__(self, config: FilterConfig,llm_client: RobustLLM):
         self.config = config
         self.llm = llm_client
+        logger.info("QueryFilter initialized, enabled=%s", self.config.enabled)
 
     def extract(self,query: str) -> Optional[str]:
         if not self.config.enabled:
+            logger.debug("QueryFilter disabled, returning None")
             return None
+
+        logger.debug("Extracting filter expression for query: '%s...'", query[:60])
         try:
             messages = EXTRACT_FILTER_PROMPT.invoke({"query": query}).to_messages()
             response = self.llm.invoke(messages)
-            logger.info(f"Knowledge filter llm extract result: {response} ")
+            logger.debug("LLM filter extraction response: %s", response.content[:100])
             raw = response.content.strip()
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
@@ -37,6 +41,7 @@ class QueryFilter:
 
             conditions = json.loads(raw)
             if not conditions:
+                logger.debug("No valid filter conditions extracted")
                 return None
 
             parts = []
@@ -45,9 +50,11 @@ class QueryFilter:
             if "topics" in conditions and isinstance(conditions["topics"], list):
                 for topic in conditions["topics"]:
                     parts.append(Condition(field="topics", value=topic,op="array_contains"))
-            return MilvusQueryBuilder().build(Query(conditions=parts,logic="AND"))
+            filter_expr = MilvusQueryBuilder().build(Query(conditions=parts, logic="AND"))
+            logger.info("Extracted filter expression: %s", filter_expr)
+            return filter_expr
         except Exception as e:
-            logger.warning(f"Filter extraction failed: {e}")
+            logger.warning("Filter extraction failed: %s", e, exc_info=True)
             return None
 
 

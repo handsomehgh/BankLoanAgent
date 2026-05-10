@@ -11,6 +11,7 @@ import numpy as np
 from chromadb.errors import ChromaError
 
 from config.global_constant.constants import VectorQueryFields, MemoryType, ComplianceSeverity, CacheNamespace
+from config.global_constant.fields import CommonFields
 from config.models.memory_config import MemorySystemConfig
 from exceptions.exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
 from modules.memory.memory_constant.constants import MemoryStatus, EvidenceType, InteractionEventType, \
@@ -27,7 +28,7 @@ from utils.model_mapper.storage_to_model import StorageToMemoryMapper
 from utils.query_utils.query_model import Query, Condition
 from utils.retry import retry_on_failure
 
-logger = logging.Logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class LongTermMemoryStore(BaseMemoryStore):
@@ -60,6 +61,7 @@ class LongTermMemoryStore(BaseMemoryStore):
         }
         with open(self.dlq_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        logger.info("DLQ entry written for user=%s, memory_type=%s", user_id, memory_type.value)
 
     def add_memory(
             self,
@@ -70,6 +72,8 @@ class LongTermMemoryStore(BaseMemoryStore):
             metadata: Optional[Dict[str, Any]] = None,
             permanent: bool = False
     ) -> str:
+        logger.info("Adding memory for user=%s, type=%s, entity_key=%s", user_id, memory_type.value,
+                    entity_key.value if entity_key else 'N/A')
         now = datetime.now()
         meta_input = metadata or {}
         try:
@@ -81,7 +85,7 @@ class LongTermMemoryStore(BaseMemoryStore):
                     permanent=permanent,
                     created_at=now,
                     last_accessed_at=meta_input.get(MemoryFields.LAST_ACCESSED_AT, now),
-                    source=meta_input.get(MemoryFields.SOURCE,MemorySource.CHAT_EXTRACTION),
+                    source=meta_input.get(MemoryFields.SOURCE, MemorySource.CHAT_EXTRACTION),
                     entity_key=entity_key,
                     evidence_type=meta_input.get(MemoryFields.EVIDENCE_TYPE, EvidenceType.EXPLICIT_STATEMENT),
                     effective_date=meta_input.get(MemoryFields.EFFECTIVE_DATE, now),
@@ -132,7 +136,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             else:
                 raise ValueError(f"Unsupported memory type: {memory_type}")
         except Exception as e:
-            logger.error(f"Failed to validate metadata with Pydantic model: {e}")
+            logger.error("Failed to validate metadata with Pydantic model: %s", e, exc_info=True)
             fallback = MemoryBase(user_id=user_id, confidence=1.0)
             self._write_to_dlq(user_id, content, fallback, memory_type)
             raise MemoryWriteFailedError(f"Memory validation failed, queued: {e}") from e
@@ -143,7 +147,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             try:
                 existing = self.get_memory_by_entity(user_id, entity_key, MemoryStatus.ACTIVE)
             except Exception as e:
-                logger.warning(f"Conflict check failed,proceeding: {e}")
+                logger.warning("Conflict check failed, proceeding: %s", e)
                 existing = []
 
             evidence_weights = self.config.evidence_rules.evidence_weights
@@ -166,17 +170,18 @@ class LongTermMemoryStore(BaseMemoryStore):
                         self.update_memory_status(old[MemoryFields.ID], memory_type, MemoryStatus.SUPERSEDED,
                                                   {MemoryFields.SUPERSEDED_BY: None})
                         superseded_ids.append(old[MemoryFields.ID])
-                        logger.info(f"Superseded old memory {old[MemoryFields.ID]} (entity: {entity_key})")
+                        logger.info("Superseded old memory id=%s (entity: %s)", old[MemoryFields.ID], entity_key.value)
                     except Exception as e:
-                        logger.warning(f"Failed to superseded {old[MemoryFields.ID]: {e}}")
+                        logger.warning("Failed to supersede %s: %s", old[MemoryFields.ID], e)
 
         # add memory
         memory_id = str(uuid.uuid4())
         try:
             self.vector_store.add(memory_type=memory_type, ids=[memory_id], texts=[content], models=[model])
+            logger.debug("Vector store write successful for memory_id=%s", memory_id)
         except Exception as e:
             # write to dlq
-            logger.error(f"Write failed for user {user_id}: {e}")
+            logger.error("Write failed for user %s: %s", user_id, e, exc_info=True)
             self._write_to_dlq(user_id, content, model, memory_type)
             raise MemoryWriteFailedError(f"Memory write failed, queued: {e}") from e
 
@@ -186,9 +191,9 @@ class LongTermMemoryStore(BaseMemoryStore):
                 self.update_memory_status(old_id, memory_type, MemoryStatus.SUPERSEDED,
                                           {MemoryFields.SUPERSEDED_BY: memory_id})
             except Exception as e:
-                logger.error(f"Failed to update superseded_by for {old_id}: {e}")
+                logger.error("Failed to update superseded_by for %s: %s", old_id, e)
 
-        logger.debug(f"Added memory {memory_id}")
+        logger.info("Memory added successfully, id=%s, type=%s, user=%s", memory_id, memory_type.value, user_id)
         return memory_id
 
     @retry_on_failure(max_retries=3, initial_delay=0.2, exceptions=(Exception, MemoryRetrievalError))
@@ -202,7 +207,8 @@ class LongTermMemoryStore(BaseMemoryStore):
             apply_decay: bool = False
     ) -> List[Dict[str, Any]]:
         """search memory by query_utils"""
-
+        logger.info("Searching memory for user=%s, type=%s, query='%s...', limit=%d", user_id, memory_type.value,
+                    query[:50], limit)
         # build query_utils conditions
         conditions = [
             Condition(field=MemoryFields.USER_ID, op="==", value=user_id),
@@ -224,6 +230,7 @@ class LongTermMemoryStore(BaseMemoryStore):
                 limit=fetch_limit,
             )
         except Exception as e:
+            logger.error("Search failed for user=%s, type=%s: %s", user_id, memory_type.value, e, exc_info=True)
             raise MemoryRetrievalError(f"Search failed: {e}") from e
 
         # organize output and apply time decay
@@ -232,8 +239,9 @@ class LongTermMemoryStore(BaseMemoryStore):
             try:
                 model = StorageToMemoryMapper.from_db_dict(hit, memory_type)
             except Exception as e:
-                logger.warning(f"Failed to deserialize memory {hit.get('id')}: {e}")
+                logger.warning("Failed to deserialize memory id=%s: %s", hit.get(CommonFields.ID), e)
                 continue
+
             similarity = hit.get(VectorQueryFields.SCORE)
             mem = {
                 MemoryFields.ID: hit.get(MemoryFields.ID),
@@ -257,6 +265,8 @@ class LongTermMemoryStore(BaseMemoryStore):
         # update last accessed
         for m in memories[:limit]:
             self._update_last_accessed(memory_type, m[MemoryFields.ID])
+
+        logger.info("Search memory returned %d results (limited to %d)", len(memories), limit)
         return memories[:limit]
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
@@ -267,6 +277,8 @@ class LongTermMemoryStore(BaseMemoryStore):
             status: MemoryStatus = MemoryStatus.ACTIVE
     ) -> List[Dict[str, Any]]:
         """get memory by entity key"""
+        logger.info("Getting memory by entity for user=%s, entity=%s, status=%s", user_id, entity_key.value,
+                    status.value)
 
         # build query_utils conditions
         where = Query(conditions=[
@@ -281,10 +293,12 @@ class LongTermMemoryStore(BaseMemoryStore):
                 where=where,
             )
         except Exception as e:
-            logger.error(f"get by entity failed:{e}")
+            logger.error("get by entity failed for user=%s, entity=%s: %s", user_id, entity_key.value, e, exc_info=True)
             return []
 
-        return self._assemble_memories(results, MemoryType.USER_PROFILE)
+        memories = self._assemble_memories(results, MemoryType.USER_PROFILE)
+        logger.info("Found %d memories for entity=%s", len(memories), entity_key.value)
+        return memories
 
     @retry_on_failure(max_retries=3, exceptions=(ChromaError,))
     def update_memory_status(
@@ -294,6 +308,8 @@ class LongTermMemoryStore(BaseMemoryStore):
             new_status: MemoryStatus,
             metadata_updates: Optional[Dict[str, Any]] = None) -> bool:
         """update memory status"""
+        logger.info("Updating memory status for id=%s, type=%s, new_status=%s", memory_id, memory_type.value,
+                    new_status.value)
         updates = {MemoryFields.STATUS: new_status.value}
         if metadata_updates:
             updates.update(metadata_updates)
@@ -305,6 +321,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             )
             return True
         except Exception as e:
+            logger.error("Update failed for id=%s: %s", memory_id, e, exc_info=True)
             raise MemoryUpdateError(f"Update failed: {e}") from e
 
     def apply_forgetting(
@@ -314,6 +331,8 @@ class LongTermMemoryStore(BaseMemoryStore):
             threshold: Optional[float] = None
     ) -> int:
         """apply forgetting"""
+        logger.info("Applying forgetting for type=%s, user=%s, threshold=%s", memory_type.value, user_id or 'ALL',
+                    threshold or self.config.decay_threshold)
         # build conditions
         conditions = [
             Condition(field=MemoryFields.STATUS, op="==", value=MemoryStatus.ACTIVE.value),
@@ -330,7 +349,7 @@ class LongTermMemoryStore(BaseMemoryStore):
                 where=where
             )
         except Exception as e:
-            logger.error(f"Forgetting scan failed: {e}")
+            logger.error("Forgetting scan failed: %s", e, exc_info=True)
             return 0
 
         count = 0
@@ -352,7 +371,7 @@ class LongTermMemoryStore(BaseMemoryStore):
                     count += 1
                 except Exception:
                     pass
-        logger.info(f"Forgotten {count} memories")
+        logger.info("Forgotten %d memories", count)
         return count
 
     def delete_user_memories(
@@ -360,6 +379,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             user_id: str,
             memory_type: Optional[MemoryType] = None
     ) -> bool:
+        logger.info("Deleting memories for user=%s, type=%s", user_id, memory_type.value if memory_type else 'ALL')
         """delete user memory"""
         types = [memory_type] if memory_type else list(MemoryType)
         for mem_type in types:
@@ -367,7 +387,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             try:
                 self.vector_store.delete(memory_type=mem_type, where=where)
             except Exception as e:
-                logger.error(f"Delete failed: {e}")
+                logger.error("Delete failed for type=%s, user=%s: %s", mem_type.value, user_id, e, exc_info=True)
                 return False
         return True
 
@@ -391,17 +411,17 @@ class LongTermMemoryStore(BaseMemoryStore):
                 metadatas=[{MemoryFields.LAST_ACCESSED_AT: datetime.now().isoformat()}]
             )
         except Exception as e:
-            logger.warning(f"Failed to update access time for {memory_id}: {e}")
+            logger.warning("Failed to update access time for %s: %s", memory_id, e)
 
     @custom_cached(
         namespace=CacheNamespace.RECENT_INTERACTION,
         ttl=120,
         null_ttl=30,
         empty_result_factory=list,
-        ignore_args=[0,2]
+        ignore_args=[0, 2]
     )
     def get_recent_interactions(self, user_id: str, limit: int = 5) -> Optional[List[Dict[str, Any]]]:
-
+        logger.info("Fetching recent interactions for user=%s, limit=%d", user_id, limit)
         # build query_utils condition
         where = Query(conditions=[
             Condition(field=MemoryFields.USER_ID, op="==", value=user_id),
@@ -418,7 +438,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             if not results:
                 return []
         except Exception as e:
-            logger.error(f"Failed to retrieve interactions: {e}")
+            logger.error("Failed to retrieve interactions for user=%s: %s", user_id, e, exc_info=True)
             return []
 
         # organize result data
@@ -445,6 +465,7 @@ class LongTermMemoryStore(BaseMemoryStore):
         ignore_args=[0, 1]
     )
     def get_active_compliance_rules(self, limit: int = 10) -> List[Dict[str, Any]]:
+        logger.info("Fetching active compliance rules, limit=%d", limit)
         where = Query(conditions=[Condition(field=MemoryFields.STATUS, op="==", value=MemoryStatus.ACTIVE.value)])
 
         try:
@@ -453,7 +474,7 @@ class LongTermMemoryStore(BaseMemoryStore):
                 where=where
             )
         except Exception as e:
-            logger.error(f"Failed to retrieve compliance rules: {e}")
+            logger.error("Failed to retrieve compliance rules: %s", e, exc_info=True)
             return []
 
         severity_order = {
@@ -470,10 +491,14 @@ class LongTermMemoryStore(BaseMemoryStore):
             severity_order.get(r[MemoryFields.METADATA].get(MemoryFields.SEVERITY), 4),
             r[MemoryFields.METADATA].get(MemoryFields.PRIORITY, 100)
         ))
+        logger.info("Loaded %d active compliance rules", len(rules))
         return rules[:limit]
 
-    def get_all_user_profile_memories(self, user_id: str, status: Optional[MemoryStatus] = None) -> List[Dict[str, Any]]:
+    def get_all_user_profile_memories(self, user_id: str, status: Optional[MemoryStatus] = None) -> List[
+        Dict[str, Any]]:
         # build condition
+        logger.info("Fetching all user profile memories for user=%s, status=%s", user_id,
+                    status.value if status else 'ALL')
         conditions = [Condition(field=MemoryFields.USER_ID, op="==", value=user_id)]
         if status:
             conditions.append(Condition(field=MemoryFields.STATUS, op="==", value=status.value))
@@ -486,10 +511,12 @@ class LongTermMemoryStore(BaseMemoryStore):
                 where=where
             )
         except Exception as e:
-            logger.error(f"Failed to get user profile memories: {e}")
+            logger.error("Failed to get user profile memories for user=%s: %s", user_id, e, exc_info=True)
             return []
 
-        return self._assemble_memories(results, MemoryType.USER_PROFILE)
+        memories = self._assemble_memories(results, MemoryType.USER_PROFILE)
+        logger.info("Retrieved %d user profile memories for user=%s", len(memories), user_id)
+        return memories
 
     def _assemble_memories(self, results: List[Dict[str, Any]], memory_type: MemoryType) -> List[Dict[str, Any]]:
         memories = []
@@ -497,7 +524,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             try:
                 model = StorageToMemoryMapper.from_db_dict(hit, memory_type)
             except Exception as e:
-                print(e)
+                logger.warning("Deserialization failed for hit %d: %s", i, e)
                 continue
             memories.append({
                 MemoryFields.ID: hit.get(MemoryFields.ID),
@@ -511,7 +538,7 @@ class LongTermMemoryStore(BaseMemoryStore):
         namespace=CacheNamespace.PROFILE_SUMMARY,
         ttl=60,
         null_ttl=60,
-        ignore_args=[0,2]
+        ignore_args=[0, 2]
     )
     def get_profile_summary(self, user_id: str, max_chars: int = 500) -> Optional[str]:
         """
@@ -525,10 +552,12 @@ class LongTermMemoryStore(BaseMemoryStore):
             each line "- entity_key: content (confidence X.XX)"
             If there is no profile, return "No known profile."
         """
+        logger.info("Generating profile summary for user=%s, max_chars=%d", user_id, max_chars)
         try:
             memories = self.get_all_user_profile_memories(user_id, MemoryStatus.ACTIVE)
             if not memories:
                 return None
+
             # messages are sorted by last accessed time or creation time
             def get_ts(mem):
                 meta = mem.get(MemoryFields.METADATA, {})
@@ -573,14 +602,15 @@ class LongTermMemoryStore(BaseMemoryStore):
             if not lines:
                 return None
             result = "\n".join(lines)
+            logger.info("Profile summary generated for user=%s, length=%d chars", user_id, len(result))
             return result
         except Exception as e:
-            logger.error(f"Failed to get user profile summary: {e}")
+            logger.error("Failed to get user profile summary for user=%s: %s", user_id, e, exc_info=True)
             return None
 
     def get_extraction_cursor(self, user_id: str) -> Optional[int]:
-        logger.info(f"get_extraction_cursor called for {user_id} (not implemented)")
+        logger.info("get_extraction_cursor called for user=%s (not implemented)", user_id)
         return None
 
     def set_extraction_cursor(self, user_id: str, message_index: int) -> None:
-        logger.info(f"set_extraction_cursor called for {user_id} to {message_index} (not implemented)")
+        logger.info("set_extraction_cursor called for user=%s to %d (not implemented)", user_id, message_index)

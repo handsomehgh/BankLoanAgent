@@ -84,24 +84,29 @@ def extract_profile_node(
         logger.debug("No messages to extract profile from")
         return {StateFields.PROFILE_UPDATED.value: False}
 
+    logger.debug("Starting profile extraction for user_id=%s, total_messages=%d", user_id, len(messages))
+
     # cursor: prefer cross-session(reserved),otherwise state
     cursor = memory_store.get_extraction_cursor(user_id)
     if cursor is None:
         cursor = state.get(StateFields.LAST_EXTRACTED_MESSAGE_INDEX)
+    logger.debug("Extraction cursor: %s", cursor)
 
     # no new messages,return false
     new_user_messages = _get_new_user_messages(messages, cursor, memory_config.profile_extraction_fallback_window)
     if not new_user_messages:
-        logger.info(f"extraction_skipped_no_new_user_messages user_id{user_id}")
+        logger.info("No new user messages for user_id=%s, skipping profile extraction", user_id)
         return {StateFields.PROFILE_UPDATED.value: False}
+
+    logger.info("Found %d new user messages for user_id=%s", len(new_user_messages), user_id)
 
     # lightweight filtering
     if not profile_gate.should_extract(new_user_messages):
-        logger.info(f"extraction_skipped_filter user_id{user_id} msg_count{len(new_user_messages)}")
+        logger.info("Profile gate filtered out all messages for user_id=%s (msg_count=%d)", user_id, len(new_user_messages))
         last_msg = messages[-1]
         last_index = get_message_index(last_msg)
         if last_index is None:
-            logger.warning(f"cannot update cursor after filter skip: no message_index user_id{user_id}")
+            logger.warning("Cannot update cursor after filter skip: no message_index for user_id=%s", user_id)
             return {StateFields.PROFILE_UPDATED.value: False}
         return {
             StateFields.PROFILE_UPDATED.value: True,
@@ -118,6 +123,7 @@ def extract_profile_node(
         format_message(m)
         for m in context_messages
     )
+    logger.debug("Built context window for extraction: %d messages", len(context_messages))
 
     # obtain a desensitized profile summary
     known_profile = "暂无已知用户画像"
@@ -125,29 +131,33 @@ def extract_profile_node(
         summary = memory_store.get_profile_summary(user_id)
         if summary:
             known_profile = summary
+            logger.debug("Using existing profile summary for user_id=%s", user_id)
     except Exception as e:
-        logger.warning(f"Failed to get profile summary, using default: {e}")
+        logger.warning("Failed to get profile summary for user_id=%s, using default: %s", user_id, e)
 
     # llm extract
-    logger.info(f"extraction_llm_call user_id={user_id} msg_count={len(new_user_messages)}")
+    logger.info("Calling LLM for profile extraction: user_id=%s, msg_count=%d", user_id, len(new_user_messages))
     extract_str = profile_extractor.extract(conversations, known_profile)
+    logger.debug("LLM extraction response (first 200 chars): %.200s", extract_str)
 
     # parsing,verification
     items = safe_parse_extraction_output(extract_str)
     allowed_entity_keys = {e.value for e in ProfileEntityKey}
     updated = False
 
+    logger.info("Extracted %d potential profile items for user_id=%s", len(items), user_id)
     for item in items:
         content = item.get(CommonFields.CONTENT)
         entity_key_raw = item.get(CommonFields.ENTITY_KEY)
         if not content or not entity_key_raw:
             continue
         if entity_key_raw not in allowed_entity_keys:
-            logger.warning(f"Ignored invalid entity_key '{entity_key_raw}'")
+            logger.warning("Ignored invalid entity_key '%s' for user_id=%s", entity_key_raw, user_id)
             continue
 
         #infer evidence type
         evidence_type = evidence_infer.infer(content,[m.content for m in new_user_messages])
+        logger.debug("Inferred evidence type '%s' for entity '%s'", evidence_type, entity_key_raw)
 
         metadata = {
             CommonFields.SOURCE: MemorySource.CHAT_EXTRACTION,
@@ -168,27 +178,30 @@ def extract_profile_node(
                 metadata=metadata
             )
             updated = True
+            logger.info("Added profile memory for user_id=%s, entity=%s", user_id, entity_key_raw)
         except MemoryWriteFailedError as e:
-            logger.error(f"Memory write failed (DLQ): {e}")
+            logger.error("Memory write failed (DLQ) for user_id=%s: %s", user_id, e, exc_info=True)
         except Exception as e:
-            logger.error(f"Unexpected error during profile extraction: {e}")
+            logger.error("Unexpected error during profile extraction for user_id=%s: %s", user_id, e, exc_info=True)
 
         if updated:
-            logger.info(f"extraction_updated user_id={user_id} item_count={len(items)}")
+            logger.info("Profile updated for user_id=%s: %d new items", user_id, len(items))
         else:
-            logger.info(f"extraction_no_new_info user_id={user_id}")
+            logger.info("No new profile information for user_id=%s", user_id)
 
     # update cursor
     last_msg = messages[-1]
     last_index = get_message_index(last_msg)
     if last_index is None:
-        logger.warning(f"Cannot update cursor after extraction: no message_index user_id={user_id}")
+        logger.warning("Cannot update cursor after extraction: no message_index for user_id=%s", user_id)
         return {StateFields.PROFILE_UPDATED.value: updated}
 
     # update cross-session cursor
     try:
         memory_store.set_extraction_cursor(user_id, last_index)
+        logger.debug("Updated extraction cursor for user_id=%s to %d", user_id, last_index)
     except Exception as e:
+        logger.warning("Failed to set extraction cursor for user_id=%s: %s", user_id, e)
         pass
 
     return {

@@ -16,7 +16,9 @@ logger = logging.getLogger(__name__)
 
 def call_model_node(state: AgentState, config: RunnableConfig, memory_config: MemorySystemConfig,llm_client: RobustLLM) -> dict:
     """call llm"""
-    print(f"=======================\n{state}\n==========================")
+    logger.debug("Entering call_model_node with state keys: %s", list(state.keys()))
+
+    #extract and format context
     formatted = state.get(StateFields.FORMATTED_CONTEXT, {})
     system = SYSTEM_TEMPLATE.format(
         user_profile=formatted.get(MemoryType.USER_PROFILE.value, "暂无"),
@@ -25,13 +27,24 @@ def call_model_node(state: AgentState, config: RunnableConfig, memory_config: Me
         business_knowledge=formatted.get(MemoryType.BUSINESS_KNOWLEDGE.value,"暂无")
     )
 
+    #
     messages = state.get(StateFields.MESSAGES, [])
-    recent = messages
-    if len(messages) > memory_config.max_context_messages:
+    total_messages = len(messages)
+    if total_messages > memory_config.max_context_messages:
         recent = messages[-memory_config.max_context_messages:]
+        logger.info(
+            "Truncated message history from %d to %d (max_context_messages=%d)",
+            total_messages, len(recent), memory_config.max_context_messages
+        )
+    else:
+        recent = messages
+
     full_messages = [SystemMessage(content=system)] + recent
-    response = llm_client.invoke_with_fallback(full_messages,
-                                        fallback_response="Sorry, I am temporarily unable to handle your request. Please try again later.")
+    response = llm_client.invoke_with_fallback(
+        full_messages,
+        fallback_response="Sorry, I am temporarily unable to handle your request. Please try again later."
+    )
+    logger.debug("LLM response received, content length=%d", len(response.content) if response.content else 0)
 
     # assign global incremental message sequence number for AiMessage
     next_index = state.get(StateFields.NEXT_MESSAGE_INDEX, 0)
@@ -39,5 +52,6 @@ def call_model_node(state: AgentState, config: RunnableConfig, memory_config: Me
         response.additional_kwargs = {}
     response.additional_kwargs[MessageCommonFields.MESSAGE_INDEX.value] = next_index
     next_index += 1
+    logger.debug("Assigned message_index=%d to AI response", next_index - 1)
 
     return {StateFields.MESSAGES.value: [response], StateFields.NEXT_MESSAGE_INDEX.value: next_index}

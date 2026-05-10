@@ -1,16 +1,26 @@
 # author hgh
 # version 1.0
+import logging
 from collections import defaultdict
 from typing import List, Dict
 
 from config.global_constant.fields import CommonFields
 
 
+logger = logging.getLogger(__name__)
+
 def rrf_fusion(result_list: List[List[Dict]],k: int = 60) -> List[Dict]:
     """
     enter a list of multiple results,with each result sorted in descending order by score,
     return the merged list ,sorted by rrf score in descending order,with duplicates removed(based on id)
     """
+    if not result_list:
+        logger.warning("RRF fusion called with empty result_list")
+        return []
+
+    route_counts = [len(route) for route in result_list]
+    logger.debug("RRF fusion: merging %d routes with counts %s, k=%d", len(result_list), route_counts, k)
+
     score_dict = defaultdict(float)
     id_to_item = {}
     for results in result_list:
@@ -27,6 +37,7 @@ def rrf_fusion(result_list: List[List[Dict]],k: int = 60) -> List[Dict]:
         item = id_to_item[doc_id]
         item["rrf_score"] = score_dict[doc_id]
         fused.append(item)
+    logger.debug("RRF fusion complete: %d unique documents after merge", len(fused))
     return fused
 
 

@@ -22,6 +22,7 @@ from utils.model_mapper.storage_to_model import StorageToMemoryMapper
 
 logger = logging.getLogger(__name__)
 
+
 class RetrievalService:
     def __init__(
             self,
@@ -45,11 +46,21 @@ class RetrievalService:
         self.config = config
         self.retrieve_router = retrieve_router
         self._executor = ThreadPoolExecutor(max_workers=3)
+        logger.info("RetrievalService initialized with router=%s, cache=%s, number of workers=%d",
+                    type(self.retrieve_router).__name__ if self.retrieve_router else "None",
+                    "enabled" if self.cache_manager else "disabled",
+                    3)
 
-    def retrieve(self,query: str,context: Optional[Dict] = None) -> List[BusinessKnowledge]:
+    def retrieve(self, query: str, context: Optional[Dict] = None) -> List[BusinessKnowledge]:
+        logger.info("Incoming retrieve request: query='%s...', context=%s", query[:80],
+                    "available" if context else "absent")
         if self.retrieve_router and not self.retrieve_router.should_retrieve(query):
+            logger.info("Query skipped by retrieve_router: %s", query[:80])
             return []
-        return asyncio.run(self._retrieve_async(query, context))
+        logger.info("Start retrieval for query: %s", query[:80])
+        results = asyncio.run(self._retrieve_async(query, context))
+        logger.info("Retrieval completed: %d results returned", len(results))
+        return results
 
     @custom_cached(
         namespace=CacheNamespace.RAG,
@@ -60,15 +71,19 @@ class RetrievalService:
         ignore_args=[0]
     )
     async def _retrieve_async(self, query: str, context: Optional[Dict] = None) -> List[BusinessKnowledge]:
-        #rewrite query
-        queries = self.rewriter.rewrite(query,context)
+        # rewrite query
+        logger.debug("Entering _retrieve_async for query: %s", query[:80])
+        queries = self.rewriter.rewrite(query, context)
 
-        #extract conditions
+        # extract conditions
         filter_expr = None
         if self.config.filter.enabled:
             filter_expr = self.filter.extract(query)
+            logger.debug("Filter expression extracted: %s", filter_expr)
+        else:
+            logger.debug("Filter extraction disabled")
 
-        #three-way parallel recall
+        # three-way parallel recall
         loop = asyncio.get_event_loop()
         tasks = [
             loop.run_in_executor(
@@ -86,6 +101,7 @@ class RetrievalService:
                 filter_expr
             ),
         ]
+
         if self.config.multi_vector.term_vector:
             tasks.append(
                 loop.run_in_executor(
@@ -96,8 +112,12 @@ class RetrievalService:
                     filter_expr
                 )
             )
+            logger.debug("Term vector search enabled")
+        else:
+            logger.debug("Term vector search disabled")
 
-        #execute concurrently
+        # execute concurrently
+        logger.debug("Starting parallel recall (dense + sparse + term)")
         results = await asyncio.gather(*tasks, return_exceptions=True)
         dense_raw = results[0] if not isinstance(results[0], Exception) else []
         sparse_raw = results[1] if not isinstance(results[1], Exception) else []
@@ -108,30 +128,31 @@ class RetrievalService:
 
         # record fail log
         if isinstance(results[0], Exception):
-            logger.error(f"Dense search failed: {results[0]}")
+            logger.error("Dense search failed: %s", results[0], exc_info=True)
         if isinstance(results[1], Exception):
-            logger.error(f"Sparse search failed: {results[1]}")
+            logger.error("Sparse search failed: %s", results[1], exc_info=True)
         if len(results) > 2 and isinstance(results[2], Exception):
-            logger.error(f"Term search failed: {results[2]}")
+            logger.error("Term search failed: %s", results[2], exc_info=True)
 
-        #RRF fusion
-        fused_raw = rrf_fusion([dense_raw, sparse_raw, term_raw],k=self.config.fusion.k)
+        logger.debug("Recall counts: dense=%d, sparse=%d, term=%d",
+                     len(dense_raw) if dense_raw else 0,
+                     len(sparse_raw) if sparse_raw else 0,
+                     len(term_raw) if term_raw else 0)
+
+        # RRF fusion
+        fused_raw = rrf_fusion([dense_raw, sparse_raw, term_raw], k=self.config.fusion.k)
+        logger.debug("RRF fusion produced %d candidates", len(fused_raw))
         candidate_pool = fused_raw[: self.config.reranker.top_k * 3]
+        logger.debug("Candidate pool size after top-N cut: %d", len(candidate_pool))
 
-        #reranker
-        reranked = self.reranker.rerank(query,candidate_pool)
+        # reranker
+        reranked = self.reranker.rerank(query, candidate_pool)
+        logger.debug("After reranking, selected %d results", len(reranked))
 
-        #context compressor
-        compressed = self.compressor.compress(query,reranked)
+        # context compressor
+        compressed = self.compressor.compress(query, reranked)
+        logger.debug("Context compression completed")
 
         final_results = [StorageToMemoryMapper.from_db_dict(item, MemoryType.BUSINESS_KNOWLEDGE) for item in compressed]
+        logger.info("Retrieval pipeline finished: %d final results", len(final_results))
         return final_results
-
-
-
-
-
-
-
-
-

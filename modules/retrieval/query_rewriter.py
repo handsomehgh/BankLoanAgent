@@ -48,6 +48,8 @@ class QueryRewriter:
         self.config = config
         self.selector = DynamicStrategySelector()
         self.llm = llm_client
+        logger.info("QueryRewriter initialized with strategy=%s",
+                    "dynamic" if config.enable_dynamic else config.override_strategy)
 
     def _needs_context_complete(self,query: str) -> bool:
         if len(query) <= 10:
@@ -60,14 +62,15 @@ class QueryRewriter:
         if not last_summary and not last_summary.strip():
             return query
         try:
-            logger.info(f"RAG Context-aware: {last_summary[:50]}")
+            logger.debug("Context-aware completion with summary: %.50s...", last_summary)
             messages = CONTEXT_REWRITE_PROMPT.invoke({"last_summary": last_summary, "query": query}).to_messages()
             rewritten = self.llm.invoke(messages).content.strip()
             logger.info(f"RAG Context-aware complete: '{query}' -> '{rewritten[:50]}'")
             if rewritten and len(rewritten) > 0:
+                logger.info("Context-aware complete: '%s' -> '%s'", query[:50], rewritten[:50])
                 return rewritten
         except Exception as e:
-            logger.warning(f"Context-aware completion failed: {e}")
+            logger.warning("Context-aware completion failed: %s", e, exc_info=True)
         return query
 
     def rewrite(self, query: str, context: Optional[Dict] = None) -> List[str]:
@@ -84,25 +87,28 @@ class QueryRewriter:
             strategy = self.selector.select(query)
         else:
             strategy = self.config.override_strategy
-        logger.info(f"rewriting strategy selected: {strategy} for query: {query[:60]}")
+        logger.info("Rewrite strategy selected: %s for query: '%s...'", strategy, query[:60])
 
         try:
             if strategy == RewritingStrategy.MULTI_QUERY:
-                return self._multi_query(query)
+                results = self._multi_query(query)
             elif strategy == RewritingStrategy.STEP_BACK:
-                return self._stepback(query)
+                results = self._stepback(query)
             elif strategy == RewritingStrategy.HYDE:
-                return self._hyde(query)
+                results = self._hyde(query)
             else:
-                return [query]
+                results = [query]
+            logger.debug("Rewrite produced %d queries", len(results))
+            return results
         except Exception as e:
-            logger.warning(f"Query rewrite failed (strategy={strategy}), fallback to original. Error: {e}")
+            logger.warning("Query rewrite failed (strategy=%s), fallback to original. Error: %s", strategy, e,exc_info=True)
             if self.config.fallback_to_original:
                 return [query]
             else:
                 raise
 
     def _multi_query(self, query: str) -> List[str]:
+        logger.debug("Executing Multi-Query rewrite")
         #prompt
         messages = MULTI_QUERY_PROMPT.invoke({
             "num_variants": self.config.num_variants,
@@ -114,7 +120,7 @@ class QueryRewriter:
 
         # parse result
         text = response.content.strip()
-        logger.info(f"Multi_query rewriting llm generate result: {text[:100]}")
+        logger.debug("Multi-query LLM raw output: %.100s...", text)
 
         variants = []
         for line in text.split('\n'):
@@ -125,6 +131,7 @@ class QueryRewriter:
                     line = line[2:].strip()
                 variants.append(line)
         if not variants:
+            logger.warning("Multi-query generated empty variants, falling back")
             raise ValueError("Multi-query generate result is null")
 
         # remove duplicates
@@ -137,27 +144,32 @@ class QueryRewriter:
                 if len(final) >= self.config.num_variants:
                     break
         final.append(query)
-        logger.info(f"Multi_query rewriting final result: {text} for query: {text[:100]}")
+        logger.info("Multi-query generated %d variants (including original query)", len(final))
         return final
 
     def _hyde(self, query: str) -> List[str]:
+        logger.debug("Executing HyDE rewrite")
         messages = HYDE_QUERY_PROMPT.invoke({"query": query}).to_messages()
 
         response = self.llm.invoke(messages)
         logger.info(f"HYDE rewriting llm generate result: {response[:100]}")
 
         text = response.content.strip()
+        logger.debug("HyDE LLM raw output: %.100s...", text)
         if not text:
+            logger.warning("HyDE generated empty output")
             raise ValueError("HyDE generate result is null")
         return [text]
 
     def _stepback(self, query: str) -> List[str]:
+        logger.debug("Executing Step-back rewrite")
         messages = STEPBACK_QUERY_PROMPT.invoke({"query": query}).to_messages()
 
         response = self.llm.invoke(messages)
-        logger.info(f"step_back rewriting llm generate result: {response[:100]}")
 
         text = response.content.strip()
+        logger.debug("Step-back LLM raw output: %.100s...", text)
         if not text:
+            logger.warning("Step-back generated empty output")
             raise ValueError("Step-back generate result is null")
         return [text]

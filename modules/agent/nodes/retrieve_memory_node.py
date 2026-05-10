@@ -18,8 +18,8 @@ def retrieve_memory_node(state: AgentState, config: RunnableConfig, retrieval: B
     """
     retrieve memory and assign a globally incrementing sequence to all unnumbered user/assistant mesasges
     """
-    print(f"=======================\n{state}\n==========================")
     user_id = state.get(StateFields.USER_ID, "unknown")
+    logger.info("Retrieving memory for user_id=%s", user_id)
     messages = state.get(StateFields.MESSAGES, [])
 
     # assign global message sequence
@@ -33,11 +33,19 @@ def retrieve_memory_node(state: AgentState, config: RunnableConfig, retrieval: B
             next_index += 1
             updated = True
 
+    if updated:
+        logger.debug("Assigned new message indexes, next_index=%d", next_index)
+
     user_query = ""
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             user_query = msg.content
             break
+
+    if user_query:
+        logger.info("Memory retrieval query: '%.60s...'", user_query)
+    else:
+        logger.warning("No user query found in messages, user_id=%s", user_id)
 
     memory_types = [
         MemoryType.USER_PROFILE,
@@ -46,8 +54,15 @@ def retrieve_memory_node(state: AgentState, config: RunnableConfig, retrieval: B
     ]
     try:
         context = retrieval.retrieve(query=user_query, user_id=user_id, memory_types=memory_types)
+        profile_count = len(context.get(MemoryType.USER_PROFILE.value, []))
+        rule_count = len(context.get(MemoryType.COMPLIANCE_RULE.value, []))
+        interaction_count = len(context.get(MemoryType.INTERACTION_LOG.value, []))
+        logger.info(
+            "Memory retrieval succeeded: user_profile=%d, compliance_rules=%d, interaction_logs=%d",
+            profile_count, rule_count, interaction_count
+        )
     except Exception as e:
-        logger.error(f"Retrieval failed, using empty context: {e}")
+        logger.error("Retrieval failed, using empty context: %s", e, exc_info=True)
         empty_formatted = {
             MemoryType.USER_PROFILE.value: "暂无相关记录",
             MemoryType.COMPLIANCE_RULE.value: "暂无相关记录",
@@ -72,6 +87,7 @@ def retrieve_memory_node(state: AgentState, config: RunnableConfig, retrieval: B
         MemoryType.COMPLIANCE_RULE.value: fmt(context.get(MemoryType.COMPLIANCE_RULE.value, [])),
         MemoryType.INTERACTION_LOG.value: fmt(context.get(MemoryType.INTERACTION_LOG.value, []))
     }
+    logger.debug("Formatted memory contexts successfully")
     return {
         StateFields.RETRIEVED_CONTEXT.value: context,
         StateFields.FORMATTED_CONTEXT.value: formatted,

@@ -36,10 +36,6 @@ def _build_cache_key(args: Tuple,kwargs: Dict,ignore_args: Optional[List[int]] =
     raw = json.dumps(params, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.md5(raw.encode()).hexdigest()
 
-    params = {"args": args,"kwargs": kwargs}
-    raw = json.dumps(params,sort_keys=True,ensure_ascii=False,default=str)
-    return hashlib.md5(raw.encode('utf-8')).hexdigest()
-
 def custom_cached(
         namespace: Optional[str] = None,
         cache_manager: Optional[CacheManager] = None,

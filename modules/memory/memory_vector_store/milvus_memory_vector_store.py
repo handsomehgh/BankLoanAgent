@@ -37,7 +37,7 @@ class MilvusMemoryVectorStore(BaseVectorStore):
     support hybrid search,keyword search,MMR retrieve and has the ability to choose search strategies dynamically
     """
 
-    def __init__(self, milvus_client: MilvusClientManager,embed: RobustEmbeddings, config: MemorySystemConfig):
+    def __init__(self, milvus_client: MilvusClientManager, embed: RobustEmbeddings, config: MemorySystemConfig):
         """
         initialize milvus vector store
 
@@ -48,10 +48,13 @@ class MilvusMemoryVectorStore(BaseVectorStore):
         self.config = config
         self._embedding_model = embed
         self._query_builder = MilvusQueryBuilder()
+        logger.info("MilvusMemoryVectorStore initialized")
 
     def _embed_text(self, texts: List[str]) -> List[List[float]]:
         """convert text to dense vector"""
-        return self._embedding_model.embed_documents(texts)
+        vectors = self._embedding_model.embed_documents(texts)
+        logger.debug(f"Embedded {len(texts)} texts into vectors")
+        return vectors
 
     def _parse_search_results(self, results, output_fields=None) -> List[Dict]:
         formatted = []
@@ -91,6 +94,7 @@ class MilvusMemoryVectorStore(BaseVectorStore):
         # get collection by memory type
         coll_name = CollectionNames.for_type(memory_type)
         collection = self.client.get_collection(coll_name)
+        logger.debug(f"Preparing to insert {len(ids)} records into {coll_name}")
 
         # vectorized texts
         dense_vectors = self._embed_text(texts)
@@ -107,9 +111,14 @@ class MilvusMemoryVectorStore(BaseVectorStore):
                     row.setdefault(key, value)
             rows.append(row)
 
-        collection.insert(data=rows)
-        collection.flush()
-        logger.debug(f"Inserted {len(ids)} records into {collection.name}")
+        try:
+            collection.insert(data=rows)
+            collection.flush()
+            logger.info(
+                f"Inserted {len(ids)} records into collection '{coll_name}' (memory_type={memory_type.value})")  # 新增
+        except MilvusException:
+            logger.exception(f"Failed to insert {len(ids)} records into {coll_name}")  # 新增
+            raise
 
     @retry_on_failure(max_retries=3, initial_delay=0.2, exceptions=(MilvusException,))
     def search(
@@ -127,27 +136,31 @@ class MilvusMemoryVectorStore(BaseVectorStore):
         else:
             strategy = search_strategy
 
+        coll_name = CollectionNames.for_type(memory_type)
         logger.info(
-            f"Search strategy: {strategy.value} for query_utils "
-            f"'{query[:60]}...' in {CollectionNames.for_type(memory_type)}"
+            f"Search in {coll_name} (strategy={strategy.value}) for query '{query[:60]}...'"
         )
 
         output_fields = self._get_all_output_fields(memory_type)
         expr = self._query_builder.build(where) if where else None
 
         # execute retrieve
-        if strategy == SearchStrategy.HYBRID:
-            results = self._hybrid_search(memory_type, query, expr, limit, output_fields)
-        elif strategy == SearchStrategy.SEMANTIC:
-            results = self._dense_search(memory_type, query, expr, limit, output_fields)
-        elif strategy == SearchStrategy.KEYWORD:
-            results = self._keyword_search(memory_type, query, expr, limit)
-        elif strategy == SearchStrategy.MMR:
-            results = self._mmr_search(memory_type, query, expr, limit)
-        else:
-            raise ValueError(f"Unsupported search strategy: {strategy}")
-
-        return results
+        try:
+            if strategy == SearchStrategy.HYBRID:
+                results = self._hybrid_search(memory_type, query, expr, limit, output_fields)
+            elif strategy == SearchStrategy.SEMANTIC:
+                results = self._dense_search(memory_type, query, expr, limit, output_fields)
+            elif strategy == SearchStrategy.KEYWORD:
+                results = self._keyword_search(memory_type, query, expr, limit)
+            elif strategy == SearchStrategy.MMR:
+                results = self._mmr_search(memory_type, query, expr, limit)
+            else:
+                raise ValueError(f"Unsupported search strategy: {strategy}")
+            logger.info(f"Search returned {len(results)} results from {coll_name}")
+            return results
+        except Exception:
+            logger.exception(f"Search failed in {coll_name}")
+            raise
 
     @retry_on_failure(max_retries=3, initial_delay=0.2, exceptions=(MilvusException,))
     def get(
@@ -182,8 +195,14 @@ class MilvusMemoryVectorStore(BaseVectorStore):
             query_params["limit"] = limit
 
         # execute query_utils
-        results = collection.query(**query_params)
-        return results
+        logger.debug(f"Get query on {coll_name} with expr='{expr}', limit={limit}")
+        try:
+            results = collection.query(**query_params)
+            logger.info(f"Get returned {len(results)} records from {coll_name}")
+            return results
+        except MilvusException:
+            logger.exception(f"Get query failed on {coll_name}")
+            raise
 
     @retry_on_failure(max_retries=3, initial_delay=0.2, exceptions=(MilvusException,))
     def update(
@@ -204,12 +223,12 @@ class MilvusMemoryVectorStore(BaseVectorStore):
             row.update(meta)
             data.append(row)
 
-        # 执行部分更新
-        collection.upsert(data, partial_update=True)
-        collection.flush()
-        logger.debug(
-            f"Partial updated {len(data)} records in {CollectionNames.for_type(memory_type)}"
-        )
+        try:
+            collection.upsert(data, partial_update=True)
+            collection.flush()
+            logger.info(f"Partial updated {len(data)} records in {coll_name}")
+        except MilvusException:
+            logger.exception(f"Partial update failed on {coll_name}")
 
     @retry_on_failure(max_retries=3, initial_delay=0.2, exceptions=(MilvusException,))
     def delete(
@@ -222,8 +241,14 @@ class MilvusMemoryVectorStore(BaseVectorStore):
         if where:
             expr = self._query_builder.build(where)
             if expr:
-                collection.delete(expr)
-                logger.debug(f"Deleted records matching '{expr}' in {CollectionNames.for_type(memory_type)}")
+                try:
+                    collection.delete(expr)
+                    logger.info(f"Deleted records matching '{expr}' from {coll_name}")
+                except MilvusException:
+                    logger.exception(f"Delete failed on {coll_name}")
+                    raise
+        else:
+            logger.warning(f"Delete called on {coll_name} with no condition")
 
     def _dense_search(
             self,
@@ -242,16 +267,21 @@ class MilvusMemoryVectorStore(BaseVectorStore):
 
         # organize search param
         search_params = {"metric_type": "COSINE", "params": {"ef": 60}}
+        logger.debug(f"Dense search on {coll_name} with limit={limit}")
 
-        results = collection.search(
-            data=[dense_vec],
-            anns_field=VectorQueryFields.DENSE_VECTOR.value,
-            param=search_params,
-            limit=limit,
-            expr=expr,
-            output_fields=output_fields
-        )
-        return self._parse_search_results(results, output_fields)
+        try:
+            results = collection.search(
+                data=[dense_vec],
+                anns_field=VectorQueryFields.DENSE_VECTOR.value,
+                param=search_params,
+                limit=limit,
+                expr=expr,
+                output_fields=output_fields
+            )
+            return self._parse_search_results(results, output_fields)
+        except MilvusException:
+            logger.exception(f"Dense search failed on {coll_name}")
+            raise
 
     def _keyword_search(
             self,
@@ -268,12 +298,18 @@ class MilvusMemoryVectorStore(BaseVectorStore):
         filter_expr = f"TEXT_MATCH({MemoryFields.TEXT},'{query}')"
         if expr:
             filter_expr = f"({filter_expr}) AND {expr}"
-        results = collection.query(
-            expr=filter_expr,
-            limit=limit,
-            output_fields=self._get_all_output_fields(memory_type)
-        )
-        return results
+        logger.debug(f"Keyword search on {coll_name} with filter='{filter_expr}'")
+
+        try:
+            results = collection.query(
+                expr=filter_expr,
+                limit=limit,
+                output_fields=self._get_all_output_fields(memory_type)
+            )
+            return results
+        except MilvusException:
+            logger.exception(f"Keyword search failed on {coll_name}")
+            raise
 
     def _hybrid_search(
             self,
@@ -307,14 +343,19 @@ class MilvusMemoryVectorStore(BaseVectorStore):
         )
 
         # hybrid_search
-        reranker = RRFRanker()
-        results = collection.hybrid_search(
-            reqs=[dense_req, sparse_vec],
-            rerank=reranker,
-            limit=limit,
-            output_fields=output_fields
-        )
-        return self._parse_search_results(results, output_fields)
+        logger.debug(f"Hybrid search on {coll_name} with limit={limit}")
+        try:
+            reranker = RRFRanker()
+            results = collection.hybrid_search(
+                reqs=[dense_req, sparse_vec],
+                rerank=reranker,
+                limit=limit,
+                output_fields=output_fields
+            )
+            return self._parse_search_results(results, output_fields)
+        except MilvusException:
+            logger.exception(f"Hybrid search failed on {coll_name}")
+            raise
 
     def _mmr_search(
             self,
@@ -332,6 +373,7 @@ class MilvusMemoryVectorStore(BaseVectorStore):
 
         if not candidates:
             return []
+        logger.debug(f"MMR search on {CollectionNames.for_type(memory_type)} with {len(candidates)} candidates")
 
         query_emb = np.array(self._embed_text([query]))[0]
         candidate_embs = [

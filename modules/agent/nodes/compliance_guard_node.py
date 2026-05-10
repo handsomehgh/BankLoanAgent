@@ -22,6 +22,7 @@ def compliance_guard_node(state: AgentState, config: RunnableConfig, memory_conf
     """
     # get rules that retrieved at retrieval_memory_node from context
     rules = state.get(StateFields.RETRIEVED_CONTEXT, {}).get(MemoryType.COMPLIANCE_RULE, [])
+    logger.debug("Checking %d compliance rules against user input", len(rules))
 
     # find user input
     messages = state.get(StateFields.MESSAGES, [])
@@ -42,7 +43,9 @@ def compliance_guard_node(state: AgentState, config: RunnableConfig, memory_conf
             if re.search(pattern, user_query, re.IGNORECASE):
                 hit_rules.append(rule)
         except re.error as e:
-            logger.warning(f"Invalid regex in rule {meta.get(CommonFields.RULE_ID)}")
+            logger.warning("Invalid regex in rule %s", meta.get(CommonFields.RULE_ID))
+
+    logger.info("Compliance check: %d rules hit out of %d total", len(hit_rules), len(rules))
 
     # load rule severity level from yaml
     severity_model = memory_config.compliance_severity
@@ -75,6 +78,7 @@ def compliance_guard_node(state: AgentState, config: RunnableConfig, memory_conf
 
     # if action equals blocking,return immediately
     if blocked:
+        logger.warning("Compliance blocked, reason=%s, query='%s...'", block_reason, user_query[:80])
         compliance_response = AIMessage(
             content="Sorry,your question involves non-compliant content,and i cannot answer it,\n\nif you have any questions,please contact our official customer service"
         )
@@ -84,6 +88,11 @@ def compliance_guard_node(state: AgentState, config: RunnableConfig, memory_conf
             StateFields.BLOCK_REASON.value: block_reason,
             StateFields.SHOULD_SKIP_LLM.value: True
         }
+
+    logger.info(
+        "Compliance passed: %d warnings, %d mandatory appends",
+        len(warnings), len(mandatory_appends)
+    )
 
     return {
         StateFields.COMPLIANCE_BLOCKED.value: False,

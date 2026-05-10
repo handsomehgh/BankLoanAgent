@@ -50,16 +50,22 @@ def retrieval_knowledge_node(
     formatted_context = state.get(StateFields.FORMATTED_CONTEXT, {})
     last_summary = formatted_context.get(MemoryType.INTERACTION_LOG.value, "")
     placeholder_summaries = ("暂无相关记录", "暂无信息")
-    context = {"last_summary": last_summary} if last_summary and last_summary not in placeholder_summaries else None
+    has_context = last_summary and last_summary not in placeholder_summaries
+    context = {"last_summary": last_summary} if has_context else None
 
+    logger.info(
+        "Knowledge retrieval starting: query='%.80s...', context=%s",
+        user_query, "available" if context else "absent"
+    )
     try:
         knowledge_list: list = retrieval_service.retrieve(user_query,context)
-        logger.info(f"Retrieval success: {len(knowledge_list)} documents")
+        logger.info("Retrieval success: %d documents", len(knowledge_list))
     except Exception as e:
-        logger.error(f"Retrieval failed: {e}", exc_info=True)
+        logger.error("Retrieval failed: %s", e, exc_info=True)
         return _empty_result_for_knowledge(state)
 
     formatted = format_context(knowledge_list,retrieval_config.rag_max_context_length)
+    logger.debug("Formatted knowledge context, length=%d chars", len(formatted))
 
     existing_context = state.get(StateFields.RETRIEVED_CONTEXT, {})
     existing_formatted = state.get(StateFields.FORMATTED_CONTEXT, {})
@@ -77,7 +83,8 @@ def _empty_result_for_knowledge(state: AgentState) -> dict:
     existing_context = state.get(StateFields.RETRIEVED_CONTEXT, {})
     existing_formatted = state.get(StateFields.FORMATTED_CONTEXT, {})
     existing_context[MemoryType.BUSINESS_KNOWLEDGE.value] = []
-    existing_formatted[MemoryType.BUSINESS_KNOWLEDGE.value] = "无"
+    existing_formatted[MemoryType.BUSINESS_KNOWLEDGE.value] = "暂无相关记录"
+    logger.debug("Returning empty knowledge context")
     return {
         StateFields.RETRIEVED_CONTEXT.value: existing_context,
         StateFields.FORMATTED_CONTEXT.value: existing_formatted

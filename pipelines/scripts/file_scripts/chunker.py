@@ -16,12 +16,10 @@ from config.global_constant.fields import CommonFields
 from config.models.file_process_config import FileProcessConfig
 from config.registry import ConfigRegistry
 from pipelines.constant import FileMetadata
+from utils.logging_config import setup_logging
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+setup_logging(log_level="INFO")
 logger = logging.getLogger(__name__)
 
 

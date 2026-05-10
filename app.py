@@ -2,6 +2,7 @@
 import os
 
 from infra.cache.cache_registry import cache_register
+from utils.logging_config import setup_logging, set_log_context
 
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
@@ -65,7 +66,11 @@ print(f"=================={retrieval_config}")
 cache_config = registry.get_config(RegistryModules.CACHE)
 print(f"=================={cache_config}")
 
-#============== registry cache manager ===================
+# =================== log config ===================
+setup_logging(log_level=llm_config.log_level)
+logger = logging.getLogger(__name__)
+
+# ============== registry cache manager ===================
 factory = CacheFactory(cache_config)
 rag_cache = factory.create(CacheNamespace.RAG)
 compliance_cache = factory.create(CacheNamespace.COMPLIANCE)
@@ -99,10 +104,6 @@ embedder = RobustEmbeddings(
     backup_model_name=llm_config.alibaba_emb_backup,
     dimensions=llm_config.dimension
 )
-
-# ===================== 日志 =====================
-logging.basicConfig(level=llm_config.log_level)
-logger = logging.getLogger(__name__)
 
 # ===================== 初始化记忆系统 =====================
 if memory_config.vector_backend == "chroma":
@@ -307,6 +308,12 @@ if prompt := st.chat_input("请输入您的问题..."):
                 "messages": [HumanMessage(content=prompt)],
                 "user_id": st.session_state.user_id,
             }
+
+            set_log_context(
+                user_id=st.session_state.user_id,
+                thread_id=st.session_state.thread_id,
+            )
+
             try:
                 result = st.session_state.agent.invoke(
                     input_state,
@@ -339,6 +346,6 @@ if prompt := st.chat_input("请输入您的问题..."):
                 if result.get("profile_updated"):
                     st.caption("✅ 已更新长期画像记忆")
             except Exception as e:
-                st.error(f"系统错误: {e}")
                 logger.exception("Agent invocation failed")
+                st.error(f"系统错误: {e}")
     st.rerun()

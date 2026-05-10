@@ -34,6 +34,11 @@ class MemoryVectorRetriever(BaseRetriever):
         top_k = top_k if top_k else self.memory_config.memory_top_k
         types = memory_types or [MemoryType.USER_PROFILE, MemoryType.INTERACTION_LOG, MemoryType.COMPLIANCE_RULE]
 
+        logger.info(
+            "Memory retrieval started for user=%s, query='%s...', top_k=%d, memory_types=%s",
+            user_id, query[:60], top_k, [t.value for t in types]
+        )
+
         results = {}
         for mem_type in types:
             try:
@@ -51,21 +56,30 @@ class MemoryVectorRetriever(BaseRetriever):
                         min_sim = self.memory_config.memory_min_similarity
                         filtered = [r for r in results if r.get(MemoryFields.DECAYED_SIMILARITY, 0) >= min_sim]
                         results[mem_type.value] = filtered[:top_k]
-                        logger.debug(f"User profile retrieval: {len(results)} raw, {len(filtered)} filtered")
+                        logger.info(
+                            "User profile retrieval: %d raw, %d filtered (min_sim=%.2f)",
+                            len(results[mem_type]), len(filtered), min_sim
+                        )
+                    else:
+                        results[mem_type.value] = []
+                        logger.info("User profile retrieval returned empty")
 
                 elif mem_type == MemoryType.INTERACTION_LOG:
                     results[mem_type.value] = self.memory_store.get_recent_interactions(
                         user_id=user_id,
                         limit=top_k
                     )
+                    logger.info("Interaction log retrieval returned %d results for user=%s",
+                                len(results[mem_type.value]), user_id)
                 elif mem_type == MemoryType.COMPLIANCE_RULE:
                     results[mem_type.value] = self.memory_store.get_active_compliance_rules(
                         limit=top_k * 2
                     )
+                    logger.info("Compliance rule retrieval returned %d active rules", len(results[mem_type.value]))
                 else:
-                    logger.warning(f"Unsupported memory type: {mem_type}, skipped")
+                    logger.warning("Unsupported memory type: %s, skipped", mem_type)
                     results[mem_type.value] = []
             except Exception as e:
-                logger.error(f"Retrieval failed for {mem_type.value}: {e}")
+                logger.error("Retrieval failed for memory_type=%s, user=%s: %s", mem_type.value, user_id, e, exc_info=True)
                 results[mem_type.value] = []  # degrade: return an empty list, do not block the overall process
         return results

@@ -31,10 +31,12 @@ def log_interaction_node(
     # obtain session_id
     configurable = config.get(ConfigFields.CONFIGURABLE, {})
     session_id = configurable.get(ConfigFields.THREAD_ID.value, "unknown")
+    logger.debug("Entering log_interaction_node for session_id=%s", session_id)
 
     # No message returned, interaction_logged flag is false
     messages = state.get(StateFields.MESSAGES, [])
     if not messages:
+        logger.debug("No messages in state, skipping interaction log")
         return {StateFields.INTERACTION_LOGGED.value: False}
 
     # cursor
@@ -52,22 +54,29 @@ def log_interaction_node(
                 break
         else:
             start_pos = len(messages)
+        logger.debug("Cursor set to message_index=%d, start_pos=%d", last_logged_index, start_pos)
 
-    # No messages to extract, return false
+        # No messages to extract, return false
     new_context = messages[start_pos:]
     if not new_context:
+        logger.debug("No new messages to log")
         return {StateFields.INTERACTION_LOGGED.value: False}
 
     # Returning false if the new user message is less than the minimum withdrawable amount
     new_user_count = sum(1 for m in new_context if isinstance(m, HumanMessage))
     if new_user_count < memory_config.interaction_log_min_new_msgs:
-        logger.debug(f"Only {new_user_count} new user msgs, threshold {memory_config.interaction_log_min_new_msgs}")
+        logger.debug(
+            "Only %d new user msgs, threshold %d, skipping log",
+            new_user_count, memory_config.interaction_log_min_new_msgs
+        )
         return {StateFields.INTERACTION_LOGGED.value: False}
 
     # If the number of messages to be extracted is greater than the maximum extractable number,only extract the maximum extractable number
     if len(new_context) > memory_config.interaction_log_max_context:
         logger.warning(
-            f"New context length {len(new_context)} exceeds max {memory_config.interaction_log_max_context}, truncating to recent")
+            "New context length %d exceeds max %d, truncating to recent",
+            len(new_context), memory_config.interaction_log_max_context
+        )
         new_context = new_context[-memory_config.interaction_log_max_context:]
 
     # extract log info
@@ -75,12 +84,17 @@ def log_interaction_node(
         format_message(m)
         for m in new_context
     )
+    logger.debug("Prepared conversation for summary, length=%d chars", len(conversation))
 
     #summary interactions
+    logger.info("Generating interaction summary for session_id=%s", session_id)
     summary = summary_generator.generate(conversation,new_context)
+    logger.info("Interaction summary generated: '%.60s...'", summary)
 
     # detect sentiment
+    logger.debug("Analyzing sentiment for summary")
     sentiment = sentiment_analyzer.analyze(summary)
+    logger.info("Detected sentiment: %s", sentiment)
 
     # build log memory data
     metadata = {
@@ -102,12 +116,16 @@ def log_interaction_node(
             memory_type=MemoryType.INTERACTION_LOG,
             metadata=metadata
         )
-        logger.info(f"Logged interaction for session {session_id}")
+        logger.info("Logged interaction for session %s", session_id)
     except Exception as e:
-        logger.error(f"Failed to write interaction log: {'interaction_logged': True}")
+        logger.error(
+            "Failed to write interaction log for session %s: %s",
+            session_id, e, exc_info=True
+        )
 
-    # update last_logged_message_index
+        # update last_logged_message_index
     last_index = get_message_index(new_context[-1])
+    logger.debug("Updated last_logged_message_index to %d", last_index)
     return {
         StateFields.INTERACTION_LOGGED.value: True,
         StateFields.LAST_LOGGED_MESSAGE_INDEX.value: last_index
