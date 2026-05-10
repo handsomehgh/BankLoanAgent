@@ -4,11 +4,12 @@
 unified multi_level cache manager,
 supporting namespaces,serialization,compression,null marked,and avalanche protection(TTL random offset)
 """
+import hashlib
 import json
 import logging
 import random
 import zlib
-from typing import Any, Optional
+from typing import Any, Optional, List
 
 from infra.cache.cache_backend import CacheBackend
 
@@ -131,6 +132,21 @@ class CacheManager:
                 self.l2.delete(key)
             except Exception as e:
                 logger.warning(f"[Cache] L2 delete failed, key={key}: {e}")
+
+    def invalidate(self,func_name: str,*args,ignore_args: Optional[List[int]] = None,**kwargs) -> None:
+        filtered_args = list(args)
+        if ignore_args:
+            for idx in sorted(ignore_args,reverse=True):
+                if 0 <= idx < len(filtered_args):
+                    filtered_args.pop(idx)
+
+        params = {"args": filtered_args, "kwargs": kwargs}
+        raw = json.dumps(params, sort_keys=True, ensure_ascii=False, default=str)
+        param_hash = hashlib.md5(raw.encode()).hexdigest()
+        full_key = self.build_key(func_name, param_hash)
+        self._delete(full_key)
+        logger.info("Cache invalidated for function=%s, key=%s", func_name, full_key)
+
 
     def _serialize(self, value: Any) -> bytes:
         return json.dumps(value, ensure_ascii=False).encode("utf-8")

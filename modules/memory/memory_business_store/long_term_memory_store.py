@@ -14,6 +14,7 @@ from config.global_constant.constants import VectorQueryFields, MemoryType, Comp
 from config.global_constant.fields import CommonFields
 from config.models.memory_config import MemorySystemConfig
 from exceptions.exception import MemoryWriteFailedError, MemoryRetrievalError, MemoryUpdateError
+from infra.cache.cache_registry import get_registry_manager
 from modules.memory.memory_constant.constants import MemoryStatus, EvidenceType, InteractionEventType, \
     InteractionSentiment, ProfileEntityKey, MemorySource
 from modules.memory.memory_constant.fields import MemoryFields
@@ -165,6 +166,12 @@ class LongTermMemoryStore(BaseMemoryStore):
         try:
             self.vector_store.add(memory_type=memory_type, ids=[memory_id], texts=[content], models=[model])
             logger.debug("Vector store write successful for memory_id=%s", memory_id)
+            #invalid cache
+            if memory_type == MemoryType.USER_PROFILE:
+                self._invalidate_profile_summary(user_id)
+            elif memory_type == MemoryType.INTERACTION_LOG:
+                self._invalidate_recent_interactions(user_id)
+
         except Exception as e:
             # write to dlq
             logger.error("Write failed for user %s: %s", user_id, e, exc_info=True)
@@ -705,6 +712,24 @@ class LongTermMemoryStore(BaseMemoryStore):
                 pass
 
         return None, superseded
+
+    def _invalidate_profile_summary(self, user_id: str) -> None:
+        try:
+            cache = get_registry_manager(CacheNamespace.PROFILE_SUMMARY)
+            if cache:
+                cache.invalidate("get_profile_summary",user_id)
+                logger.info("Profile summary cache invalidated for user=%s", user_id)
+        except Exception as e:
+            logger.warning("Failed to invalidate profile summary cache for user=%s: %s", user_id, e)
+
+    def _invalidate_recent_interactions(self, user_id: str) -> None:
+        try:
+            cache = get_registry_manager(CacheNamespace.RECENT_INTERACTION)
+            if cache:
+                cache.invalidate("get_recent_interactions", user_id)
+                logger.info("Recent interactions cache invalidated for user=%s", user_id)
+        except Exception as e:
+            logger.warning("Failed to invalidate recent interactions cache for user=%s: %s", user_id, e)
 
     def get_extraction_cursor(self, user_id: str) -> Optional[int]:
         logger.info("get_extraction_cursor called for user=%s (not implemented)", user_id)
