@@ -135,7 +135,7 @@ if "memory_retriever" not in st.session_state:
     )
 
 if "user_id" not in st.session_state:
-    st.session_state.user_id = "test_user_001"
+    st.session_state.user_id = "test_user_010"
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 

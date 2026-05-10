@@ -18,6 +18,8 @@ def retrieve_memory_node(state: AgentState, config: RunnableConfig, retrieval: B
     """
     retrieve memory and assign a globally incrementing sequence to all unnumbered user/assistant mesasges
     """
+    logger.debug("Entering retrieve_memory_node with state : %s", state)
+
     user_id = state.get(StateFields.USER_ID, "unknown")
     logger.info("Retrieving memory for user_id=%s", user_id)
     messages = state.get(StateFields.MESSAGES, [])

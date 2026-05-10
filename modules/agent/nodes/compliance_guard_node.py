@@ -21,6 +21,8 @@ def compliance_guard_node(state: AgentState, config: RunnableConfig, memory_conf
     scan user input and draft response before generating answers to intercept non-compliant content
     """
     # get rules that retrieved at retrieval_memory_node from context
+    logger.debug("Entering compliance_guard_node with state : %s", state)
+
     rules = state.get(StateFields.RETRIEVED_CONTEXT, {}).get(MemoryType.COMPLIANCE_RULE, [])
     logger.debug("Checking %d compliance rules against user input", len(rules))
 

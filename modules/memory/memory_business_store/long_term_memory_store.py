@@ -141,38 +141,24 @@ class LongTermMemoryStore(BaseMemoryStore):
             self._write_to_dlq(user_id, content, fallback, memory_type)
             raise MemoryWriteFailedError(f"Memory validation failed, queued: {e}") from e
 
-        # conflict detection(only required for user profile)
+        # ---------- Invoke conflict detection (for user profiles only) ----------
         superseded_ids = []
         if memory_type == MemoryType.USER_PROFILE and entity_key and not permanent:
-            try:
-                existing = self.get_memory_by_entity(user_id, entity_key, MemoryStatus.ACTIVE)
-            except Exception as e:
-                logger.warning("Conflict check failed, proceeding: %s", e)
-                existing = []
+            skip_result, superseded_from_conflict = self._resolve_profile_conflicts(
+                user_id=user_id,
+                entity_key=entity_key,
+                content=content,
+                new_model=model,
+                evidence_weights=self.config.evidence_rules.evidence_weights,
+            )
+            superseded_ids.extend(superseded_from_conflict)
 
-            evidence_weights = self.config.evidence_rules.evidence_weights
-            # update the memory status to superseded
-            for old in existing:
-                old_conf = float(old.get(MemoryFields.CONFIDENCE, 0.0))
-                old_evidence = old.get(MemoryFields.EVIDENCE_TYPE, EvidenceType.EXPLICIT_STATEMENT)
-                old_weight = evidence_weights.get(old_evidence, 50)
-
-                new_conf = model.confidence
-                new_evidence = model.evidence_type if hasattr(model,
-                                                              MemoryFields.EVIDENCE_TYPE) else EvidenceType.EXPLICIT_STATEMENT
-                new_weight = evidence_weights.get(new_evidence, 50)
-
-                # Overriding Conditions:
-                # 1. The new confidence is significantly higher (> old_conf + 0.1)
-                # 2. Confidence difference is not large (≤ 0.1) but the new evidence is more authoritative
-                if new_conf > old_conf + 0.1 or ((abs(new_conf - old_conf) <= 0.1) and new_weight > old_weight):
-                    try:
-                        self.update_memory_status(old[MemoryFields.ID], memory_type, MemoryStatus.SUPERSEDED,
-                                                  {MemoryFields.SUPERSEDED_BY: None})
-                        superseded_ids.append(old[MemoryFields.ID])
-                        logger.info("Superseded old memory id=%s (entity: %s)", old[MemoryFields.ID], entity_key.value)
-                    except Exception as e:
-                        logger.warning("Failed to supersede %s: %s", old[MemoryFields.ID], e)
+            if skip_result is not None:
+                logger.info(
+                    "Skipping memory insertion for user=%s, entity=%s, returning old_id=%s",
+                    user_id, entity_key.value, skip_result
+                )
+                return skip_result
 
         # add memory
         memory_id = str(uuid.uuid4())
@@ -607,6 +593,118 @@ class LongTermMemoryStore(BaseMemoryStore):
         except Exception as e:
             logger.error("Failed to get user profile summary for user=%s: %s", user_id, e, exc_info=True)
             return None
+
+    def _resolve_profile_conflicts(
+            self,
+            user_id: str,
+            entity_key: ProfileEntityKey,
+            content: str,
+            new_model: UserProfileMemory,
+            evidence_weights: Dict[str, int],
+    ) -> tuple[Optional[str], List[str]]:
+        """
+       Handle conflicts between new and old memories under the same entity.
+
+        Returns:
+        (skip_old_id, superseded_ids)
+            - skip_old_id: The old record ID to return if the insertion should be skipped, otherwise None
+            - superseded_ids: List of old record IDs that need to have superseded_by set after the new record is inserted
+        """
+        superseded = []
+        try:
+            existing = self.get_memory_by_entity(user_id, entity_key, MemoryStatus.ACTIVE)
+        except Exception as e:
+            logger.warning(
+                "Conflict check failed for user=%s, entity=%s, error: %s. Proceeding without conflict resolution.",
+                user_id, entity_key.value, e
+            )
+            return None, superseded
+
+        for old in existing:
+            old_id = old[MemoryFields.ID]
+            old_content = old.get(MemoryFields.TEXT, "").strip()
+            old_conf = float(old.get(MemoryFields.CONFIDENCE, 0.0))
+            old_evidence = old.get(MemoryFields.EVIDENCE_TYPE, EvidenceType.EXPLICIT_STATEMENT)
+            old_weight = evidence_weights.get(old_evidence, 50)
+
+            new_conf = new_model.confidence
+            new_evidence = new_model.evidence_type if hasattr(new_model,
+                                                              MemoryFields.EVIDENCE_TYPE) else EvidenceType.EXPLICIT_STATEMENT
+            new_weight = evidence_weights.get(new_evidence, 50)
+
+            if content.strip() == old_content:
+                if new_weight > old_weight:
+                    logger.info(
+                        "IDENTICAL_CONTENT_EVIDENCE_UPGRADE | user=%s | entity=%s | "
+                        "old_id=%s (content='%s', conf=%.2f, evidence=%s, weight=%d) | "
+                        "new_id=<will be created> (content='%s', conf=%.2f, evidence=%s, weight=%d). "
+                        "Action: supersede old, insert new.",
+                        user_id, entity_key.value,
+                        old_id, old_content, old_conf, old_evidence, old_weight,
+                        content, new_conf, new_evidence, new_weight
+                    )
+                    try:
+                        self.update_memory_status(old_id, MemoryType.USER_PROFILE,
+                                                  MemoryStatus.SUPERSEDED,
+                                                  {MemoryFields.SUPERSEDED_BY: None})
+                        superseded.append(old_id)
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to supersede old_id=%s during evidence upgrade: %s",
+                            old_id, e
+                        )
+                    continue
+                else:
+                    logger.info(
+                        "IDENTICAL_CONTENT_NO_UPGRADE | user=%s | entity=%s | "
+                        "old_id=%s (content='%s', conf=%.2f, evidence=%s, weight=%d) | "
+                        "new content identical, evidence=%s (weight=%d) not stronger. "
+                        "Action: skip insertion, keep old record.",
+                        user_id, entity_key.value,
+                        old_id, old_content, old_conf, old_evidence, old_weight,
+                        new_evidence, new_weight
+                    )
+                    self._update_last_accessed(MemoryType.USER_PROFILE, old_id)
+                    return old_id, superseded
+
+            logger.info(
+                "CONFLICT_DETECTED | user=%s | entity=%s | "
+                "old_id=%s (content='%s', conf=%.2f, evidence=%s, weight=%d) | "
+                "new_id=<will be created> (content='%s', conf=%.2f, evidence=%s, weight=%d).",
+                user_id, entity_key.value,
+                old_id, old_content, old_conf, old_evidence, old_weight,
+                content, new_conf, new_evidence, new_weight
+            )
+
+            if new_conf > old_conf + 0.1 or (abs(new_conf - old_conf) <= 0.1 and new_weight > old_weight):
+                logger.info(
+                    "CONFLICT_RESOLVED_SUPERSEDE | user=%s | entity=%s | "
+                    "old_id=%s will be superseded by new record. "
+                    "Reason: %s",
+                    user_id, entity_key.value,
+                    old_id,
+                    "higher confidence" if new_conf > old_conf + 0.1 else "stronger evidence"
+                )
+                try:
+                    self.update_memory_status(old_id, MemoryType.USER_PROFILE,
+                                              MemoryStatus.SUPERSEDED,
+                                              {MemoryFields.SUPERSEDED_BY: None})
+                    superseded.append(old_id)
+                except Exception as e:
+                    logger.warning(
+                        "Failed to supersede old_id=%s during standard conflict resolution: %s",
+                        old_id, e
+                    )
+            else:
+                logger.info(
+                    "CONFLICT_RESOLVED_KEEP_OLD | user=%s | entity=%s | "
+                    "old_id=%s remains active. New record discarded. "
+                    "Reason: confidence and evidence not sufficient to replace.",
+                    user_id, entity_key.value, old_id
+                )
+                pass
+
+        return None, superseded
 
     def get_extraction_cursor(self, user_id: str) -> Optional[int]:
         logger.info("get_extraction_cursor called for user=%s (not implemented)", user_id)

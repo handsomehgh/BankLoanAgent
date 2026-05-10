@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def call_model_node(state: AgentState, config: RunnableConfig, memory_config: MemorySystemConfig,llm_client: RobustLLM) -> dict:
     """call llm"""
-    logger.debug("Entering call_model_node with state keys: %s", list(state.keys()))
+    logger.debug("Entering call_model_node with state : %s", state)
 
     #extract and format context
     formatted = state.get(StateFields.FORMATTED_CONTEXT, {})

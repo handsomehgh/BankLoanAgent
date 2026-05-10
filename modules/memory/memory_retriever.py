@@ -54,7 +54,7 @@ class MemoryVectorRetriever(BaseRetriever):
                     # minimum similarity filtering
                     if len(results[mem_type]) != 0:
                         min_sim = self.memory_config.memory_min_similarity
-                        filtered = [r for r in results if r.get(MemoryFields.DECAYED_SIMILARITY, 0) >= min_sim]
+                        filtered = [r for r in results[mem_type] if r.get(MemoryFields.DECAYED_SIMILARITY, 0) >= min_sim]
                         results[mem_type.value] = filtered[:top_k]
                         logger.info(
                             "User profile retrieval: %d raw, %d filtered (min_sim=%.2f)",

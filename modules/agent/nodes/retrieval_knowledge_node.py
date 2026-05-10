@@ -32,6 +32,8 @@ def retrieval_knowledge_node(
     Returns:
         state update dictionary
     """
+    logger.debug("Entering retrieval_knowledge_node with state : %s", state)
+
     messages = state.get(StateFields.MESSAGES,[])
     if not messages:
         logger.warning("No messages in state, skip retrieval")

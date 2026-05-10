@@ -359,5 +359,5 @@ if __name__ == '__main__':
     # print(res)
     # print_memory("11",res)
     store = get_store()
-    result = store.get_all_user_profile_memories("test_user_007")
+    result = store.get_all_user_profile_memories("test_user_010")
     print(result)

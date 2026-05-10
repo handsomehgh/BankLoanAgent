@@ -29,6 +29,8 @@ def log_interaction_node(
         sentiment_analyzer: SentimentAnalyzer):
     """generate a conversation summary and store it in the interaction memory"""
     # obtain session_id
+    logger.debug("Entering log_interaction_node with state : %s", state)
+
     configurable = config.get(ConfigFields.CONFIGURABLE, {})
     session_id = configurable.get(ConfigFields.THREAD_ID.value, "unknown")
     logger.debug("Entering log_interaction_node for session_id=%s", session_id)

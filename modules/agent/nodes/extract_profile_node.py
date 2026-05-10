@@ -73,6 +73,8 @@ def extract_profile_node(
 ) -> dict:
     """extract user profile and save to store"""
     # get user id
+    logger.debug("Entering extract_profile_node with state : %s", state)
+
     user_id = state.get(StateFields.USER_ID)
     if not user_id:
         logger.warning("No user_id found in state, skipping profile extraction")

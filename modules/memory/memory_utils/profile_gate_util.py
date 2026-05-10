@@ -3,6 +3,8 @@
 
 import re
 import logging
+
+from config.global_constant.fields import CommonFields
 from config.models.memory_config import MemoryGateRules
 
 logger = logging.getLogger(__name__)
@@ -42,7 +44,7 @@ class ProfileGate:
         :return: True 表示应该执行提取
         """
         for msg in messages:
-            content = msg.content if hasattr(msg, 'content') else str(msg)
+            content = msg.content if hasattr(msg, CommonFields.CONTENT) else str(msg)
             if not content:
                 continue
 

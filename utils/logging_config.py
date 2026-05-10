@@ -1,6 +1,6 @@
 """
-统一日志配置模块
-提供 setup_logging() 初始化根日志器，支持上下文注入（user_id/thread_id）
+Unified Logging Configuration Module
+Provides setup_logging() to initialize the root logger, supporting context injection (user_id/thread_id)
 """
 import logging
 import threading
@@ -8,14 +8,14 @@ from typing import Optional
 
 
 class ContextFilter(logging.Filter):
-    """向 LogRecord 注入 user_id 和 thread_id（线程安全）"""
+    """Inject user_id and thread_id into LogRecord (thread-safe)"""
 
     def __init__(self):
         super().__init__()
         self._local = threading.local()
 
     def set_context(self, user_id: Optional[str] = None, thread_id: Optional[str] = None):
-        """在当前线程设置上下文标识"""
+        """Set the context identifier in the current thread"""
         self._local.user_id = user_id or "-"
         self._local.thread_id = thread_id or "-"
 
@@ -29,24 +29,23 @@ _context_filter = ContextFilter()
 
 
 def get_context_filter() -> ContextFilter:
-    """获取全局唯一的上下文过滤器"""
+    """Get a globally unique context filter"""
     return _context_filter
 
 
 def setup_logging(log_level: str = "INFO") -> None:
     """
-    初始化根日志系统：
-    - 移除已有 handlers，防止第三方库抢占
-    - 控制台输出（指定级别）
-    - 注入上下文过滤器（用户 / 会话标识）
-    - 安静化部分第三方库
+    Initialize the root logging system:
+    - Remove existing handlers to prevent third-party libraries from taking over
+    - Console output (specify level)
+    - Inject context filter (user/session identification)
+    - Quiet some third-party libraries
     """
     root = logging.getLogger()
-    # 先清空任何已有 handler（包括第三方库提前设置的）
     for handler in root.handlers[:]:
         root.removeHandler(handler)
 
-    # 控制台 handler
+    # Console handler
     console = logging.StreamHandler()
     console.setLevel(getattr(logging, log_level.upper(), logging.INFO))
     fmt = logging.Formatter(
@@ -58,14 +57,12 @@ def setup_logging(log_level: str = "INFO") -> None:
     console.addFilter(_context_filter)
     root.addHandler(console)
 
-    # 根日志器设为 DEBUG，让所有级别都可以通过 handler 过滤（实际输出级别由 handler 控制）
+    # Set the root logger to DEBUG, allowing all levels to pass through the handler filter (the actual output level is controlled by the handler)
     root.setLevel(logging.DEBUG)
 
-    # 安静化非常啰嗦的第三方库
     for lib in ("httpx", "urllib3", "watchdog", "pymilvus", "transformers"):
         logging.getLogger(lib).setLevel(logging.WARNING)
 
 
 def set_log_context(user_id: Optional[str] = None, thread_id: Optional[str] = None) -> None:
-    """在业务线程中设置当前请求的用户 / 会话标识"""
     _context_filter.set_context(user_id=user_id, thread_id=thread_id)
