@@ -4,6 +4,7 @@ from config.context_settings import set_enum_strictness
 from config.global_constant.constants import RegistryModules
 from config.models.cache_config import CacheConfig
 from config.models.file_process_config import FileProcessConfig
+from config.models.redis_config import RedisConfig
 from config.registry import ConfigRegistry
 from config.settings import GlobalSettings
 from config.models.memory_config import MemorySystemConfig
@@ -50,6 +51,10 @@ def load_config():
     registry.register_model(
         RegistryModules.CACHE, CacheConfig,
         Path(PROJECT_ROOT / "config/rules/cache.yaml")
+    )
+    registry.register_model(
+        RegistryModules.REDIS, RedisConfig,
+        Path(PROJECT_ROOT / "config/rules/redis.yaml")
     )
 
     # 加载 YAML

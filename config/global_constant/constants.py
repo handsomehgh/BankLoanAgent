@@ -8,6 +8,7 @@ class RegistryModules(str, Enum):
     LLM = "llm"
     FILE_PROCESS = "file_process"
     CACHE = "cache"
+    REDIS = "redis"
 
 class SpecialUserID(str, Enum):
     GLOBAL = "global"
@@ -82,3 +83,6 @@ class CacheNamespace(str,Enum):
     PROFILE_SUMMARY = "profile_summary"
     RECENT_INTERACTION = "recent_interaction"
 
+class CursorType(str,Enum):
+    EXTRACTION = "extraction"
+    LOGGING = "logging"

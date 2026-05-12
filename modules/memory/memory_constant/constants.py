@@ -66,8 +66,6 @@ class InteractionSentiment(str, Enum):
     ANXIOUS = "anxious"
     FRUSTRATED = "frustrated"
 
-class ChromaOperator(str, Enum):
-    AND = "$and"
-    EQ = "$eq"
-    GTE = "$gte"
+
+
 

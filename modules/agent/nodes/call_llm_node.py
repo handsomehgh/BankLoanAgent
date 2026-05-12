@@ -12,10 +12,17 @@ from modules.agent.state import AgentState
 from modules.module_services.chat_models import RobustLLM
 from config.prompts.system_prompt import SYSTEM_TEMPLATE
 from utils.monitor_utils.metrics import record_llm_metrics
+from utils.serialize_utils.seq_generator import SequenceGenerator
 
 logger = logging.getLogger(__name__)
 
-def call_model_node(state: AgentState, config: RunnableConfig, memory_config: MemorySystemConfig,llm_client: RobustLLM) -> dict:
+def call_model_node(
+        state: AgentState,
+        config: RunnableConfig,
+        memory_config: MemorySystemConfig,
+        llm_client: RobustLLM,
+        seq_generator: SequenceGenerator
+) -> dict:
     """call llm"""
     logger.debug("Entering call_model_node with state : %s", state)
 
@@ -56,11 +63,11 @@ def call_model_node(state: AgentState, config: RunnableConfig, memory_config: Me
     record_llm_metrics(provider=provider, total_tokens=token_usage)
 
     # assign global incremental message sequence number for AiMessage
-    next_index = state.get(StateFields.NEXT_MESSAGE_INDEX, 0)
     if not response.additional_kwargs:
         response.additional_kwargs = {}
-    response.additional_kwargs[MessageCommonFields.MESSAGE_INDEX.value] = next_index
-    next_index += 1
-    logger.debug("Assigned message_index=%d to AI response", next_index - 1)
+    user_id = state.get(StateFields.USER_ID.value)
+    idx = seq_generator.next_seq(user_id)
+    response.additional_kwargs[MessageCommonFields.MESSAGE_INDEX.value] = idx
+    logger.debug("Assigned message_index=%d to AI response",  idx)
 
-    return {StateFields.MESSAGES.value: [response], StateFields.NEXT_MESSAGE_INDEX.value: next_index}
+    return {StateFields.MESSAGES.value: [response]}

@@ -19,6 +19,7 @@ from modules.memory.memory_constant.constants import MemoryStatus, EvidenceType,
     InteractionSentiment, ProfileEntityKey, MemorySource
 from modules.memory.memory_constant.fields import MemoryFields
 from modules.memory.memory_business_store.base_memory_store import BaseMemoryStore
+from modules.memory.memory_utils.cursor_manager import CursorManager
 from modules.memory.memory_vector_store.base_vector_store import BaseVectorStore
 from modules.memory.models.memory_base import MemoryBase
 from modules.memory.models.memory_schema import UserProfileMemory, InteractionLogMemory, \
@@ -48,6 +49,9 @@ class LongTermMemoryStore(BaseMemoryStore):
         # dead letter queue
         self.dlq_path = Path(self.config.memory_dlq_path)
         self.dlq_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # cursor manager
+        self._cursor_manager = CursorManager()
 
         logger.info("LongTermMemoryStore initialized with vector_store")
 
@@ -734,9 +738,3 @@ class LongTermMemoryStore(BaseMemoryStore):
         except Exception as e:
             logger.warning("Failed to invalidate recent interactions cache for user=%s: %s", user_id, e)
 
-    def get_extraction_cursor(self, user_id: str) -> Optional[int]:
-        logger.info("get_extraction_cursor called for user=%s (not implemented)", user_id)
-        return None
-
-    def set_extraction_cursor(self, user_id: str, message_index: int) -> None:
-        logger.info("set_extraction_cursor called for user=%s to %d (not implemented)", user_id, message_index)

@@ -89,9 +89,7 @@ def extract_profile_node(
     logger.debug("Starting profile extraction for user_id=%s, total_messages=%d", user_id, len(messages))
 
     # cursor: prefer cross-session(reserved),otherwise state
-    cursor = memory_store.get_extraction_cursor(user_id)
-    if cursor is None:
-        cursor = state.get(StateFields.LAST_EXTRACTED_MESSAGE_INDEX)
+    cursor = state.get(StateFields.LAST_EXTRACTED_MESSAGE_INDEX)
     logger.debug("Extraction cursor: %s", cursor)
 
     # no new messages,return false
@@ -198,13 +196,6 @@ def extract_profile_node(
         logger.warning("Cannot update cursor after extraction: no message_index for user_id=%s", user_id)
         return {StateFields.PROFILE_UPDATED.value: updated}
 
-    # update cross-session cursor
-    try:
-        memory_store.set_extraction_cursor(user_id, last_index)
-        logger.debug("Updated extraction cursor for user_id=%s to %d", user_id, last_index)
-    except Exception as e:
-        logger.warning("Failed to set extraction cursor for user_id=%s: %s", user_id, e)
-        pass
 
     return {
         StateFields.PROFILE_UPDATED.value: updated,

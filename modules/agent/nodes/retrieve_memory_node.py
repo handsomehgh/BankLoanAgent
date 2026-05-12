@@ -10,11 +10,12 @@ from config.global_constant.constants import MemoryType
 from modules.agent.constants import StateFields, MessageCommonFields
 from modules.agent.state import AgentState
 from modules.memory.base import BaseRetriever
+from utils.serialize_utils.seq_generator import SequenceGenerator
 
 logger = logging.getLogger(__name__)
 
 
-def retrieve_memory_node(state: AgentState, config: RunnableConfig, retrieval: BaseRetriever) -> dict:
+def retrieve_memory_node(state: AgentState, config: RunnableConfig, retrieval: BaseRetriever,seq_generator: SequenceGenerator) -> dict:
     """
     retrieve memory and assign a globally incrementing sequence to all unnumbered user/assistant mesasges
     """
@@ -31,8 +32,8 @@ def retrieve_memory_node(state: AgentState, config: RunnableConfig, retrieval: B
         if not hasattr(msg, MessageCommonFields.ADDITIONAL_KWARGS.value) or msg.additional_kwargs is None:
             msg.additional_kwargs = {}
         if MessageCommonFields.MESSAGE_INDEX.value not in msg.additional_kwargs:
-            msg.additional_kwargs[MessageCommonFields.MESSAGE_INDEX.value] = next_index
-            next_index += 1
+            idx = seq_generator.next_seq(user_id)
+            msg.additional_kwargs[MessageCommonFields.MESSAGE_INDEX.value] = idx
             updated = True
 
     if updated:

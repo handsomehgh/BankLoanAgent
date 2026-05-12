@@ -31,6 +31,7 @@ def build_graph(services: AgentServices):
     workflow = StateGraph(AgentState)
     memory_cfg = services.registry.get_config(RegistryModules.MEMORY_SYSTEM)
     retrieval_cfg = services.registry.get_config(RegistryModules.RETRIEVAL)
+    seq_generator = services.seq_generator
 
     # =========================== register node =================================
     # retrieve node:get long term memory for vector store
@@ -39,14 +40,14 @@ def build_graph(services: AgentServices):
     # retrieve knowledge node: get relevant content from knowledge base
     workflow.add_node(AgentNodeName.RETRIEVE_KNOWLEDGE,
                       partial(retrieval_knowledge_node, retrieval_service=services.knowledge_retriever,
-                              retrieval_config=retrieval_cfg))
+                              retrieval_config=retrieval_cfg,seq_generator=seq_generator))
 
     # compliance interception node: scan user input,and if high-risk rules are hit,directly return interception phrasing
     workflow.add_node(AgentNodeName.COMPLIANCE_GUARD, partial(compliance_guard_node, memory_config=memory_cfg))
 
     # generate answer node,inject context and invoke llm
     workflow.add_node(AgentNodeName.CALL_MODEL,
-                      partial(call_model_node, memory_config=memory_cfg, llm_client=services.creative_llm))
+                      partial(call_model_node, memory_config=memory_cfg, llm_client=services.creative_llm,seq_generator=seq_generator))
 
     # profile extract node,extract user profiles from conversation and store them in long term memory
     workflow.add_node(AgentNodeName.EXTRACT_PROFILE,

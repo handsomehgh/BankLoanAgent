@@ -2,32 +2,44 @@
 # version 1.0
 from config.models.cache_config import CacheConfig
 from infra.cache.cache_manager import CacheManager
+from infra.cache.memory_cache_backend import MemoryCacheBackend
+from infra.cache.redis_cache_backend import RedisCacheBackend
 
 
 class CacheFactory:
     def __init__(self, config: CacheConfig):
-        self.global_config = config
+        self.config = config
 
     def create(self, namespace: str) -> CacheManager:
         # namespace config
-        ns_cfg = self.global_config.namespaces.get(namespace, {})
+        ns_cfg = self.config.namespaces.get(namespace, {})
+        if ns_cfg is None:
+            raise KeyError(f"Namespace '{namespace}' not found in cache configuration")
 
-        # merge l1 and l2 config
-        l1_config = self.global_config.l1_defaults.model_copy(update=ns_cfg.get("l1", {}))
-        l2_config = self.global_config.l2_defaults.model_copy(update=ns_cfg.get("l2", {}))
+        # L1
+        l1_backend = None
+        if ns_cfg.enable_l1:
+            if ns_cfg.l1 is None:
+                raise ValueError(f"Namespace '{namespace}' enabled L1 but missing l1 config")
+            l1_backend = MemoryCacheBackend(maxsize=ns_cfg.l1.maxsize, ttl=ns_cfg.l1.ttl)
 
-        # create cache instance
-        l1_backend = l1_config.create_backend()
-        l2_backend = l2_config.create_backend()
+        # L2
+        l2_backend = None
+        if ns_cfg.enable_l2:
+            if ns_cfg.l2 is None or any(conf is None for conf in ns_cfg.model_dump().values):
+                raise ValueError(f"Namespace '{namespace}' enabled L2 but missing l2 config")
+            l2_backend = RedisCacheBackend(max_value_size=ns_cfg.l2.max_value_size)
+
+        if l1_backend is None and l2_backend is None:
+            raise ValueError(f"Namespace '{namespace}' must enable at least L1 or L2")
 
         return CacheManager(
             namespace=namespace,
             l1_backend=l1_backend,
             l2_backend=l2_backend,
-            compression_threshold=self.global_config.compression_threshold,
-            ttl_jitter=self.global_config.ttl_jitter,
-            default_ttl=l2_config.ttl if l2_config.enabled else l1_config.ttl,
-            null_ttl=self.global_config.null_ttl,
-            version=self.global_config.knowledge_base_version,
-
+            compression_threshold=ns_cfg.l2.compression_threshold,
+            ttl_jitter=ns_cfg.l2.ttl_jitte,
+            default_ttl=ns_cfg.l2.ttl,
+            null_ttl=ns_cfg.l2.null_ttl,
+            version=self.config.knowledge_base_version,
         )

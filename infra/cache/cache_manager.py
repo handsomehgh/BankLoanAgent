@@ -105,9 +105,6 @@ class CacheManager:
                 logger.warning(f"[Cache] Serialize failed, key={key}: {e}")
                 return
 
-        ttl = ttl or self.default_ttl
-        ttl = self._apply_jitter(ttl)
-
         if self.l1:
             try:
                 self.l1.set(key, serialized)
@@ -116,6 +113,8 @@ class CacheManager:
 
         if self.l2:
             try:
+                ttl = ttl or self.default_ttl
+                ttl = self._apply_jitter(ttl)
                 self.l2.set(key, serialized, ttl)
             except Exception as e:
                 logger.warning(f"[Cache] L2 set failed, key={key}: {e}")

@@ -3,79 +3,74 @@
 import logging
 from typing import Optional
 
-import redis
 from redis import RedisError
 
 from infra.cache.cache_backend import CacheBackend
+from infra.redis_manager import RedisManager
 
 logger = logging.getLogger(__name__)
 
 _CURRENT_DATA_VERSION = b"v1:"
 
 class RedisCacheBackend(CacheBackend):
-    def __init__(
-            self,
-            host: str = "localhost",
-            port: int = 6379,
-            db: int = 0,
-            password: Optional[str] = None,
-            max_connections: int = 20,
-            socket_timeout: float = 0.1,
-            max_value_size: int = 1_048_576,
-            extra_pool_kwargs: Optional[dict] = None
-    ):
-        pool_kwargs = {
-            "host": host,
-            "port": port,
-            "db": db,
-            "max_connections": max_connections,
-            "socket_timeout": socket_timeout
-        }
-        if password is not None:
-            pool_kwargs["password"] = password
-        if extra_pool_kwargs:
-            pool_kwargs.update(extra_pool_kwargs)
-
-        self._pool = redis.ConnectionPool(**pool_kwargs)
-        self._client = redis.Redis(connection_pool=self._pool)
+    def __init__(self,max_value_size: int = 1_048_576):
+        self._manager = RedisManager()
         self._max_value_size = max_value_size
 
+    def _client(self):
+        return self._manager.get_client()
+
     def get(self,key: str) -> Optional[bytes]:
+        client = self._client()
+        if client is None:
+            return None
+
         try:
-            raw = self._client.get(key)
+            raw = client.get(key)
             if raw is None:
                 return None
             if not raw.startswith(_CURRENT_DATA_VERSION):
-                logger.warning(f"Unsupported data version in key {key}, ignoring")
+                logger.warning("Unsupported data version in key %s", key)
                 return None
             return raw[len(_CURRENT_DATA_VERSION):]
-        except (RedisError,TimeoutError,OSError) as e:
-            logger.warning(f"Redis get error for key {key}: {e}")
+        except Exception as e:
+            logger.warning("Redis GET failed for %s: %s", key, e)
             return None
 
     def set(self,key: str,value: bytes,ttl: Optional[int] = None) -> None:
         if len(value) > self._max_value_size:
-            logger.warning(f"value size {len(value)} exceeds limit {self._max_value_size},not caching key {key}")
+            logger.warning("Value size %d exceeds limit, not caching key %s", len(value), key)
             return
+
+        client = self._client()
+        if client is None:
+            return
+
         data = _CURRENT_DATA_VERSION + value
         try:
-            logger.info(f"Preparing to write to RAG redis  cache,key -> {key},value -> {data}")
             if ttl:
-                self._client.setex(key,ttl,data)
+                client.setex(key, ttl, data)
             else:
-                self._client.set(key,data)
-        except (RedisError,TimeoutError,OSError) as e:
-            logger.warning(f"Redis set error for key {key}: {e}")
+                client.set(key, data)
+        except Exception as e:
+            logger.warning("Redis SET failed for %s: %s", key, e)
 
     def delete(self,key: str) -> None:
+        client = self._client()
+        if client is None:
+            return
         try:
-            self._client.delete(key)
-        except (RedisError,TimeoutError,OSError) as e:
-            logger.warning(f"Redis delete error for key {key}: {e}")
+            client.delete(key)
+        except Exception as e:
+            logger.warning("Redis DELETE failed for %s: %s", key, e)
 
     def exists(self,key: str) -> bool:
+        client = self._client()
+        if client is None:
+            return False
+
         try:
-            return self._client.exists(key) > 0
+            return client.exists(key) > 0
         except (RedisError,TimeoutError,OSError) as e:
             return False
 

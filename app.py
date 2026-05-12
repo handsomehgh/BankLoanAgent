@@ -2,7 +2,9 @@
 import os
 
 from infra.cache.cache_registry import cache_register
+from infra.redis_manager import RedisManager
 from utils.logging_config import setup_logging, set_log_context
+from utils.serialize_utils.seq_generator import SequenceGenerator
 
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
@@ -48,22 +50,29 @@ import streamlit.watcher.local_sources_watcher as watcher
 
 watcher.MODULE_IGNORE_LIST = ["transformers"]
 
-# ===================== load config =====================
+# ====================== load config ========================
 try:
     load_config()
 except NameError:
     raise RuntimeError("load_config() not defined. Please initialize your configuration manually.")
 
-# ===================== global config =====================
+# ======================= global config ========================
 registry = ConfigRegistry()
 llm_config = registry.get_config(RegistryModules.LLM)
 memory_config = registry.get_config(RegistryModules.MEMORY_SYSTEM)
 retrieval_config = registry.get_config(RegistryModules.RETRIEVAL)
 cache_config = registry.get_config(RegistryModules.CACHE)
+redis_config = registry.get_config(RegistryModules.REDIS)
 
-# =================== log config ===================
+# ====================== log config ============================
 setup_logging(log_level=llm_config.log_level)
 logger = logging.getLogger(__name__)
+
+# ===================== redis manager ==========================
+RedisManager.from_config(redis_config)
+
+# =================== build sequence generator =================
+seq_generator = SequenceGenerator()
 
 # ============== registry cache manager ===================
 @st.cache_resource(show_spinner=False)
@@ -96,7 +105,7 @@ precise_llm = RobustLLM(
     provider=llm_config.openai_provider
 )
 
-# ===================== 创建 Embedding 客户端 =====================
+# ===================== build Embedding client =====================
 embedder = RobustEmbeddings(
     api_key=llm_config.alibaba_api_key,
     model_name=llm_config.alibaba_emb_name,
@@ -229,7 +238,8 @@ if "agent" not in st.session_state:
             evidence_infer=evidence_infer,
             profile_extractor=profile_extractor,
             profile_gate=profile_gate,
-            registry=ConfigRegistry()
+            registry=ConfigRegistry(),
+            seq_generator=seq_generator
         )
 
         # ---- 构建 Agent 图 ----

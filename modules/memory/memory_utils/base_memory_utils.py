@@ -8,6 +8,7 @@ from typing import Optional
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 
+from config.global_constant.constants import CursorType
 from modules.agent.constants import MessageCommonFields
 
 logger = logging.getLogger(__name__)
@@ -66,4 +67,42 @@ def safe_parse_extraction_output(raw_output: str) -> list:
     # 4. 解析失败，返回空列表
     logger.warning(f"无法解析提取输出，已返回空列表。原始输出: {raw_output[:200]}")
     return []
+
+# author hgh
+# version 1.0
+
+def get_logging_cursor(self, user_id: str) -> Optional[int]:
+    """获取交互日志游标"""
+    processed = self._cursor_manager.get_processed_set(user_id, CursorType.LOGGING)
+    if not processed:
+        return None
+    return max(processed)
+
+
+def set_logging_cursor(self, user_id: str, message_index: int) -> None:
+    """设置交互日志游标"""
+    self._cursor_manager.add_to_processed_set(user_id, CursorType.LOGGING, message_index)
+
+    # ===================== 游标辅助方法 =====================
+
+
+def get_processed_extraction_set(self, user_id: str) -> set[int]:
+    """获取完整的已处理提取序号集合"""
+    return self._cursor_manager.get_processed_set(user_id, CursorType.EXTRACTION)
+
+
+def get_processed_logging_set(self, user_id: str) -> set[int]:
+    """获取完整的已处理日志序号集合"""
+    return self._cursor_manager.get_processed_set(user_id, CursorType.LOGGING)
+
+
+def is_extraction_processed(self, user_id: str, seq: int) -> bool:
+    """检查某序号是否已被提取"""
+    return self._cursor_manager.is_processed(user_id, CursorType.EXTRACTION, seq)
+
+
+def is_logging_processed(self, user_id: str, seq: int) -> bool:
+    """检查某序号是否已被日志记录"""
+    return self._cursor_manager.is_processed(user_id, CursorType.LOGGING, seq)
+
 
