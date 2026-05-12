@@ -11,10 +11,6 @@ from infra.collections import CollectionNames
 from infra.milvus_client import MilvusClientManager
 from utils.config_utils.get_config import get_config
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 DENSE_INDEX_PARAM = {

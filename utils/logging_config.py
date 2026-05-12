@@ -3,7 +3,9 @@ Unified Logging Configuration Module
 Provides setup_logging() to initialize the root logger, supporting context injection (user_id/thread_id)
 """
 import logging
+import os
 import threading
+from logging.handlers import RotatingFileHandler
 from typing import Optional
 
 
@@ -56,6 +58,19 @@ def setup_logging(log_level: str = "INFO") -> None:
     console.setFormatter(fmt)
     console.addFilter(_context_filter)
     root.addHandler(console)
+
+    log_dir = "D:\\logs\\bank_agent"
+    os.makedirs(log_dir, exist_ok=True)
+    file_handler = RotatingFileHandler(
+        os.path.join(log_dir, "app.log"),
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5
+    )
+    file_handler.terminator = "\n"
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(fmt)
+    file_handler.addFilter(_context_filter)
+    root.addHandler(file_handler)
 
     # Set the root logger to DEBUG, allowing all levels to pass through the handler filter (the actual output level is controlled by the handler)
     root.setLevel(logging.DEBUG)

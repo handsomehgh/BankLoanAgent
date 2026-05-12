@@ -72,8 +72,8 @@ def retrieval_knowledge_node(
     existing_context = state.get(StateFields.RETRIEVED_CONTEXT, {})
     existing_formatted = state.get(StateFields.FORMATTED_CONTEXT, {})
 
-    existing_context[MemoryType.BUSINESS_KNOWLEDGE] = knowledge_list
-    existing_formatted[MemoryType.BUSINESS_KNOWLEDGE] = formatted
+    existing_context[MemoryType.BUSINESS_KNOWLEDGE.value] = knowledge_list
+    existing_formatted[MemoryType.BUSINESS_KNOWLEDGE.value] = formatted
 
     return {
         StateFields.RETRIEVED_CONTEXT.value: existing_context,

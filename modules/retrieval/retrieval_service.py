@@ -3,12 +3,12 @@
 import asyncio
 import logging
 import threading
+import time
 from concurrent.futures.thread import ThreadPoolExecutor
 from typing import List, Optional, Dict
 
 from config.global_constant.constants import MemoryType, CacheNamespace
 from config.models.retrieval_config import RetrievalConfig
-from infra.cache.cache_manager import CacheManager
 from modules.retrieval.context_compressor import ContextCompressor
 from modules.retrieval.knowledge_model import BusinessKnowledge
 from modules.retrieval.knowledge_vector_store.knowledge_search_engine import KnowledgeSearchEngine
@@ -19,6 +19,7 @@ from modules.retrieval.router.retrieval_base_router import RetrievalRouter
 from modules.retrieval.rrf_fusion import rrf_fusion
 from utils.cache_utils.cache_decorator import custom_cached
 from utils.model_mapper.storage_to_model import StorageToMemoryMapper
+from utils.monitor_utils.metrics import record_retrieval_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,6 @@ class RetrievalService:
             reranker: Reranker,
             compressor: ContextCompressor,
             config: RetrievalConfig,
-            cache_manager: Optional[CacheManager] = None,
             retrieve_router: Optional[RetrievalRouter] = None,
     ):
         self.engine = engine
@@ -40,40 +40,46 @@ class RetrievalService:
         self.filter = filter
         self.reranker = reranker
         self.compressor = compressor
-        self.cache_manager = cache_manager
         self._locks: Dict[str, threading.Lock] = {}
         self._locks_lock = threading.Lock()
         self.config = config
         self.retrieve_router = retrieve_router
         self._executor = ThreadPoolExecutor(max_workers=3)
         logger.info("RetrievalService initialized with router=%s, cache=%s, number of workers=%d",
-                    type(self.retrieve_router).__name__ if self.retrieve_router else "None",
-                    "enabled" if self.cache_manager else "disabled",
-                    3)
+                    type(self.retrieve_router).__name__ if self.retrieve_router else "None",3)
 
     def retrieve(self, query: str, context: Optional[Dict] = None) -> List[BusinessKnowledge]:
         logger.info("Incoming retrieve request: query='%s...', context=%s", query[:80],
                     "available" if context else "absent")
-        if self.retrieve_router and not self.retrieve_router.should_retrieve(query):
+
+        #router
+        if self.config.retrieval_routing.enabled and self.retrieve_router and not self.retrieve_router.should_retrieve(query):
             logger.info("Query skipped by retrieve_router: %s", query[:80])
+            record_retrieval_metrics({}, route_skipped=True)
             return []
+
         logger.info("Start retrieval for query: %s", query[:80])
         results = asyncio.run(self._retrieve_async(query, context))
         logger.info("Retrieval completed: %d results returned", len(results))
         return results
 
     @custom_cached(
-        namespace=CacheNamespace.RAG,
+        namespace=CacheNamespace.RAG.value,
         ttl=1800,
         null_ttl=60,
         converter=lambda data: [BusinessKnowledge(**item) for item in data] if data else [],
         empty_result_factory=list,
-        ignore_args=[0]
+        ignore_args=[0,2]
     )
     async def _retrieve_async(self, query: str, context: Optional[Dict] = None) -> List[BusinessKnowledge]:
         # rewrite query
+        total_start = time.monotonic()
+
+        #query rewrite
         logger.debug("Entering _retrieve_async for query: %s", query[:80])
-        queries = self.rewriter.rewrite(query, context)
+        queries = [query]
+        if self.config.rewriter.enabled:
+            queries = self.rewriter.rewrite(query, context)
 
         # extract conditions
         filter_expr = None
@@ -152,6 +158,30 @@ class RetrievalService:
         # context compressor
         compressed = self.compressor.compress(query, reranked)
         logger.debug("Context compression completed")
+
+        #output metrics
+        dense_hits = len(dense_raw)
+        sparse_hits = len(sparse_raw)
+        term_hits = len(term_raw) if self.config.multi_vector.term_vector else 0
+        fused_count = len(fused_raw)
+        rerank_count = len(reranked)
+        duration_ms = (time.monotonic() - total_start) * 1000
+        orig_total = sum(len(item.get("text", "")) for item in reranked)
+        comp_total = sum(len(item.get("text", "")) for item in compressed)
+        if orig_total > 0:
+            comp_ratio = 1.0 - (comp_total / orig_total)
+        else:
+            comp_ratio = 0.0
+        record_retrieval_metrics({
+            'duration_ms': duration_ms,
+            'dense': dense_hits,
+            'sparse': sparse_hits,
+            'term': term_hits,
+            'fused': fused_count,
+            'rerank': rerank_count,
+            'comp_ratio': comp_ratio,
+        })
+
 
         final_results = [StorageToMemoryMapper.from_db_dict(item, MemoryType.BUSINESS_KNOWLEDGE) for item in compressed]
         logger.info("Retrieval pipeline finished: %d final results", len(final_results))

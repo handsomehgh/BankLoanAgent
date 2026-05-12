@@ -13,13 +13,14 @@ from config.global_constant.fields import CommonFields
 from config.registry import ConfigRegistry
 from infra.collections import CollectionNames
 from infra.milvus_client import MilvusClientManager
+from modules.module_services.chat_models import RobustLLM
 from modules.module_services.embeddings import RobustEmbeddings
 from pipelines.constant import FileMetadata
 from utils.config_utils.get_config import get_config
 from utils.faq_similar_generator import FaqSimilarGenerator
 from utils.summary_know_generator import SummaryKnowledgeGenerator
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,25 +29,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class RAGIndexer:
-    def __init__(self,registry: ConfigRegistry,embedder:RobustEmbeddings):
+    def __init__(self,registry: ConfigRegistry,embedder:RobustEmbeddings,llm_client: RobustLLM):
         self.registry = registry
         self.embedder = embedder
 
         self.retrieval_config = registry.get_config(RegistryModules.RETRIEVAL)
         self.client = MilvusClientManager(self.retrieval_config.milvus_uri)
+        self.llm_client = llm_client
         self.collection = self.client.get_collection(CollectionNames.for_type(MemoryType.BUSINESS_KNOWLEDGE))
 
         multi_cfg = self.retrieval_config.multi_vector
         self.summary_generator = None
         if multi_cfg.enable and multi_cfg.summary_vector:
-            self.summary_generator = SummaryKnowledgeGenerator(self.retrieval_config)
+            self.summary_generator = SummaryKnowledgeGenerator(self.retrieval_config,llm_client)
             logger.info("Summary generator is enabled，source type：%s，minimum len：%d",
                         multi_cfg.summary_config.enabled_sources, multi_cfg.summary_config.min_chunk_length)
 
         self.faq_similar_generator = None
         if multi_cfg.enable and multi_cfg.faq_similar_vector:
             faq_config = getattr(multi_cfg.faq_similar_config, 'faq_similar_config', {})
-            self.faq_similar_generator = FaqSimilarGenerator(faq_config)
+            self.faq_similar_generator = FaqSimilarGenerator(faq_config,llm_client)
             logger.info("FAQ Similar Question Generator is enabled")
 
     def load_chunks(self) -> List[Dict[str, Any]]:
@@ -256,5 +258,12 @@ if __name__ == "__main__":
         backup_model_name=llm_config.alibaba_emb_backup,
         dimensions=llm_config.dimension
     )
-    indexer = RAGIndexer(registry=registry, embedder=embedder)
+    precise_llm = RobustLLM(
+        temperature=llm_config.precise_temperature,
+        api_key=llm_config.deepseek_api_key,
+        base_url=llm_config.deepseek_base_url,
+        model=llm_config.deepseek_llm_name,
+        provider=llm_config.openai_provider
+    )
+    indexer = RAGIndexer(registry=registry, embedder=embedder,llm_client=precise_llm)
     indexer.index()

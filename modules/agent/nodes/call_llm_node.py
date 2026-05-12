@@ -11,6 +11,7 @@ from modules.agent.constants import StateFields, MessageCommonFields
 from modules.agent.state import AgentState
 from modules.module_services.chat_models import RobustLLM
 from config.prompts.system_prompt import SYSTEM_TEMPLATE
+from utils.monitor_utils.metrics import record_llm_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ def call_model_node(state: AgentState, config: RunnableConfig, memory_config: Me
         business_knowledge=formatted.get(MemoryType.BUSINESS_KNOWLEDGE.value,"暂无")
     )
 
-    #
+
     messages = state.get(StateFields.MESSAGES, [])
     total_messages = len(messages)
     if total_messages > memory_config.max_context_messages:
@@ -45,6 +46,14 @@ def call_model_node(state: AgentState, config: RunnableConfig, memory_config: Me
         fallback_response="Sorry, I am temporarily unable to handle your request. Please try again later."
     )
     logger.debug("LLM response received, content length=%d", len(response.content) if response.content else 0)
+
+    #output metrics
+    token_usage = 0
+    if hasattr(response, 'usage_metadata') and response.usage_metadata:
+        token_usage = response.usage_metadata.get("total_tokens", 0)
+    provider = getattr(llm_client, 'provider', 'deepseek')
+
+    record_llm_metrics(provider=provider, total_tokens=token_usage)
 
     # assign global incremental message sequence number for AiMessage
     next_index = state.get(StateFields.NEXT_MESSAGE_INDEX, 0)

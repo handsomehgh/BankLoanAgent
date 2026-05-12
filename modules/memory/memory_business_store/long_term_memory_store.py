@@ -26,6 +26,7 @@ from modules.memory.models.memory_schema import UserProfileMemory, InteractionLo
 from utils.cache_utils.cache_decorator import custom_cached
 from utils.model_mapper.model_to_storage import MemoryToStorageMapper
 from utils.model_mapper.storage_to_model import StorageToMemoryMapper
+from utils.monitor_utils.metrics import record_memory_write_metrics
 from utils.query_utils.query_model import Query, Condition
 from utils.retry import retry_on_failure
 
@@ -185,8 +186,10 @@ class LongTermMemoryStore(BaseMemoryStore):
                                           {MemoryFields.SUPERSEDED_BY: memory_id})
             except Exception as e:
                 logger.error("Failed to update superseded_by for %s: %s", old_id, e)
-
         logger.info("Memory added successfully, id=%s, type=%s, user=%s", memory_id, memory_type.value, user_id)
+
+        #output metrics
+        record_memory_write_metrics(memory_type=memory_type.value, user=user_id)
         return memory_id
 
     @retry_on_failure(max_retries=3, initial_delay=0.2, exceptions=(Exception, MemoryRetrievalError))

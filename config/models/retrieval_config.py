@@ -49,6 +49,7 @@ class SearchConfig(BaseModel):
 
 
 class RewriterConfig(BaseModel):
+    enabled: bool = False
     enable_dynamic: bool = True
     override_strategy: Optional[str] = None
     num_variants: int = 3

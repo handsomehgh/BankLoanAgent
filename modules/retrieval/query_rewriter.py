@@ -28,19 +28,32 @@ class DynamicStrategySelector:
 
     @staticmethod
     def select(query: str) -> Optional[str]:
-        if len(query) <= 5 or any(c.isdigit() for c in query) or any(kw in query for kw in ["LPR", "BP", "DTI"]):
-            return RewritingStrategy.MULTI_QUERY
+        @staticmethod
+        def select(query: str) -> Optional[str]:
+            # ---------- 1. HYDE：仅用于极少数场景 ----------
+            # 当用户问的是非常宽泛的大概念、且查询本身很简短时，用 HyDE 生成一段假设文档来增强检索
+            # 例如："住房贷款"、"经营贷政策"
+            if len(query) <= 10 and not any(kw in query for kw in ["怎么", "如何", "什么", "为什么"]):
+                return RewritingStrategy.HYDE
 
-        if any(kw in query for kw in
-               ["介绍", "哪些", "种类", "分类", "有哪些", "怎么选", "如何选择", "哪个好", "哪个更好", "有什么区别",
-                "区别", "比较", "对比", "优缺点", "选哪个"]):
-            return RewritingStrategy.STEP_BACK
+            # ---------- 2. STEP_BACK：需要抽象化概括的场景 ----------
+            # 用户在进行对比、选择、了解全貌时，把具体问题抽象为更通用的概念问题
+            step_back_kw = [
+                "有什么区别", "有什么不同", "哪个好", "哪个更好", "哪个划算",
+                "怎么选", "如何选择", "选哪个", "有哪些", "哪些种类", "种类",
+                "分类", "对比", "比较", "优缺点", "分别是什么"
+            ]
+            if any(kw in query for kw in step_back_kw) and len(query) > 8:
+                return RewritingStrategy.STEP_BACK
 
-        if len(query) > 20 and any(
-                kw in query for kw in ["贷款", "利率", "额度", "还款", "征信", "经营", "消费", "住房"]):
-            return RewritingStrategy.HYDE
+            # ---------- 3. MULTI_QUERY：需要多角度表达的场景 ----------
+            # 短查询或意图明确的精确查询，用多查询扩展来提升召回
+            if len(query) <= 12:
+                return RewritingStrategy.MULTI_QUERY
 
-        return None
+            # ---------- 4. 默认：不改写 ----------
+            # 大多数自然语言查询已经足够完整，不需要额外改写
+            return None
 
 
 class QueryRewriter:
@@ -152,10 +165,9 @@ class QueryRewriter:
         messages = HYDE_QUERY_PROMPT.invoke({"query": query}).to_messages()
 
         response = self.llm.invoke(messages)
-        logger.info(f"HYDE rewriting llm generate result: {response[:100]}")
 
         text = response.content.strip()
-        logger.debug("HyDE LLM raw output: %.100s...", text)
+        logger.info("HyDE LLM raw output: %.100s...", text)
         if not text:
             logger.warning("HyDE generated empty output")
             raise ValueError("HyDE generate result is null")

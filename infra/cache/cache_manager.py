@@ -4,12 +4,16 @@
 unified multi_level cache manager,
 supporting namespaces,serialization,compression,null marked,and avalanche protection(TTL random offset)
 """
+import datetime
 import hashlib
 import json
 import logging
 import random
 import zlib
+from enum import Enum
 from typing import Any, Optional, List
+
+from pydantic import BaseModel
 
 from infra.cache.cache_backend import CacheBackend
 
@@ -120,12 +124,11 @@ class CacheManager:
         self.set(key, _NULL_MARKER, ttl or self.null_ttl)
 
     def _delete(self, key: str) -> None:
-        final_key = self.build_key(key)
         if self.l1:
             try:
-                self.l1.delete(final_key)
+                self.l1.delete(key)
             except Exception as e:
-                logger.warning(f"[Cache] L1 delete failed, key={final_key}: {e}")
+                logger.warning(f"[Cache] L1 delete failed, key={key}: {e}")
 
         if self.l2:
             try:
@@ -147,13 +150,68 @@ class CacheManager:
         self._delete(full_key)
         logger.info("Cache invalidated for function=%s, key=%s", func_name, full_key)
 
-
     def _serialize(self, value: Any) -> bytes:
-        return json.dumps(value, ensure_ascii=False).encode("utf-8")
+        """
+        生产级通用序列化：将任意业务对象安全转换为 JSON 字节。
+        处理顺序：Pydantic v2/v1 → dataclass/attrs → dict 属性 → 自定义函数 → 降级字符串。
+        """
+
+        def _convert(obj: Any) -> Any:
+            # 1. Pydantic v2 (model_dump) 或 v1 (dict)
+            if isinstance(obj, BaseModel):
+                return obj.model_dump(mode="json") if hasattr(obj, "model_dump") else obj.dict()
+
+            # 2. dataclass / attrs
+            if hasattr(obj, "__dataclass_fields__"):
+                from dataclasses import asdict
+                return asdict(obj)
+
+            # 3. 通用 dict 化接口（如 SQLAlchemy 的 to_dict）
+            if hasattr(obj, "to_dict") and callable(obj.to_dict):
+                return obj.to_dict()
+
+            # 4. 拥有 __dict__ 的普通类实例（排除内置类型和类本身）
+            if hasattr(obj, "__dict__") and not isinstance(obj, type):
+                return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
+
+            # 5. 常见不可序列化类型兜底
+            if isinstance(obj, (datetime, datetime.date, datetime.time)):
+                return obj.isoformat()
+            if isinstance(obj, Enum):
+                return obj.value
+            if isinstance(obj, (set, frozenset)):
+                return list(obj)
+            if isinstance(obj, bytes):
+                return obj.decode("utf-8", errors="replace")
+
+            try:
+                json.dumps(obj, ensure_ascii=False)
+                return obj
+            except (TypeError, ValueError):
+                return str(obj)
+
+        # 外部统一使用 default 参数处理复杂对象
+        try:
+            json_bytes = json.dumps(
+                value,
+                ensure_ascii=False,
+                default=_convert
+            ).encode("utf-8")
+        except Exception as e:
+            logger.error(f"Serialization fallback to str: {e}")
+            json_bytes = json.dumps(
+                str(value),
+                ensure_ascii=False
+            ).encode("utf-8")
+
+        # 压缩
+        if len(json_bytes) > self.compression_threshold:
+            json_bytes = zlib.compress(json_bytes)
+        return json_bytes
 
     def _deserialize(self, value: bytes) -> Any:
         try:
             data = zlib.decompress(value)
         except zlib.error:
-            pass
+            data = value
         return json.loads(data.decode("utf-8"))

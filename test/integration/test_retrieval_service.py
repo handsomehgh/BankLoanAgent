@@ -14,7 +14,7 @@ from modules.module_services.chat_models import RobustLLM
 from modules.module_services.embeddings import RobustEmbeddings
 
 import pytest
-from config.global_constant.constants import RegistryModules
+from config.global_constant.constants import RegistryModules, MemoryType
 from modules.retrieval.knowledge_vector_store.knowledge_search_engine import KnowledgeSearchEngine
 from modules.retrieval.query_rewriter import QueryRewriter
 from modules.retrieval.query_filter import QueryFilter
@@ -133,3 +133,13 @@ class TestRetrievalService:
             for r in results
         )
         assert found, "LPR 查询应召回利率相关文档"
+
+if __name__ == '__main__':
+    registry = get_config()
+    config = registry.get_config(RegistryModules.RETRIEVAL)
+    client = MilvusClientManager(uri=config.milvus_uri)
+    col = client.get_collection(MemoryType.BUSINESS_KNOWLEDGE)
+    # col.delete(expr="id != '1'")
+    result = col.query(expr="id != '1'",output_fields = list(set(BusinessKnowledge.model_fields.keys())))
+    for res in result:
+        print(res)

@@ -6,13 +6,13 @@ from typing import Dict, Optional
 
 from config.models.retrieval_config import RetrievalConfig
 from config.prompts.faq_similar_prompt import FAQ_SIMILAR_PROMPT_TEMPLATE
-from modules.module_services.chat_models import get_llm
+from modules.module_services.chat_models import RobustLLM
 
 logger = logging.getLogger(__name__)
 
 
 class FaqSimilarGenerator:
-    def __init__(self, config: RetrievalConfig):
+    def __init__(self, config: RetrievalConfig,llm_client: RobustLLM):
         self.config = config
         multi_vector_cfg = self.config.multi_vector
         self.num_variants = multi_vector_cfg.faq_similar_config.num_variants or 3
@@ -20,7 +20,7 @@ class FaqSimilarGenerator:
         self.max_output_tokens = multi_vector_cfg.faq_similar_config.max_output_tokens or 150
         self.fallback_to_original = multi_vector_cfg.faq_similar_config.fallback_to_original or True
 
-        self.llm_client = get_llm(self.temperature)
+        self.llm_client = llm_client
 
         self._cache: Dict[str, str] = {}
 

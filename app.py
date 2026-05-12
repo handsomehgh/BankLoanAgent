@@ -21,7 +21,6 @@ from config.prompts.summary_interaction_prompt import SUMMARY_INTERACTION_PROMPT
 from config.registry import ConfigRegistry
 from infra.milvus_client import MilvusClientManager
 from main import load_config
-from modules.agent.constants import StateFields
 from modules.agent.graph import build_graph
 from modules.memory.memory_business_store.long_term_memory_store import LongTermMemoryStore
 from modules.memory.memory_constant.constants import MemoryStatus
@@ -49,38 +48,38 @@ import streamlit.watcher.local_sources_watcher as watcher
 
 watcher.MODULE_IGNORE_LIST = ["transformers"]
 
-# ===================== 加载配置 =====================
+# ===================== load config =====================
 try:
     load_config()
 except NameError:
     raise RuntimeError("load_config() not defined. Please initialize your configuration manually.")
 
-# ===================== 获取配置 =====================
+# ===================== global config =====================
 registry = ConfigRegistry()
 llm_config = registry.get_config(RegistryModules.LLM)
-print(f"=================={llm_config}")
 memory_config = registry.get_config(RegistryModules.MEMORY_SYSTEM)
-print(f"=================={memory_config}")
 retrieval_config = registry.get_config(RegistryModules.RETRIEVAL)
-print(f"=================={retrieval_config}")
 cache_config = registry.get_config(RegistryModules.CACHE)
-print(f"=================={cache_config}")
 
 # =================== log config ===================
 setup_logging(log_level=llm_config.log_level)
 logger = logging.getLogger(__name__)
 
 # ============== registry cache manager ===================
-factory = CacheFactory(cache_config)
-rag_cache = factory.create(CacheNamespace.RAG)
-compliance_cache = factory.create(CacheNamespace.COMPLIANCE)
-profile_sum_cache = factory.create(CacheNamespace.PROFILE_SUMMARY)
-log_cache = factory.create(CacheNamespace.RECENT_INTERACTION)
+@st.cache_resource(show_spinner=False)
+def _init_cache_managers():
+    factory = CacheFactory(cache_config)
+    rag_cache = factory.create(CacheNamespace.RAG)
+    compliance_cache = factory.create(CacheNamespace.COMPLIANCE)
+    profile_sum_cache = factory.create(CacheNamespace.PROFILE_SUMMARY)
+    log_cache = factory.create(CacheNamespace.RECENT_INTERACTION)
 
-cache_register(CacheNamespace.RAG, rag_cache)
-cache_register(CacheNamespace.COMPLIANCE, compliance_cache)
-cache_register(CacheNamespace.PROFILE_SUMMARY, profile_sum_cache)
-cache_register(CacheNamespace.RECENT_INTERACTION, log_cache)
+    cache_register(CacheNamespace.RAG.value, rag_cache)
+    cache_register(CacheNamespace.COMPLIANCE.value, compliance_cache)
+    cache_register(CacheNamespace.PROFILE_SUMMARY.value, profile_sum_cache)
+    cache_register(CacheNamespace.RECENT_INTERACTION.value, log_cache)
+    return rag_cache, compliance_cache, profile_sum_cache, log_cache
+_init_cache_managers()
 # ===================== 创建 LLM 客户端 =====================
 creative_llm = RobustLLM(
     temperature=llm_config.creative_temperature,
@@ -104,6 +103,34 @@ embedder = RobustEmbeddings(
     backup_model_name=llm_config.alibaba_emb_backup,
     dimensions=llm_config.dimension
 )
+
+#================ prometheus =======================
+@st.cache_resource(show_spinner=False)
+def _start_prometheus_server():
+    from prometheus_client import start_http_server
+    port = 9090  # 固定端口，与 prometheus.yml 保持一致
+    try:
+        start_http_server(port)
+        logger.info("Prometheus metrics server started on port %d", port)
+    except OSError as e:
+        # 如果端口被占（比如上次进程未完全退出），杀掉原进程再重试
+        import subprocess, signal
+        if "Address already in use" in str(e):
+            logger.warning("Port %d already in use, trying to free it.", port)
+            try:
+                # 仅 Linux 有效，Windows 可忽略
+                out = subprocess.check_output(["lsof", "-ti", f":{port}"], text=True)
+                for pid in out.strip().split():
+                    os.kill(int(pid), signal.SIGTERM)
+            except Exception:
+                pass
+            start_http_server(port)
+            logger.info("Prometheus metrics server started on port %d after cleanup.", port)
+        else:
+            raise
+    return True
+
+_start_prometheus_server()
 
 # ===================== 初始化记忆系统 =====================
 if memory_config.vector_backend == "chroma":
@@ -135,7 +162,7 @@ if "memory_retriever" not in st.session_state:
     )
 
 if "user_id" not in st.session_state:
-    st.session_state.user_id = "test_user_010"
+    st.session_state.user_id = "test_user_011"
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 
@@ -153,9 +180,6 @@ if "agent" not in st.session_state:
 
         router = RuleBaseRetrievalRouter(retrieval_config.retrieval_routing.rule_based)
 
-        cache_factory = CacheFactory(cache_config)
-        rag_cache_manager = cache_factory.create(CacheNamespace.RAG)
-
         knowledge_retriever = RetrievalService(
             engine=knowledge_engine,
             rewriter=rewriter,
@@ -163,7 +187,6 @@ if "agent" not in st.session_state:
             reranker=reranker,
             compressor=compressor,
             config=retrieval_config,
-            cache_manager=rag_cache_manager,
             retrieve_router=router
         )
 
@@ -322,25 +345,6 @@ if prompt := st.chat_input("请输入您的问题..."):
                 assistant_reply = result["messages"][-1].content
                 st.write(assistant_reply)
 
-                # 展示检索到的知识片段
-                knowledge_list = result.get(StateFields.RETRIEVED_CONTEXT, {}).get(
-                    MemoryType.BUSINESS_KNOWLEDGE, []
-                )
-                if knowledge_list:
-                    with st.expander("🔍 查看本次检索到的知识片段（共 {} 条）".format(len(knowledge_list))):
-                        for i, item in enumerate(knowledge_list, 1):
-                            source = f"{item.source_type.value if hasattr(item.source_type, 'value') else item.source_type}"
-                            product = f" - {item.product_type}" if item.product_type else ""
-                            confidence = getattr(item, "confidence", None)
-                            header = f"**{i}. [{source}{product}]**"
-                            if confidence is not None:
-                                header += f" | 置信度: {confidence:.2f}"
-                            st.markdown(header)
-                            st.text(item.text)
-                            st.divider()
-                else:
-                    st.caption("本次对话未检索到相关业务知识。")
-
                 if result.get("error"):
                     st.caption(f"⚠️ 处理过程中出现非致命错误: {result['error']}")
                 if result.get("profile_updated"):
@@ -349,3 +353,4 @@ if prompt := st.chat_input("请输入您的问题..."):
                 logger.exception("Agent invocation failed")
                 st.error(f"系统错误: {e}")
     st.rerun()
+

@@ -51,7 +51,7 @@ EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
 **必须直接输出一个合法的 JSON 数组，不要使用 Markdown 代码块包裹，不要添加任何额外说明。**
 
 正确输出示例：
-[{"entity_key": "income", "content": "客户年收入约50万元", "confidence": 0.8}]
+[{{"entity_key": "income", "content": "客户年收入约50万元", "confidence": 0.8}}]
 
 ## 完整示例
 
@@ -62,14 +62,14 @@ EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
 用户: 嗯，年薪大概80万，比之前涨了不少。我是硕士毕业，学历还行。
 
 正确输出：
-[{"entity_key": "occupation", "content": "客户是字节跳动架构师（互联网行业）", "confidence": 0.9}, {"entity_key": "income", "content": "客户年收入约80万元", "confidence": 0.8}, {"entity_key": "education", "content": "客户是硕士学历", "confidence": 0.9}]
+[{{"entity_key": "occupation", "content": "客户是字节跳动架构师（互联网行业）", "confidence": 0.9}}, {{"entity_key": "income", "content": "客户年收入约80万元", "confidence": 0.8}}, {{"entity_key": "education", "content": "客户是硕士学历", "confidence": 0.9}}]
 
 ### 示例 2：信息更正（税前税后）
 对话内容：
 用户: 我之前说我年收入50万，其实记错了，那是税前，税后到手大概40万。
 
 正确输出：
-[{"entity_key": "income", "content": "客户税后年收入约40万元", "confidence": 0.9}]
+[{{"entity_key": "income", "content": "客户税后年收入约40万元", "confidence": 0.9}}]
 
 ### 示例 3：征信与逾期（合并实体）
 对话内容：
@@ -77,7 +77,7 @@ EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
 助手: 了解了，一次轻微逾期影响不大。
 
 正确输出：
-[{"entity_key": "credit_score", "content": "客户有过一次逾期记录，但之后信用良好", "confidence": 0.8}]
+[{{"entity_key": "credit_score", "content": "客户有过一次逾期记录，但之后信用良好", "confidence": 0.8}}]
 
 ### 示例 4：社保与居住情况
 对话内容：
@@ -85,8 +85,7 @@ EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
 助手: 好的，有房产还是比较有保障的。
 
 正确输出：
-[{"entity_key": "residence_type", "content": "客户自有住房且房贷已还清", "confidence": 0.9}, {"entity_key": "insurance_status", "content": "客户已缴纳社保3年", "confidence": 0.8}]
-
+[{{"entity_key": "residence_type", "content": "客户自有住房且房贷已还清", "confidence": 0.9}}, {{"entity_key": "insurance_status", "content": "客户已缴纳社保3年", "confidence": 0.8}}]
 
 ### 示例 5：无新信息（闲聊）
 对话内容：
@@ -109,7 +108,7 @@ EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
 助手: 好的，那您的负债主要是房贷剩余部分。
 
 正确输出：
-[{"entity_key": "asset", "content": "客户名下有一套房产（尚有房贷）和一辆车（已全款）", "confidence": 0.9}, {"entity_key": "liability", "content": "客户剩余房贷20万元", "confidence": 0.85}]
+[{{"entity_key": "asset", "content": "客户名下有一套房产（尚有房贷）和一辆车（已全款）", "confidence": 0.9}}, {{"entity_key": "liability", "content": "客户剩余房贷20万元", "confidence": 0.85}}]
 
 ### 示例 8：配偶信息与供养人数
 对话内容：
@@ -117,14 +116,14 @@ EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
 助手: 了解了，那您是家庭主要经济来源。
 
 正确输出：
-[{"entity_key": "marital_status", "content": "客户已婚", "confidence": 0.9}, {"entity_key": "dependents", "content": "客户有两个孩子（妻子收入较低）", "confidence": 0.85}, {"entity_key": "income", "content": "客户妻子月收入约5000-6000元", "confidence": 0.7}]
+[{{"entity_key": "marital_status", "content": "客户已婚", "confidence": 0.9}}, {{"entity_key": "dependents", "content": "客户有两个孩子（妻子收入较低）", "confidence": 0.85}}, {{"entity_key": "income", "content": "客户妻子月收入约5000-6000元", "confidence": 0.7}}]
 
 ### 示例 9：贷款经历与征信综合
 对话内容：
 用户: 我之前贷过一次消费贷，都按时还完了，征信应该没问题。
 
 正确输出：
-[{"entity_key": "loan_experience", "content": "客户有过一次消费贷记录且已还清", "confidence": 0.9}, {"entity_key": "credit_score", "content": "客户征信记录良好（贷款均已按时还清）", "confidence": 0.7}]
+[{{"entity_key": "loan_experience", "content": "客户有过一次消费贷记录且已还清", "confidence": 0.9}}, {{"entity_key": "credit_score", "content": "客户征信记录良好（贷款均已按时还清）", "confidence": 0.7}}]
 """),
     ("human", "对话内容：\n{conversation}")
 ])

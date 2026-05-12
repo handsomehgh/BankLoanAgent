@@ -94,8 +94,7 @@ def custom_cached(
                 result = func(*args, **kwargs)
                 try:
                     if result:
-                        to_cache = _serialize_result(result)
-                        mgr.set(full_key,to_cache,ttl=ttl)
+                        mgr.set(full_key,result,ttl=ttl)
                     else:
                         mgr.set_null(full_key, ttl=null_ttl)
                 except Exception as e:
@@ -146,8 +145,7 @@ def custom_cached(
                 result = await func(*args, **kwargs)
                 try:
                     if result:
-                        to_cache = _serialize_result(result)
-                        mgr.set(full_key, to_cache, ttl=ttl)
+                        mgr.set(full_key, result, ttl=ttl)
                     else:
                         mgr.set_null(full_key, ttl=null_ttl)
                 except Exception as e:
@@ -158,26 +156,6 @@ def custom_cached(
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
     return decorator
-
-def _make_json_safe(obj):
-    """递归将 Pydantic 模型转换为字典，其他不可序列化对象转为字符串"""
-    if isinstance(obj, dict):
-        return {k: _make_json_safe(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [_make_json_safe(item) for item in obj]
-    elif hasattr(obj, "model_dump"):          # Pydantic v2
-        return _make_json_safe(obj.model_dump(mode="json"))
-    elif hasattr(obj, "dict"):                # Pydantic v1
-        return _make_json_safe(obj.dict())
-    else:
-        try:
-            json.dumps(obj)
-            return obj
-        except (TypeError, ValueError):
-            return str(obj)
-
-def _serialize_result(result: Any) -> Any:
-    return _make_json_safe(result)
 
 def _safe_convert(converter,data):
     if converter is None:

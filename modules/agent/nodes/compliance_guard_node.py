@@ -11,6 +11,7 @@ from config.global_constant.constants import MemoryType, ComplianceAction, Compl
 from config.models.memory_config import MemorySystemConfig
 from modules.agent.constants import StateFields
 from modules.agent.state import AgentState
+from utils.monitor_utils.metrics import record_compliance_block_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,10 @@ def compliance_guard_node(state: AgentState, config: RunnableConfig, memory_conf
         compliance_response = AIMessage(
             content="Sorry,your question involves non-compliant content,and i cannot answer it,\n\nif you have any questions,please contact our official customer service"
         )
+
+        #output metrics
+        record_compliance_block_metrics(reason=block_reason or "未知原因")
+
         return {
             StateFields.MESSAGES.value: [compliance_response],
             StateFields.COMPLIANCE_BLOCKED.value: True,

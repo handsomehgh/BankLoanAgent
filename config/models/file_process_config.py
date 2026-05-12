@@ -26,7 +26,6 @@ class ChunkingRule(BaseModel):
     chunk_size: Optional[int] = None
     chunk_overlap: Optional[int] = None
     min_chunk_length: Optional[int] = None
-    structure_delimiter: Optional[str] = None
 
 class ChunkingConfig(BaseModel):
     min_chunk_length: int = 30

@@ -5,6 +5,7 @@ import logging
 from typing import Dict, Optional
 
 from config.models.retrieval_config import RetrievalConfig
+from modules.module_services.chat_models import RobustLLM
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ SUMMARY_PROMPT_TEMPLATE = """请用一句简洁的话概括以下银行个人贷
 
 
 class SummaryKnowledgeGenerator:
-    def __init__(self, config: RetrievalConfig,llm_client):
+    def __init__(self, config: RetrievalConfig,llm_client: RobustLLM):
         summary_config = config.multi_vector.summary_config
         self.enabled_sources = summary_config.enabled_sources or []
         self.min_chunk_length = summary_config.min_chunk_length or 200

@@ -16,10 +16,9 @@ from config.global_constant.fields import CommonFields
 from config.models.file_process_config import FileProcessConfig
 from config.registry import ConfigRegistry
 from pipelines.constant import FileMetadata
-from utils.logging_config import setup_logging
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-setup_logging(log_level="INFO")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,20 +26,6 @@ class IntelligentChunk:
     def __init__(self, config: FileProcessConfig):
         self.config = config
         self.chunk_config = self.config.chunking
-
-    def _split_by_structure(self, text: str, delimiter: str) -> List[str]:
-        parts = re.split(f'({re.escape(delimiter)})', text)
-        chunks, current = [], ""
-        for part in parts:
-            if part == delimiter:
-                if current.strip():
-                    chunks.append(current.strip())
-                current = part
-            else:
-                current += part
-        if current.strip():
-            chunks.append(current.strip())
-        return chunks if chunks else [text]
 
     def chunk_document(self, docs: List[Document]) -> List[Document]:
         final_chunks = []
@@ -64,22 +49,8 @@ class IntelligentChunk:
                     separators=self.chunk_config.separators,
                 )
                 chunks = splitter.split_text(doc.page_content)
-            elif strategy.method == "structure_then_recursive":
-                raw_chunks = self._split_by_structure(doc.page_content, strategy.structure_delimiter)
-                chunks = []
-                splitter = RecursiveCharacterTextSplitter(
-                    chunk_size=strategy.chunk_size,
-                    chunk_overlap=strategy.chunk_overlap,
-                    separators=self.chunk_config.separators,
-                )
-
-                for rc in raw_chunks:
-                    if len(rc) <= strategy.chunk_size:
-                        chunks.append(rc)
-                    else:
-                        chunks.extend(splitter.split_text(rc))
             else:
-                logger.warning(f"Unknow chunk method {strategy.method}，use default strategy")
+                logger.warning(f"Unknown chunk method {strategy.method}, using default recursive splitter")
                 splitter = RecursiveCharacterTextSplitter(
                     chunk_size=default_strategy.chunk_size,
                     chunk_overlap=default_strategy.chunk_overlap,
@@ -91,9 +62,13 @@ class IntelligentChunk:
 
             for chunk in chunks:
                 chunk = chunk.strip()
+                # 跳过空字符串
+                if not chunk:
+                    continue
                 if len(chunk) < strategy_min_len:
                     discard_samples.append(chunk)
                     continue
+
                 new_meta = dict(doc.metadata)
                 new_meta[FileMetadata.PARENT_DOC_ID] = doc.metadata.get(FileMetadata.CHUNK_ID, "")
                 new_meta[FileMetadata.CONFIDENCE] = confidence_map.get(source, fallback_conf)
@@ -102,15 +77,7 @@ class IntelligentChunk:
                 new_doc = Document(page_content=chunk, metadata=new_meta)
                 final_chunks.append(new_doc)
 
-            parent_groups = defaultdict(list)
-            for chunk in final_chunks:
-                parent_id = chunk.metadata.get(FileMetadata.PARENT_DOC_ID, "")
-                parent_groups[parent_id].append(chunk)
-
-            for parent_id, chunks in parent_groups.items():
-                for idx, chunk in enumerate(chunks):
-                    chunk.metadata[FileMetadata.CHUNK_INDEX] = idx
-
+        # 重新计算 chunk_index（按 parent_id 分组）
         groups = defaultdict(list)
         for chunk in final_chunks:
             parent_id = chunk.metadata.get(FileMetadata.PARENT_DOC_ID, "unknown")
@@ -127,7 +94,6 @@ class IntelligentChunk:
 
         logger.info(f"分块完成：{len(docs)} 个输入文档 → {len(final_chunks)} 个 chunk")
         return final_chunks
-
 
 def run_chunking():
     registry = ConfigRegistry()
