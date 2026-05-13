@@ -7,7 +7,7 @@ from typing import Optional
 import redis
 from redis import ConnectionPool
 
-from config.models.redis_config import RedisConfig
+from config.models.datasource_config import RedisConfig
 
 logger = logging.getLogger(__name__)
 

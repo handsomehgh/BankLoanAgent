@@ -1,13 +1,12 @@
 # app.py
 import os
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 from infra.cache.cache_registry import cache_register
 from infra.redis_manager import RedisManager
+from modules.memory.memory_constant.constants import MemoryStatus
 from utils.logging_config import setup_logging, set_log_context
 from utils.serialize_utils.seq_generator import SequenceGenerator
-
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-
 from modules.retrieval.router.retrieval_rule_router import RuleBaseRetrievalRouter
 from infra.cache.cache_factory import CacheFactory
 
@@ -25,7 +24,6 @@ from infra.milvus_client import MilvusClientManager
 from main import load_config
 from modules.agent.graph import build_graph
 from modules.memory.memory_business_store.long_term_memory_store import LongTermMemoryStore
-from modules.memory.memory_constant.constants import MemoryStatus
 from modules.memory.memory_retriever import MemoryVectorRetriever
 from modules.memory.memory_vector_store.milvus_memory_vector_store import MilvusMemoryVectorStore
 from modules.memory.memory_vector_store.chroma_memory_vector_store import ChromaVectorStore
@@ -62,14 +60,14 @@ llm_config = registry.get_config(RegistryModules.LLM)
 memory_config = registry.get_config(RegistryModules.MEMORY_SYSTEM)
 retrieval_config = registry.get_config(RegistryModules.RETRIEVAL)
 cache_config = registry.get_config(RegistryModules.CACHE)
-redis_config = registry.get_config(RegistryModules.REDIS)
+datasource_config = registry.get_config(RegistryModules.DATASOURCE)
 
 # ====================== log config ============================
 setup_logging(log_level=llm_config.log_level)
 logger = logging.getLogger(__name__)
 
 # ===================== redis manager ==========================
-RedisManager.from_config(redis_config)
+RedisManager.from_config(datasource_config.redis_config)
 
 # =================== build sequence generator =================
 seq_generator = SequenceGenerator()

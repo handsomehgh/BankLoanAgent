@@ -3,27 +3,39 @@
 from enum import Enum
 
 class ProfileEntityKey(str, Enum):
-    # ========== 核心授信维度 ==========
-    INCOME = "income"                             # 年收入或月收入信息
-    OCCUPATION = "occupation"                     # 职业、职位、行业信息
-    LOAN_PURPOSE = "loan_purpose"                 # 贷款用途
-    LOAN_AMOUNT = "loan_amount"                   # 期望贷款金额
-    CREDIT_SCORE = "credit_score"                 # 信用评分或征信状况（含逾期记录）
-    LIABILITY = "liability"                       # 负债情况
-    LOAN_TERM = "loan_term"                       # 期望贷款期限
-    MARITAL_STATUS = "marital_status"             # 婚姻状况
-    DEPENDENTS = "dependents"                     # 供养人数
-    WORK_YEARS = "work_years"                     # 工作年限
-    ASSET = "asset"                               # 资产状况
-    EXISTING_BANK_RELATIONSHIP = "existing_bank_relationship"  # 本行业务关系
-    LOAN_EXPERIENCE = "loan_experience"           # 贷款经历
-
-    # ========== 补充信息维度 ==========
-    CONTACT = "contact"                           # 联系方式
+    # ========== 核心身份 ==========
+    AGE = "age"  # 年龄
+    MARITAL_STATUS = "marital_status"  # 婚姻状况 (已婚/未婚/离异)
+    EDUCATION = "education"  # 最高学历
     HOUSEHOLD_REGISTRATION = "household_registration"  # 户籍所在地
-    INSURANCE_STATUS = "insurance_status"         # 社保/公积金缴纳情况
-    EDUCATION = "education"                       # 最高学历
-    RESIDENCE_TYPE = "residence_type"             # 居住情况
+    DEPENDENTS = "dependents"  # 供养人数
+    OCCUPATION = "occupation"  # 职业/行业/职位
+
+    # ========== 财务健康 ==========
+    ANNUAL_INCOME = "annual_income"  # 年收入
+    MONTHLY_INCOME = "monthly_income"  # 月收入 (其实bank更看重月收入)
+    INCOME_SOURCE = "income_source"  # 收入来源 (工资/经营/投资)
+    CREDIT_HISTORY = "credit_history"  # 征信简况 (良好/有逾期记录/白户)
+    CREDIT_OVERDUE_DETAIL = "credit_overdue_detail"  # 逾期详情 (如"连三累六")
+    LIABILITY_AMOUNT = "liability_amount"  # 总负债金额
+    LIABILITY_DETAIL = "liability_detail"  # 负债构成 (房贷/车贷/信用卡)
+    MONTHLY_DEBT = "monthly_debt"  # 月还款额
+    DTI_RATIO = "dti_ratio"  # 负债率 (可计算得出，但提取也接受)
+
+    # ========== 资产与担保 ==========
+    REAL_ESTATE = "real_estate"  # 房产 (套数/位置/状态)
+    VEHICLE = "vehicle"  # 车辆
+    DEPOSIT = "deposit"  # 存款/理财/股票
+    INSURANCE = "insurance"  # 保单 (现金价值)
+    SOCIAL_SECURITY = "social_security"  # 社保/医保 (年限)
+    HOUSING_FUND = "housing_fund"  # 公积金 (缴存/余额/年限)
+
+    # ========== 贷款关联 ==========
+    LOAN_PURPOSE = "loan_purpose"  # 贷款用途
+    DESIRED_AMOUNT = "desired_amount"  # 期望贷款金额
+    LOAN_TERM = "loan_term"  # 期望期限
+    EXISTING_BANK_RELATION = "existing_bank_relation"  # 本行业务关系
+    LOAN_EXPERIENCE = "loan_experience"  # 贷款经历
 
     @classmethod
     def to_list(cls) -> list:

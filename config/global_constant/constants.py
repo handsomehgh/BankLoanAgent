@@ -8,7 +8,7 @@ class RegistryModules(str, Enum):
     LLM = "llm"
     FILE_PROCESS = "file_process"
     CACHE = "cache"
-    REDIS = "redis"
+    DATASOURCE = "datasource"
 
 class SpecialUserID(str, Enum):
     GLOBAL = "global"

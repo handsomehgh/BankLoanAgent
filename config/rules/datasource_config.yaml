@@ -1,0 +1,20 @@
+redis:
+  host: "192.168.24.128"
+  port: 6379
+  db: 0
+  password: "hgh970228"
+  max_connections: 50
+  socket_timeout: 0.5
+  socket_connect_timeout: 1.0
+  retry_on_timeout: true
+  health_check_interval: 30
+
+graph:
+  enabled: true
+  neo4j_uri: "bolt://localhost:7687"
+  neo4j_user: "neo4j"
+  neo4j_password: "your_secure_password"
+  database: "neo4j"
+  query_timeout_ms: 500
+  max_connection_lifetime: 3600
+  max_retry_attempts: 3
