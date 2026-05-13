@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class SequenceGenerator:
     def __init__(self,key_prefix: str = "user_msg_seq"):
-        self.redis_manager = RedisManager
+        self.redis_manager = RedisManager()
         self._key_prefix = key_prefix
 
         self._local_counters: dict[str, int] = {}

@@ -40,7 +40,7 @@ class RuleBaseRetrievalRouter(RetrievalRouter):
         # 3. 弱信号累积
         score = 0
         for word, point in self.weak_signals.items():
-            if re.search(r'\b' + re.escape(word) + r'\b', query, re.IGNORECASE):
+            if re.search(re.escape(word), query, re.IGNORECASE):
                 score += point
                 if score >= self.config.weak_signal_threshold:
                     return True
