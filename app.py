@@ -67,7 +67,7 @@ setup_logging(log_level=llm_config.log_level)
 logger = logging.getLogger(__name__)
 
 # ===================== redis manager ==========================
-RedisManager.from_config(datasource_config.redis_config)
+RedisManager.from_config(datasource_config.redis)
 
 # =================== build sequence generator =================
 seq_generator = SequenceGenerator()

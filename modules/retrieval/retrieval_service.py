@@ -45,7 +45,7 @@ class RetrievalService:
         self.config = config
         self.retrieve_router = retrieve_router
         self._executor = ThreadPoolExecutor(max_workers=3)
-        logger.info("RetrievalService initialized with router=%s, cache=%s, number of workers=%d",
+        logger.info("RetrievalService initialized with router=%s, number of workers=%d",
                     type(self.retrieve_router).__name__ if self.retrieve_router else "None",3)
 
     def retrieve(self, query: str, context: Optional[Dict] = None) -> List[BusinessKnowledge]:

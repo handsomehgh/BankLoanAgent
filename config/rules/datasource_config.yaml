@@ -9,7 +9,7 @@ redis:
   retry_on_timeout: true
   health_check_interval: 30
 
-graph:
+neo4j:
   enabled: true
   neo4j_uri: "bolt://localhost:7687"
   neo4j_user: "neo4j"

@@ -26,5 +26,5 @@ class GraphConfig(BaseModel):
 
 
 class DataSourceConfig(BaseModel):
-    redis_config: RedisConfig = Field(default_factory=RedisConfig)
-    graph_config: GraphConfig = Field(default_factory=GraphConfig)
+    redis: RedisConfig = Field(default_factory=RedisConfig)
+    neo4j: GraphConfig = Field(default_factory=GraphConfig)
