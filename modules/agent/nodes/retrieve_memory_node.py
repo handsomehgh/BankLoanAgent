@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 
 from config.global_constant.fields import CommonFields
-from config.global_constant.constants import MemoryType
+from config.global_constant.constants import MemoryType, ConfigFields
 from modules.agent.constants import StateFields, MessageCommonFields
 from modules.agent.state import AgentState
 from modules.memory.base import BaseRetriever
@@ -32,7 +32,9 @@ def retrieve_memory_node(state: AgentState, config: RunnableConfig, retrieval: B
         if not hasattr(msg, MessageCommonFields.ADDITIONAL_KWARGS.value) or msg.additional_kwargs is None:
             msg.additional_kwargs = {}
         if MessageCommonFields.MESSAGE_INDEX.value not in msg.additional_kwargs:
-            idx = seq_generator.next_seq(user_id)
+            configurable = config.get(ConfigFields.CONFIGURABLE, {})
+            session_id = configurable.get(ConfigFields.THREAD_ID.value, "unknown")
+            idx = seq_generator.next_seq(user_id,session_id)
             msg.additional_kwargs[MessageCommonFields.MESSAGE_INDEX.value] = idx
             updated = True
 

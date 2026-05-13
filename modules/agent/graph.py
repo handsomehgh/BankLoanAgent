@@ -35,12 +35,12 @@ def build_graph(services: AgentServices):
 
     # =========================== register node =================================
     # retrieve node:get long term memory for vector store
-    workflow.add_node(AgentNodeName.RETRIEVE_MEMORY, partial(retrieve_memory_node, retrieval=services.memory_retriever))
+    workflow.add_node(AgentNodeName.RETRIEVE_MEMORY, partial(retrieve_memory_node, retrieval=services.memory_retriever,seq_generator=seq_generator))
 
     # retrieve knowledge node: get relevant content from knowledge base
     workflow.add_node(AgentNodeName.RETRIEVE_KNOWLEDGE,
                       partial(retrieval_knowledge_node, retrieval_service=services.knowledge_retriever,
-                              retrieval_config=retrieval_cfg,seq_generator=seq_generator))
+                              retrieval_config=retrieval_cfg))
 
     # compliance interception node: scan user input,and if high-risk rules are hit,directly return interception phrasing
     workflow.add_node(AgentNodeName.COMPLIANCE_GUARD, partial(compliance_guard_node, memory_config=memory_cfg))

@@ -5,12 +5,13 @@ from typing import Optional
 
 from cachetools import TTLCache
 
+from config.models.cache_config import L1Config
 from infra.cache.cache_backend import CacheBackend
 
 
 class MemoryCacheBackend(CacheBackend):
-    def __init__(self,maxsize: int = 512,ttl: int = 600):
-        self.cache = TTLCache(maxsize,ttl)
+    def __init__(self,config: L1Config):
+        self.cache = TTLCache(config.maxsize,config.ttl)
         self._lock = threading.Lock()
 
     def get(self,key: str) -> Optional[bytes]:

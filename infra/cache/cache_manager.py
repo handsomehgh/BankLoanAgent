@@ -15,7 +15,8 @@ from typing import Any, Optional, List
 
 from pydantic import BaseModel
 
-from infra.cache.cache_backend import CacheBackend
+from infra.cache.memory_cache_backend import MemoryCacheBackend
+from infra.cache.redis_cache_backend import RedisCacheBackend
 
 logger = logging.getLogger(__name__)
 
@@ -26,20 +27,12 @@ class CacheManager:
     def __init__(
             self,
             namespace: str,
-            compression_threshold: int = 4096,
-            ttl_jitter: float = 0.1,
-            default_ttl: int = 3600,
-            null_ttl: int = 60,
             version: int = 1,
-            l1_backend: Optional[CacheBackend] = None,
-            l2_backend: Optional[CacheBackend] = None,
+            l1_backend: Optional[MemoryCacheBackend] = None,
+            l2_backend: Optional[RedisCacheBackend] = None,
     ):
         self.namespace = namespace
-        self.ttl_jitter = ttl_jitter
-        self.default_ttl = default_ttl
-        self.null_ttl = null_ttl
         self.version = version
-        self.compression_threshold = compression_threshold
         self.l1 = l1_backend
         self.l2 = l2_backend
 
@@ -50,7 +43,7 @@ class CacheManager:
     def _apply_jitter(self, ttl: int) -> int:
         if not ttl or ttl <= 0:
             return ttl
-        jitter = int(ttl * self.ttl_jitter)
+        jitter = int(ttl * self.l2.config.ttl_jitter)
         offset = random.randint(-jitter, jitter)
         return max(1, ttl + offset)
 
@@ -99,7 +92,7 @@ class CacheManager:
         else:
             try:
                 serialized = self._serialize(value)
-                if len(serialized) > self.compression_threshold:
+                if self.l2 and len(serialized) > self.l2.config.compression_threshold:
                     serialized = zlib.compress(serialized)
             except Exception as e:
                 logger.warning(f"[Cache] Serialize failed, key={key}: {e}")
@@ -113,14 +106,19 @@ class CacheManager:
 
         if self.l2:
             try:
-                ttl = ttl or self.default_ttl
+                ttl = ttl or self.l2.config.ttl
                 ttl = self._apply_jitter(ttl)
+
+                if len(value) > self.l2.config.max_value_size:
+                    logger.warning("Value size %d exceeds limit, not caching key %s", len(value), key)
+                    return
+
                 self.l2.set(key, serialized, ttl)
             except Exception as e:
                 logger.warning(f"[Cache] L2 set failed, key={key}: {e}")
 
     def set_null(self, key: str, ttl: Optional[int] = None) -> None:
-        self.set(key, _NULL_MARKER, ttl or self.null_ttl)
+        self.set(key, _NULL_MARKER, ttl or self.l2.config.null_ttl)
 
     def _delete(self, key: str) -> None:
         if self.l1:
@@ -204,7 +202,7 @@ class CacheManager:
             ).encode("utf-8")
 
         # 压缩
-        if len(json_bytes) > self.compression_threshold:
+        if self.l2 and len(json_bytes) > self.l2.config.compression_threshold:
             json_bytes = zlib.compress(json_bytes)
         return json_bytes
 

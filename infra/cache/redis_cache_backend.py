@@ -5,6 +5,7 @@ from typing import Optional
 
 from redis import RedisError
 
+from config.models.cache_config import L2Config
 from infra.cache.cache_backend import CacheBackend
 from infra.redis_manager import RedisManager
 
@@ -13,9 +14,9 @@ logger = logging.getLogger(__name__)
 _CURRENT_DATA_VERSION = b"v1:"
 
 class RedisCacheBackend(CacheBackend):
-    def __init__(self,max_value_size: int = 1_048_576):
+    def __init__(self,config: L2Config):
         self._manager = RedisManager()
-        self._max_value_size = max_value_size
+        self.config = config
 
     def _client(self):
         return self._manager.get_client()
@@ -38,10 +39,6 @@ class RedisCacheBackend(CacheBackend):
             return None
 
     def set(self,key: str,value: bytes,ttl: Optional[int] = None) -> None:
-        if len(value) > self._max_value_size:
-            logger.warning("Value size %d exceeds limit, not caching key %s", len(value), key)
-            return
-
         client = self._client()
         if client is None:
             return

@@ -21,14 +21,14 @@ class CacheFactory:
         if ns_cfg.enable_l1:
             if ns_cfg.l1 is None:
                 raise ValueError(f"Namespace '{namespace}' enabled L1 but missing l1 config")
-            l1_backend = MemoryCacheBackend(maxsize=ns_cfg.l1.maxsize, ttl=ns_cfg.l1.ttl)
+            l1_backend = MemoryCacheBackend(ns_cfg.l1)
 
         # L2
         l2_backend = None
         if ns_cfg.enable_l2:
-            if ns_cfg.l2 is None or any(conf is None for conf in ns_cfg.model_dump().values):
+            if ns_cfg.l2 is None:
                 raise ValueError(f"Namespace '{namespace}' enabled L2 but missing l2 config")
-            l2_backend = RedisCacheBackend(max_value_size=ns_cfg.l2.max_value_size)
+            l2_backend = RedisCacheBackend(ns_cfg.l2)
 
         if l1_backend is None and l2_backend is None:
             raise ValueError(f"Namespace '{namespace}' must enable at least L1 or L2")
@@ -37,9 +37,5 @@ class CacheFactory:
             namespace=namespace,
             l1_backend=l1_backend,
             l2_backend=l2_backend,
-            compression_threshold=ns_cfg.l2.compression_threshold,
-            ttl_jitter=ns_cfg.l2.ttl_jitte,
-            default_ttl=ns_cfg.l2.ttl,
-            null_ttl=ns_cfg.l2.null_ttl,
             version=self.config.knowledge_base_version,
         )

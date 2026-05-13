@@ -5,7 +5,7 @@ import logging
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
 
-from config.global_constant.constants import MemoryType
+from config.global_constant.constants import MemoryType, ConfigFields
 from config.models.memory_config import MemorySystemConfig
 from modules.agent.constants import StateFields, MessageCommonFields
 from modules.agent.state import AgentState
@@ -66,7 +66,9 @@ def call_model_node(
     if not response.additional_kwargs:
         response.additional_kwargs = {}
     user_id = state.get(StateFields.USER_ID.value)
-    idx = seq_generator.next_seq(user_id)
+    configurable = config.get(ConfigFields.CONFIGURABLE, {})
+    session_id = configurable.get(ConfigFields.THREAD_ID.value, "unknown")
+    idx = seq_generator.next_seq(user_id,session_id)
     response.additional_kwargs[MessageCommonFields.MESSAGE_INDEX.value] = idx
     logger.debug("Assigned message_index=%d to AI response",  idx)
 
