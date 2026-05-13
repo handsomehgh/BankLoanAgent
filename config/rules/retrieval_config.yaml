@@ -1,0 +1,203 @@
+# RAG config file
+milvus_uri: "http://192.168.24.128:19530"
+sqlite_db_path: "./checkpoints.db"
+retrieval_top_k: 5
+retrieval_fetch_k: 10
+retrieval_min_similarity: 0.3
+rag_max_context_length: 3000
+insert_batch_size: 50
+
+# ---------- index param -------------
+index_params:
+  dense:
+    metric_type: "COSINE"
+    index_type: "HNSW"
+    params:
+      M: 16
+      efConstruction: 200
+  sparse:
+    metric_type: "BM25"
+    index_type: "SPARSE_INVERTED_INDEX"
+    params:
+      drop_ratio_build: 0.2
+
+# --------------- search param ----------------
+search:
+  dense_top_k: 30
+  text_match_top_k: 30
+  sparse_top_k: 30
+  term_top_k: 30
+  dense_ef: 80
+  term_ef: 80
+  dense_metric_type: "COSINE"
+  bm25_metric_type: "BM25"
+
+# ------------ multi vector param-------------------
+multi_vector:
+  enable: true
+  term_vector: true
+  summary_vector: false
+  faq_similar_vector: false
+  graph_embedding_dim: 0
+
+  summary_config:
+    enable_source_filter: true
+    enabled_sources:
+      - product_manual
+      - process_guide
+      - regulation
+    min_chunk_length: 200
+    temperature: 0.1
+    max_output_tokens: 80
+    fallback_to_original: true
+
+  faq_similar_config:
+    num_variants: 3
+    temperature: 0.3
+    max_output_tokens: 150
+    fallback_to_original: true
+
+# ------------- rrf fusion --------------
+fusion:
+  k: 30
+
+# ------------ reranker ----------------
+reranker:
+  model_name: "BAAI/bge-reranker-v2-m3"
+  top_k: 15
+  batch_size: 16
+
+# ------------ context compressor ----------
+compressor:
+  enabled: true
+  max_context_tokens: 1500
+  sentences_to_keep: 6
+  fallback_to_full: true
+  model_name: "BAAI/bge-reranker-v2-m3"
+
+# -------------- structure query ------------
+filter:
+  enabled: false
+  confidence_threshold: 0.3
+  temperature: 0.0
+
+# ------------- query rewrite --------------
+rewriter:
+  enabled: true
+  enable_dynamic: true
+  override_strategy: null
+  num_variants: 3
+  temperature: 0.3
+  max_tokens: 120
+  fallback_to_original: true
+
+# -------------- routing ----------------
+retrieval_routing:
+  enabled: true                          # 上线时开启
+  strategy: "rule_based"
+  rule_based:
+    # ====================================================================
+    # 强关键词（Strong Keywords）
+    # 命中任意一个，直接触发检索，无需累积
+    # 规则：只保留意图极其明确的短语，不放置泛化的“贷款”、“利率”等词
+    # ====================================================================
+    strong_keywords:
+      # ---- 强贷款意向（口语化、意图明确）----
+      - "想贷款"
+      - "想办贷款"
+      - "准备贷款"
+      - "我能贷多少"
+      - "怎么贷款"
+      - "如何申请贷款"
+      - "贷款流程"
+      - "贷款需要什么"
+
+      # ---- 明确的业务动作 ----
+      - "提前还款"
+      - "借新还旧"
+      - "贷款重组"
+      - "解除抵押"
+      - "抵押登记"
+      - "办理展期"
+      - "申请续贷"
+
+      # ---- 合规红线 / 投诉（极其明确，必须检索）----
+      - "暴力催收"
+      - "强制搭售"
+      - "监管投诉"
+      - "征信异议"
+      - "违规收费"
+
+      # ---- 明确的组合短语 ----
+      - "等额本息和等额本金哪个"
+      - "公积金贷款利率是多少"
+      - "消费贷可以用来"
+      - "经营贷需要什么"
+
+    # ====================================================================
+    # 弱信号（Weak Signals）
+    # 按重要性分为三级，累积得分 >= weak_signal_threshold 时触发检索
+    # ====================================================================
+    weak_signal_threshold: 4              # 累积阈值，一个核心词即可触发
+
+    weak_signals:
+      # ---- 一级：核心业务词（4 分）----
+      # 命中任意一个几乎可以确定是业务咨询，直接过阈值
+      - words:
+          [
+            "贷款", "房贷", "经营贷", "消费贷", "公积金贷款",
+            "抵押贷", "信用贷", "一手房", "二手房", "住房贷款",
+            "贷款利率", "贷款额度", "贷款期限", "还款方式"
+          ]
+        score: 4
+
+      # ---- 二级：高相关词（2-3 分）----
+      # 需要 2 个命中才能过阈值，或与一级词组合增强置信度
+      - words:
+          [
+            "利率", "LPR", "年化", "利息", "BP",
+            "额度", "能贷多少", "最高额度", "限额", "贷款价值比",
+            "征信", "逾期", "信用记录", "连三累六", "黑名单",
+            "还款", "月供", "提前还", "等额本息", "等额本金",
+            "申请条件", "需要什么材料", "收入证明", "银行流水", "营业执照",
+            "审批", "放款", "面签", "合同", "结清"
+          ]
+        score: 2
+
+      # ---- 三级：弱意向 / 闲聊词（1 分）----
+      # 单独出现不足以触发，需要与多个词组合
+      - words:
+          [
+            "咨询一下", "问一下", "了解一下", "打听", "想办",
+            "公司", "单位", "工作", "收入", "工资", "公积金",
+            "买车", "旅游", "装修", "教育", "医疗", "留学",
+            "第一次", "没贷过", "白户", "不懂", "新手",
+            "结婚", "离婚", "单身", "已婚", "未婚",
+            "本行", "代发薪", "代发工资", "已有业务", "老客户",
+            "房产", "有房", "名下有", "车子", "存款", "理财"
+          ]
+        score: 1
+
+    # ====================================================================
+    # 停用模式（Stop Patterns）
+    # 匹配任意一个，直接跳过检索，返回 False
+    # 规则：只拦截纯礼貌语和纯闲聊，避免误伤带后续问题的正常查询
+    # ====================================================================
+    stop_patterns:
+      # ---- 纯问候 ----
+      - "^你好[！!。.]?$"
+      - "^在吗[？?]?$"
+      - "^嗨[！!。.]?$"
+
+      # ---- 纯礼貌语（无后续内容）----
+      - "^(谢谢|感谢|多谢|辛苦|没事|好的|OK|再见|拜拜)[！!。.]?$"
+
+      # ---- 纯闲聊 ----
+      - "^(我|最近)心情"
+      - "^(今天|最近)天气"
+      - "^(结束|再见|拜拜|下次再聊|回头见)[！!。.]?$"
+
+    # ====================================================================
+    # 其他参数
+    # ====================================================================
+    ambiguous_threshold: 5               # 短查询长度阈值（保留字段）

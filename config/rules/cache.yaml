@@ -1,0 +1,42 @@
+knowledge_base_version: 1
+
+namespaces:
+  rag:
+    enable_l1: true
+    enable_l2: true
+    l1:
+      maxsize: 1024
+      ttl: 900
+    l2:
+      ttl: 1800
+      null_ttl: 60
+      ttl_jitter: 0.1
+      compression_threshold: 4096
+      max_value_size: 1_048_576
+
+  compliance:
+    enable_l1: true
+    enable_l2: true
+    l1:
+      maxsize: 10
+      ttl: 300
+    l2:
+      ttl: 600
+      null_ttl: 60
+      ttl_jitter: 0.1
+      compression_threshold: 4096
+      max_value_size: 1_048_576
+
+  profile_summary:
+    enable_l1: true
+    enable_l2: false
+    l1:
+      maxsize: 512
+      ttl: 60
+
+  recent_interaction:
+    enable_l1: true
+    enable_l2: false
+    l1:
+      maxsize: 512
+      ttl: 60

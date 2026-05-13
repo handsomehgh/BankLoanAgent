@@ -1,0 +1,12 @@
+# LLM 非敏感参数（API Key 等由环境变量注入）
+creative_temperature: 0.7
+precise_temperature: 0.1
+dimension: 1024
+deepseek_provider: "deepseek"
+openai_provider: "openai"
+deepseek_base_url: "https://api.deepseek.com"
+deepseek_llm_name: "deepseek-chat"
+alibaba_base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+alibaba_emb_name: "text-embedding-v4"
+alibaba_emb_backup: "text-embedding-v3"
+qwen_llm_name: "qwen3-max"
