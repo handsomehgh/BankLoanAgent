@@ -1,0 +1,75 @@
+name: overdue_handling_skill
+version: "1.0.0"
+description: "逾期处理：计算逾期罚息，并提供逾期影响和应对建议"
+capability_tags: ["逾期", "贷后管理"]
+sop_description: "本技能将依次：1）检索逾期政策 2）计算罚息金额"
+tags: ["AfterLoan"]
+baseline: false
+
+input_schema:
+  - name: overdue_principal
+    type: float
+    description: "逾期本金（元）"
+    required: true
+    validation:
+      gt: 0
+  - name: annual_rate
+    type: float
+    description: "合同年利率（%）"
+    required: true
+    validation:
+      gt: 0
+      le: 50
+  - name: overdue_days
+    type: integer
+    description: "逾期天数"
+    required: true
+    validation:
+      gt: 0
+
+steps:
+  - name: general_search_knowledge
+    tool: general_search_knowledge
+    args:
+      query: "逾期罚息计算规则 征信影响 逾期处理建议"
+      source_type:
+        value: '["process_guide", "regulation"]'
+        type: json
+      top_k:
+        value: "3"
+        type: integer
+    output_key: policy_knowledge
+    optional: true
+    on_failure: skip
+
+  - name: calculate_overdue_penalty
+    tool: calculate_overdue_penalty
+    args:
+      overdue_principal:
+        value: "{{ input.overdue_principal }}"
+        type: float
+      annual_rate:
+        value: "{{ input.annual_rate }}"
+        type: float
+      overdue_days:
+        value: "{{ input.overdue_days }}"
+        type: integer
+    output_key: penalty_result
+
+output_template: |
+  ## 逾期处理
+
+  ### 罚息计算
+  - 逾期本金：{{ penalty_result.overdue_principal }} 元
+  - 逾期天数：{{ penalty_result.overdue_days }} 天
+  - 罚息金额：{{ penalty_result.penalty }} 元
+  - 应还总额（本金+罚息）：{{ penalty_result.total_due }} 元
+
+  {{ penalty_result.formula }}
+
+  {% if policy_knowledge and policy_knowledge.documents %}
+  ### 政策参考
+  {{ policy_knowledge.documents[:300] }}
+  {% endif %}
+
+  {{ penalty_result.disclaimer }}

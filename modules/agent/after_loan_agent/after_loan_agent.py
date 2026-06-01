@@ -1,0 +1,62 @@
+# author hgh
+# version 1.0
+import logging
+from functools import partial
+
+from langgraph.graph import StateGraph
+
+from config.registry import ConfigRegistry
+from modules.agent.constants import AgentNodeName
+from modules.agent.multi_agent_state import AfterLoanState
+from modules.agent.after_loan_agent.after_loan_response_node import after_loan_response_node
+from modules.module_services.chat_models import RobustLLM
+from modules.module_services.classifier.after_loan_classifier import AfterLoanClassifier
+from modules.tools import ToolExecutor
+from modules.tools.tool_selector import ToolSelector
+from utils.serialize_utils.seq_generator import SequenceGenerator
+
+logger = logging.getLogger(__name__)
+
+class AfterLoanAgent:
+    def __init__(
+            self,
+            llm_client: RobustLLM,
+            registry: ConfigRegistry,
+            tool_executor: ToolExecutor,
+            seq_generator: SequenceGenerator,
+            tool_selector: ToolSelector,
+            classifier: AfterLoanClassifier
+    ):
+        self.llm_client = llm_client
+        self.registry = registry
+        self.tool_executor = tool_executor
+        self.seq_generator = seq_generator
+        self.tool_selector = tool_selector
+        self.classifier = classifier
+
+    def build_graph(self) -> StateGraph:
+        graph = StateGraph(AfterLoanState)
+        graph.add_node(
+            AgentNodeName.AFTER_LOAN_RESPONSE.value,
+            partial(after_loan_response_node,
+                    registry=self.registry,
+                    llm_client=self.llm_client,
+                    tool_executor=self.tool_executor,
+                    seq_generator=self.seq_generator,
+                    tool_selector=self.tool_selector,
+                    classifier=self.classifier
+                    )
+        )
+
+        graph.set_entry_point(AgentNodeName.AFTER_LOAN_RESPONSE.value)
+        graph.set_finish_point(AgentNodeName.AFTER_LOAN_RESPONSE.value)
+        return graph.compile()
+
+def create_after_loan_graph(
+    llm_client: RobustLLM,
+    registry: ConfigRegistry,
+    tool_executor: ToolExecutor,
+    seq_generator: SequenceGenerator
+) -> StateGraph:
+    agent = AfterLoanAgent(llm_client,registry,tool_executor,seq_generator)
+    return agent.build_graph()

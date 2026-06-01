@@ -1,0 +1,12 @@
+tools:
+  - name: calculate_dti
+  - name: calculate_extension_plan
+  - name: calculate_max_loan_amount
+  - name: calculate_monthly_payment
+  - name: calculate_prepayment
+  - name: generate_repayment_schedule
+  - name: check_extension_eligibility
+  - name: general_search_knowledge
+  - name: generate_settlement_certificate
+  - name: query_interest_rate
+  - name: query_regulation

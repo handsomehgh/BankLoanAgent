@@ -1,0 +1,137 @@
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  recovery_timeout_sec: 60
+
+fallback_messages:
+  judge:
+    timeout: "系统响应稍慢，请稍后重试。"
+    rate_limit: "当前咨询人数较多，请稍后再试。"
+    default: "意图识别暂时不可用，请稍后重试或拨打客服热线 95333。"
+  execute:
+    tool_error: "该功能暂时不可用，您可先咨询其他问题。"
+    timeout: "服务响应稍慢，正在为您重试，请稍候。"
+    default: "服务暂时不可用，请稍后重试。"
+  final:
+    timeout: "计算结果已生成，但详细说明暂时无法展示，请见谅。"
+    default: "回复生成失败，请稍后重试或联系人工客服。"
+  clarify:
+    timeout: "请问您想咨询哪种贷款业务？可以简单描述一下吗？"
+    default: "抱歉，我没太理解您的需求，可以再具体描述一下吗？"
+  direct:
+    timeout: "系统响应稍慢，请稍后重试。"
+    default: "抱歉，我暂时无法处理您的问题，请稍后再试。"
+
+# ==================== tool fallback configuration ====================
+tool_fallbacks:
+  # ---------- LoanAdvisor 工具 ----------
+  query_interest_rate:
+    data:
+      lpr_1y: 3.45
+      lpr_5y: 4.20
+      min_rate_value: 3.45
+      max_rate_value: 5.0
+      source: "缓存参考值（最新获取失败）"
+    message: "利率查询服务繁忙，已为您使用最近缓存参考值，仅供参考，以银行实际审批为准。"
+
+  calculate_monthly_payment:
+    data: {}
+    message: "月供计算暂时不可用，您可先了解申请条件、查看利率信息，或稍后重试。"
+
+  calculate_max_loan_amount:
+    data: {}
+    message: "额度试算暂时不可用，您可先提供收入与负债情况，稍后重试或联系客户经理。"
+
+  calculate_loan_total_cost:
+    data: {}
+    message: "综合成本计算暂时不可用，请稍后重试，或前往网点获取详细费用清单。"
+
+  check_loan_eligibility:
+    data: {}
+    message: "资格预审服务繁忙，请稍后重试，或直接携带材料至网点由客户经理评估。"
+
+  compare_loan_products:
+    data: {}
+    message: "方案对比功能暂不可用，您可先了解各产品特点，稍后重试或转人工咨询。"
+
+  generate_repayment_schedule:
+    data: {}
+    message: "还款计划生成暂时不可用，请稍后重试，或通过手机银行查看模拟还款表。"
+
+  general_search_knowledge:
+    data: {}
+    message: "知识库暂不可用，建议您拨打客服热线或前往网点获取最新政策信息。"
+
+  apply_home_loan_skill:
+    data: {}
+    message: "住房贷款综合评估暂时不可用，请稍后重试，或联系客户经理进行线下评估。"
+
+  apply_consumer_loan_skill:
+    data: {}
+    message: "消费贷款综合评估暂时不可用，请稍后重试，或联系客户经理获取方案。"
+
+  # ---------- AfterLoan 工具 ----------
+  calculate_prepayment:
+    data: {}
+    message: "提前还款试算暂时不可用，您可先了解违约金政策，或稍后重试。"
+
+  check_extension_eligibility:
+    data: {}
+    message: "展期资格检查暂时不可用，请稍后重试，或直接联系经办行确认。"
+
+  calculate_extension_plan:
+    data: {}
+    message: "展期方案试算暂时不可用，请稍后重试，或前往网点由客户经理为您测算。"
+
+  calculate_overdue_penalty:
+    data: {}
+    message: "逾期罚息计算暂时不可用，您可先查看合同约定利率，稍后重试。"
+
+  calculate_repayment_method_switch:
+    data: {}
+    message: "还款方式变更试算暂时不可用，请稍后重试，或前往网点咨询。"
+
+  generate_settlement_certificate:
+    data: {}
+    message: "结清证明生成暂时不可用，请携带身份证和贷款合同至网点办理。"
+
+  prepayment_evaluation_skill:
+    data: {}
+    message: "提前还款综合评估暂时不可用，请稍后重试，或联系客户经理获取对比方案。"
+
+  extension_management_skill:
+    data: {}
+    message: "展期管理服务暂时不可用，请稍后重试，或直接联系经办行申请。"
+
+  overdue_handling_skill:
+    data: {}
+    message: "逾期处理服务暂时不可用，请尽快通过手机银行还款，或拨打客服热线咨询。"
+
+  repayment_method_switch_skill:
+    data: {}
+    message: "还款方式变更服务暂时不可用，请稍后重试，或携带证件至网点办理。"
+
+  # ---------- RiskAssessment 工具 ----------
+  calculate_dti:
+    data: {}
+    message: "负债率计算暂时不可用，您可先自行估算月债务与收入之比，稍后重试。"
+
+  calculate_ltv:
+    data: {}
+    message: "抵押率计算暂时不可用，您可先了解所在城市的贷款成数政策，稍后重试。"
+
+  calculate_dscr:
+    data: {}
+    message: "偿债覆盖率计算暂时不可用，请稍后重试，或联系对公客户经理评估。"
+
+  estimate_credit_score:
+    data: {}
+    message: "信用评分估算暂时不可用，您可先通过征信中心获取个人信用报告。"
+
+  query_regulation:
+    data: {}
+    message: "法规检索暂时不可用，您可稍后重试，或访问央行、银保监会官网查询。"
+
+  risk_assessment_skill:
+    data: {}
+    message: "综合风险评估暂时不可用，请稍后重试，或联系客户经理进行人工评估。"

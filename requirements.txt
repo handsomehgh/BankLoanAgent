@@ -1,0 +1,82 @@
+# ==================== Streamlit ====================
+streamlit==1.57.0
+watchdog==6.0.0
+
+# ==================== LangChain 生态 ====================
+langchain==1.2.15
+langchain-community==0.4.1
+langchain-core==1.4.0
+langchain-deepseek==1.0.1
+langchain-openai==1.1.14
+langchain-text-splitters==1.1.2
+langgraph==1.1.9
+langgraph-checkpoint==4.1.0
+langgraph-checkpoint-sqlite==3.0.3
+langgraph-prebuilt==1.0.13
+langsmith==0.7.32
+
+# ==================== 向量数据库 ====================
+pymilvus==2.6.12
+
+# ==================== 缓存 / 消息队列 ====================
+redis==7.4.0
+
+# ==================== 依赖注入 ====================
+dependency-injector==4.49.0
+
+# ==================== 深度学习框架 ====================
+torch==2.11.0
+torchvision==0.26.0
+
+# ==================== Transformers & NLP ====================
+transformers==4.57.6
+tokenizers==0.22.2
+sentence-transformers==5.5.1
+safetensors==0.7.0
+
+# ==================== 文档处理 ====================
+unstructured==0.22.26
+pypdf==6.10.2
+pypdfium2==5.8.0
+openpyxl==3.1.5
+xlrd==2.0.2
+python-magic==0.4.27
+python-oxmsg==0.0.2
+lxml==6.1.0
+beautifulsoup4==4.14.3
+
+# ==================== 数据处理 / 科学计算 ====================
+numpy==2.4.4
+pandas==3.0.2
+scikit-learn==1.8.0
+scipy==1.17.1
+
+# ==================== 配置管理 ====================
+pydantic==2.13.2
+pydantic-settings==2.13.1
+PyYAML==6.0.3
+python-dotenv==1.2.2
+
+# ==================== LLM 客户端 ====================
+openai==2.32.0
+httpx==0.28.1
+
+# ==================== 工具库 ====================
+tenacity==9.1.4
+requests==2.33.1
+click==8.4.1
+Jinja2==3.1.6
+tiktoken==0.12.0
+tqdm==4.67.3
+sqlite-vec==0.1.9
+Pillow==12.2.0
+
+# ==================== API 服务 (Embedding / Reranker) ====================
+fastapi==0.136.3
+uvicorn==0.44.0
+
+# ==================== 监控 ====================
+prometheus_client==0.25.0
+
+# ==================== 数据格式 ====================
+orjson==3.11.8

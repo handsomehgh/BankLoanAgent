@@ -1,0 +1,135 @@
+name: apply_consumer_loan_skill
+version: "1.0.0"
+description: "消费贷款综合咨询（利率查询、额度试算、月供计算）"
+capability_tags: ["消费贷款", "贷款咨询"]
+sop_description: "本技能将依次：1）检索消费贷款产品信息 2）查询最新利率 3）计算最高可贷额度（可选） 4）试算月供"
+tags: ["LoanAdvisor"]
+baseline: false
+
+input_schema:
+  - name: monthly_income
+    type: float
+    description: "月收入（元）"
+    required: true
+    validation:
+      gt: 0
+  - name: existing_debt
+    type: float
+    description: "现有月债务（元）"
+    required: false
+    default: 0
+    validation:
+      ge: 0
+  - name: loan_amount
+    type: float
+    description: "期望贷款金额（万元）"
+    required: true
+    validation:
+      gt: 0
+  - name: term_years
+    type: integer
+    description: "贷款期限（年）"
+    required: true
+    validation:
+      ge: 1
+      le: 50
+  - name: repayment_method
+    type: string
+    description: "还款方式：等额本息或等额本金"
+    required: false
+    default: "等额本息"
+  - name: loan_purpose
+    type: string
+    description: "贷款用途（如装修、旅游、教育、购车等），可从对话中提取"
+    required: false
+    default: ""
+
+steps:
+  - name: general_search_knowledge
+    tool: general_search_knowledge
+    args:
+      query: "消费贷款产品介绍、利率政策、申请条件、还款方式"
+      source_type:
+        value: '["product_manual", "faq"]'
+        type: json
+      product_type:
+        value: "消费贷款"
+        type: string
+      top_k:
+        value: "3"
+        type: integer
+    output_key: knowledge
+    optional: true
+    on_failure: skip
+
+  - name: query_interest_rate
+    tool: query_interest_rate
+    args:
+      product_type:
+        value: "消费贷款"
+        type: string
+      term_years:
+        value: "{{ input.term_years }}"
+        type: integer
+    output_key: rate_result
+
+  - name: calculate_max_loan_amount
+    tool: calculate_max_loan_amount
+    args:
+      monthly_income:
+        value: "{{ input.monthly_income }}"
+        type: float
+      existing_monthly_debt:
+        value: "{{ input.existing_debt }}"
+        type: float
+      annual_rate:
+        value: "{{ rate_result.lpr_value }}"
+        type: float
+      term_years:
+        value: "{{ input.term_years }}"
+        type: integer
+      method:
+        value: "{{ input.repayment_method }}"
+        type: string
+    output_key: max_loan_result
+    optional: true
+    on_failure: skip
+
+  - name: calculate_monthly_payment
+    tool: calculate_monthly_payment
+    args:
+      principal:
+        value: "{{ input.loan_amount * 10000 }}"
+        type: float
+      annual_rate:
+        value: "{{ rate_result.lpr_value }}"
+        type: float
+      term_years:
+        value: "{{ input.term_years }}"
+        type: integer
+      method:
+        value: "{{ input.repayment_method }}"
+        type: string
+    output_key: monthly_result
+
+output_template: |
+  ## 💳 消费贷款咨询结果
+
+  {% if knowledge and knowledge.documents %}
+  **产品参考**：{{ knowledge.documents[:200] }}
+  {% endif %}
+
+  **当前 LPR**：{{ rate_result.lpr }}，参考利率区间 {{ rate_result.min_rate }} - {{ rate_result.max_rate }}
+  {{ rate_result.notes }}
+
+  {% if max_loan_result %}
+  ### 额度试算
+  最高可贷约 **{{ max_loan_result.max_amount }} 元**（每月还款上限 {{ max_loan_result.max_monthly_payment }} 元）
+  {% endif %}
+
+  ### 月供试算
+  贷款 **{{ input.loan_amount * 10000 }} 元**，期限 **{{ input.term_years }} 年**，还款方式 **{{ input.repayment_method }}**
+  - 月供：**{{ monthly_result.monthly_payment }} 元**
+  - 总利息：{{ monthly_result.total_interest }} 元
+
+  {{ rate_result.disclaimer }}

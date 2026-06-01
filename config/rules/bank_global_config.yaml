@@ -1,0 +1,301 @@
+# ============ overdue interest penalty multiplier ===============
+overdue_penalty_multiplier: 1.5
+
+#============== repayment method change fee ==============
+method_switch_fee: 200.0
+
+# ================= default lpr ====================
+lpr:
+  lpr_1y: 3.45
+  lpr_5y: 4.20
+  date: "2026-05-15"
+
+# ================== bank add point ==================
+product_point:
+  - product_type: "住房贷款"
+    min_diff: -0.20
+    max_diff: 0.60
+    notes: "首套房利率已取消全国下限，实际利率以当地执行为准。二套房利率不低于LPR+60BP。"
+  - product_type: "消费贷款"
+    min_diff: 0.50
+    max_diff: 2.00
+    notes: "信用方式利率较高，抵押方式可下浮"
+  - product_type: "经营贷款"
+    min_diff: 0.30
+    max_diff: 1.50
+    notes: "优质客户可享受普惠利率优惠"
+
+# =================== debt to income rate ======================
+product_dti:
+  - product_type: "住房贷款"
+    safe: 0.50
+    warn: 0.55
+    max: 0.55
+  - product_type: "消费贷款"
+    safe: 0.50
+    warn: 0.55
+    max: 0.55
+  - product_type: "经营贷款"
+    safe: 0.50
+    warn: 0.55
+    max: 0.55
+
+# =================== prepayment configuration ===================
+prepayment:
+  penalty_rate: 0.01
+  free_after_months: 12
+  max_penalty_rate: 0.03
+
+extension:
+  min_paid_months: 6
+  max_extension_ratio: 0.5
+  allow_with_overdue: false
+  extension_rate_adjustment: 0.10
+  supported_loan_types: ["住房贷款", "消费贷款", "经营贷款"]
+
+# ==================== fees =========================
+loan_fees:
+  # ==================== housing loan related fee ====================
+  - name: "评估费"
+    description: "由银行认可的评估机构出具房产评估报告"
+    rate: 0.0025
+    fixed: 0
+    calc_base: "collateral_value"
+    applicable_loan_types: ["住房贷款"]
+    applicable_collateral_types: ["房产"]
+    is_required: true
+
+  - name: "抵押登记费"
+    description: "不动产登记中心办理抵押登记"
+    rate: 0
+    fixed: 80
+    calc_base: "fixed"
+    applicable_loan_types: ["住房贷款"]
+    applicable_collateral_types: ["房产"]
+    is_required: true
+
+  - name: "公证费"
+    description: "贷款合同公证（如需）"
+    rate: 0.001
+    fixed: 0
+    calc_base: "loan_amount"
+    applicable_loan_types: ["住房贷款", "经营贷款"]
+    applicable_collateral_types: []
+    is_required: false
+
+  - name: "保险费"
+    description: "抵押物财产保险，银行为第一受益人"
+    rate: 0.0005
+    fixed: 0
+    calc_base: "loan_amount"
+    applicable_loan_types: ["住房贷款"]
+    applicable_collateral_types: ["房产"]
+    is_required: true
+
+  # ==================== consuming loan related fees ====================
+  - name: "信用评估费"
+    description: "对无抵押消费贷款进行的信用评估"
+    rate: 0.001
+    fixed: 0
+    calc_base: "loan_amount"
+    applicable_loan_types: ["消费贷款"]
+    applicable_collateral_types: ["无抵押"]
+    is_required: true
+
+  - name: "账户管理费"
+    description: "贷款账户管理服务费（年费）"
+    rate: 0
+    fixed: 120
+    calc_base: "fixed"
+    applicable_loan_types: ["消费贷款"]
+    applicable_collateral_types: []
+    is_required: false
+
+  # ==================== operating loan related fees ====================
+  - name: "评估费"
+    description: "对抵押物（房产/设备）进行价值评估"
+    rate: 0.003
+    fixed: 0
+    calc_base: "collateral_value"
+    applicable_loan_types: ["经营贷款"]
+    applicable_collateral_types: ["房产", "设备"]
+    is_required: true
+
+  - name: "抵押登记费"
+    description: "不动产/动产抵押登记"
+    rate: 0
+    fixed: 150
+    calc_base: "fixed"
+    applicable_loan_types: ["经营贷款"]
+    applicable_collateral_types: ["房产", "设备"]
+    is_required: true
+
+  - name: "担保费"
+    description: "担保公司收取的担保费用"
+    rate: 0.01
+    fixed: 0
+    calc_base: "loan_amount"
+    applicable_loan_types: ["经营贷款"]
+    applicable_collateral_types: []
+    is_required: false
+
+  - name: "上门调查费"
+    description: "客户经理实地调查经营场所"
+    rate: 0
+    fixed: 200
+    calc_base: "fixed"
+    applicable_loan_types: ["经营贷款"]
+    applicable_collateral_types: []
+    is_required: true
+
+# ===================== loan eligibility criteria ======================
+eligibility_rules:
+  # housing loan
+  - name: "年龄上限"
+    description: "借款人年龄加贷款期限不超过70周岁"
+    level: "MUST"
+    conditions:
+      - field: "age"
+        op: "gte"
+        value: 18
+      - field: "term_years"
+        op: "lte"
+        value: 70
+    applicable_loan_types: ["住房贷款"]
+    fail_message: "年龄加贷款期限超过70周岁限制"
+    suggestion: "缩短贷款期限或增加共同借款人"
+
+  - name: "最低月收入要求"
+    description: "月收入需覆盖月供的2倍"
+    level: "MUST"
+    conditions:
+      - field: "monthly_income"
+        op: "gte"
+        value: 3000
+    applicable_loan_types: ["住房贷款", "消费贷款", "经营贷款"]
+    fail_message: "月收入低于3000元"
+    suggestion: "提供更多收入证明或增加共同借款人"
+
+  - name: "征信要求"
+    description: "征信记录不能有连三累六"
+    level: "MUST"
+    conditions:
+      - field: "credit_history"
+        op: "not_contains"
+        value: "连三累六"
+    applicable_loan_types: ["住房贷款", "消费贷款"]
+    fail_message: "征信存在严重不良记录（连三累六）"
+    suggestion: "还清逾期欠款后等待至少6个月再申请"
+
+  # consuming loan
+  - name: "工作年限要求"
+    description: "当前工作单位连续工作满6个月"
+    level: "MUST"
+    conditions:
+      - field: "work_years"
+        op: "gte"
+        value: 0.5
+    applicable_loan_types: ["消费贷款"]
+    fail_message: "当前工作不满6个月"
+    suggestion: "提供上一家单位收入证明或等待试用期过后申请"
+
+  # operating loan
+  - name: "经营收入要求"
+    description: "经营贷需要提供营业执照且经营满1年"
+    level: "MUST"
+    conditions:
+      - field: "loan_purpose"
+        op: "contains"
+        value: "经营"
+    applicable_loan_types: ["经营贷款"]
+    fail_message: "贷款用途需为经营相关"
+    suggestion: "确认贷款用途并准备营业执照及经营流水"
+
+#================= credit score rule =======================
+credit_score_rules:
+  base_score: 750
+  min_score: 300
+  max_score: 900
+  rating_thresholds:
+    - label: "优秀"
+      min_score: 700
+    - label: "良好"
+      min_score: 600
+    - label: "一般"
+      min_score: 500
+    - label: "较差"
+      min_score: 0
+  rules:
+    - field: "overdue_count"
+      description: "逾期次数扣分（每逾期一次扣20分）"
+      condition: "gte"
+      threshold: 1
+      deduction_type: "per_unit"
+      deduction_value: 20
+
+    - field: "has_severe_overdue"
+      description: "存在严重逾期（连三累六）"
+      condition: "bool_true"
+      deduction_type: "fixed"
+      deduction_value: 100
+
+    - field: "overdue_days_max"
+      description: "最长逾期天数扣分"
+      condition: "gte"
+      threshold: 30
+      deduction_type: "range"
+      ranges:
+        - min_value: 30
+          max_value: 60
+          deduction: 30
+        - min_value: 61
+          max_value: 90
+          deduction: 60
+        - min_value: 91
+          max_value: null
+          deduction: 100
+
+    - field: "recent_inquiries"
+      description: "近期硬查询过多"
+      condition: "gte"
+      threshold: 3
+      deduction_type: "range"
+      ranges:
+        - min_value: 3
+          max_value: 5
+          deduction: 15
+        - min_value: 6
+          max_value: 10
+          deduction: 30
+        - min_value: 11
+          max_value: null
+          deduction: 50
+
+    - field: "is_white_account"
+      description: "征信白户"
+      condition: "bool_true"
+      deduction_type: "fixed"
+      deduction_value: 20
+
+# =================== loan to value rule ===================
+ltv_rules:
+  # housing loan - up to 80% for the first home
+  - max_ltv: 0.80
+    applicable_loan_types: ["住房贷款"]
+    first_house_only: true
+    description: "首套住房贷款 LTV 上限 80%"
+  # housing loan - up to 70% for the secondary home
+  - max_ltv: 0.70
+    applicable_loan_types: ["住房贷款"]
+    first_house_only: false
+    description: "二套住房贷款 LTV 上限 70%"
+  # consuming loan
+  - max_ltv: 0.70
+    applicable_loan_types: ["消费贷款"]
+    first_house_only: null
+    description: "抵押类消费贷款 LTV 上限 70%"
+  # operating loan
+  - max_ltv: 0.70
+    applicable_loan_types: ["经营贷款"]
+    first_house_only: null
+    description: "经营贷款 LTV 上限 70%"

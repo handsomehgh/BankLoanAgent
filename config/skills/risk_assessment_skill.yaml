@@ -1,0 +1,210 @@
+name: risk_assessment_skill
+version: "1.0.0"
+description: "综合风险评估：根据贷款类型和用户信息，计算DTI、LTV、DSCR等核心指标，估算信用评分，并生成风险评估报告"
+capability_tags: ["风险评估", "风控", "征信"]
+sop_description: "本技能将依次：1）检索风控政策 2）计算负债率(DTI) 3）计算抵押率(LTV，如有抵押物) 4）计算偿债覆盖率(DSCR，经营贷) 5）估算信用评分 6）生成综合报告"
+tags: ["RiskAssessment"]
+baseline: false
+
+input_schema:
+  - name: loan_type
+    type: string
+    description: "贷款类型：住房贷款、消费贷款、经营贷款"
+    required: true
+  - name: monthly_income
+    type: float
+    description: "月收入（元）"
+    required: false
+    default: 0
+    validation:
+      ge: 0
+  - name: monthly_debts
+    type: json
+    description: "各项月债务列表（元），如 [2000, 3000]"
+    required: false
+    default: "[]"
+  - name: loan_amount
+    type: float
+    description: "贷款金额（元）"
+    required: false
+    default: 0
+    validation:
+      ge: 0
+  - name: collateral_value
+    type: float
+    description: "抵押物评估价值（元）"
+    required: false
+    default: 0
+    validation:
+      ge: 0
+  - name: annual_net_income
+    type: float
+    description: "年经营净收入（元）"
+    required: false
+    default: 0
+    validation:
+      ge: 0
+  - name: annual_debt_service
+    type: float
+    description: "年还本付息额（元）"
+    required: false
+    default: 0
+    validation:
+      ge: 0
+  # 信用评分所需参数（LLM 从用户画像摘要中提取）
+  - name: overdue_count
+    type: integer
+    description: "逾期次数，可从用户画像中提取"
+    required: false
+  - name: has_severe_overdue
+    type: boolean
+    description: "是否有严重逾期（如连三累六），可从用户画像中提取"
+    required: false
+  - name: overdue_days_max
+    type: integer
+    description: "最长逾期天数，可从用户画像中提取"
+    required: false
+  - name: recent_inquiries
+    type: integer
+    description: "近期硬查询次数，可从用户画像中提取"
+    required: false
+  - name: is_white_account
+    type: boolean
+    description: "是否征信白户（无任何信用记录）,可从用户画像中提取"
+    required: false
+  # LTV 可能需要首套房判断
+  - name: is_first_house
+    type: boolean
+    description: "是否首套房，可从用户画像或对话中提取"
+    required: false
+
+steps:
+  - name: general_search_knowledge
+    tool: general_search_knowledge
+    args:
+      query: "贷款风险控制政策、DTI LTV DSCR 标准、征信要求"
+      source_type:
+        value: '["regulation", "process_guide"]'
+        type: json
+      product_type:
+        value: "{{ input.loan_type }}"
+        type: string
+      top_k:
+        value: "3"
+        type: integer
+    output_key: policy_knowledge
+    optional: true
+    on_failure: skip
+
+  - name: calculate_dti
+    tool: calculate_dti
+    args:
+      monthly_income:
+        value: "{{ input.monthly_income }}"
+        type: float
+      monthly_debts:
+        value: "{{ input.monthly_debts }}"
+        type: json
+      loan_type:
+        value: "{{ input.loan_type }}"
+        type: string
+    output_key: dti_result
+    optional: true
+    on_failure: skip
+
+  - name: calculate_ltv
+    tool: calculate_ltv
+    args:
+      loan_amount:
+        value: "{{ input.loan_amount }}"
+        type: float
+      collateral_value:
+        value: "{{ input.collateral_value }}"
+        type: float
+      loan_type:
+        value: "{{ input.loan_type }}"
+        type: string
+      is_first_house:
+        value: "{{ input.is_first_house }}"
+        type: boolean
+    output_key: ltv_result
+    optional: true
+    on_failure: skip
+
+  - name: calculate_dscr
+    tool: calculate_dscr
+    args:
+      annual_net_income:
+        value: "{{ input.annual_net_income }}"
+        type: float
+      annual_debt_service:
+        value: "{{ input.annual_debt_service }}"
+        type: float
+    output_key: dscr_result
+    optional: true
+    on_failure: skip
+
+  - name: estimate_credit_score
+    tool: estimate_credit_score
+    args:
+      overdue_count:
+        value: "{{ input.overdue_count }}"
+        type: integer
+      has_severe_overdue:
+        value: "{{ input.has_severe_overdue }}"
+        type: boolean
+      overdue_days_max:
+        value: "{{ input.overdue_days_max }}"
+        type: integer
+      recent_inquiries:
+        value: "{{ input.recent_inquiries }}"
+        type: integer
+      is_white_account:
+        value: "{{ input.is_white_account }}"
+        type: boolean
+
+    output_key: credit_result
+    optional: true
+    on_failure: skip
+
+output_template: |
+  ## 📊 综合风险评估报告
+
+  {% if policy_knowledge and policy_knowledge.documents %}
+  **政策依据**：{{ policy_knowledge.documents[:300] }}
+  {% endif %}
+
+  ### 核心指标
+  {% if dti_result %}
+  **负债率 (DTI)**：{{ dti_result.dti_percent }}（{{ dti_result.status }}）
+  > {{ dti_result.message }}
+  {% else %}
+  ⚠️ 未提供月收入或债务信息，无法计算DTI。您可以补充这些信息以获得完整评估。
+  {% endif %}
+
+  {% if ltv_result %}
+  **抵押率 (LTV)**：{{ ltv_result.ltv_percent }}（上限 {{ ltv_result.max_ltv_percent }}，{{ ltv_result.risk_level }}）
+  > {{ ltv_result.message }}
+  {% endif %}
+
+  {% if dscr_result %}
+  **偿债覆盖率 (DSCR)**：{{ dscr_result.dscr }}（阈值 {{ dscr_result.threshold }}，{{ dscr_result.status }}）
+  > {{ dscr_result.suggestion }}
+  {% endif %}
+
+  {% if credit_result %}
+  **信用评分估算**：{{ credit_result.final_score }} 分（{{ credit_result.rating }}）
+  {% if credit_result.deductions %}
+  扣分项：
+  {% for d in credit_result.deductions %}
+  - {{ d.reason }}（{{ d.points }}分）
+  {% endfor %}
+  {% endif %}
+  {% else %}
+  ⚠️ 未提供征信信息，无法估算信用评分。您可以提供逾期次数、严重逾期情况等。
+  {% endif %}
+
+  ### 风险总结
+  请您结合以上指标综合判断。如有任何指标不达标，建议优先改善后再申请。
+
+  {% if dti_result %} {{ dti_result.disclaimer }} {% endif %}

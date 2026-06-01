@@ -1,0 +1,101 @@
+name: repayment_method_switch_skill
+version: "1.0.0"
+description: "还款方式变更：试算从等额本息改为等额本金（或反之）后的月供和利息变化"
+capability_tags: ["还款方式变更", "贷后管理"]
+sop_description: "本技能将依次：1）检索变更政策 2）试算变更后的月供和利息变化"
+tags: ["AfterLoan"]
+baseline: false
+
+input_schema:
+  - name: original_principal
+    type: float
+    description: "原始贷款金额（元）"
+    required: true
+    validation:
+      gt: 0
+  - name: annual_rate
+    type: float
+    description: "年利率（%）"
+    required: true
+    validation:
+      gt: 0
+      le: 50
+  - name: total_months
+    type: integer
+    description: "贷款总期数（月）"
+    required: true
+    validation:
+      ge: 1
+      le: 600
+  - name: paid_months
+    type: integer
+    description: "已还期数（月）"
+    required: true
+    validation:
+      ge: 0
+      le: 600
+  - name: current_method
+    type: string
+    description: "当前还款方式：等额本息或等额本金"
+    required: true
+  - name: target_method
+    type: string
+    description: "目标还款方式：等额本息或等额本金"
+    required: true
+
+steps:
+  - name: general_search_knowledge
+    tool: general_search_knowledge
+    args:
+      query: "还款方式变更政策 手续费 申请条件"
+      source_type:
+        value: '["process_guide", "regulation"]'
+        type: json
+      top_k:
+        value: "3"
+        type: integer
+    output_key: policy_knowledge
+    optional: true
+    on_failure: skip
+
+  - name: calculate_repayment_method_switch
+    tool: calculate_repayment_method_switch
+    args:
+      original_principal:
+        value: "{{ input.original_principal }}"
+        type: float
+      annual_rate:
+        value: "{{ input.annual_rate }}"
+        type: float
+      total_months:
+        value: "{{ input.total_months }}"
+        type: integer
+      paid_months:
+        value: "{{ input.paid_months }}"
+        type: integer
+      current_method:
+        value: "{{ input.current_method }}"
+        type: string
+      target_method:
+        value: "{{ input.target_method }}"
+        type: string
+    output_key: switch_result
+
+output_template: |
+  ## 还款方式变更评估
+
+  {% if policy_knowledge and policy_knowledge.documents %}
+  **变更政策参考**：{{ policy_knowledge.documents[:300] }}
+  {% endif %}
+
+  ### 变更试算
+  - 当前方式：{{ switch_result.current_method }}，剩余总利息 {{ switch_result.current_remaining_interest }} 元
+  - 目标方式：{{ switch_result.target_method }}，剩余总利息 {{ switch_result.new_total_interest }} 元
+  - 变更后首月月供：{{ switch_result.new_first_monthly }} 元
+  - 节省利息：{{ switch_result.saved_interest }} 元
+  - 手续费：{{ switch_result.switch_fee }} 元
+  - 净节省：{{ switch_result.net_saving }} 元
+
+  **结论**：{{ "建议变更" if switch_result.worth_switching else "不建议变更，节省的利息不足以覆盖手续费" }}
+
+  {{ switch_result.disclaimer }}

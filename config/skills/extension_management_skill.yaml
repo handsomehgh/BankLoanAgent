@@ -1,0 +1,129 @@
+name: extension_management_skill
+version: "1.0.0"
+description: "展期管理：先检查展期资格，若符合条件则试算展期方案"
+capability_tags: ["展期", "贷后管理"]
+sop_description: "本技能将依次：1）检查展期资格 2）若符合条件，试算展期方案；若不符合，直接告知原因"
+tags: ["AfterLoan"]
+baseline: false
+
+input_schema:
+  - name: total_months
+    type: integer
+    description: "贷款总期数（月）"
+    required: true
+    validation:
+      ge: 1
+      le: 600
+  - name: paid_months
+    type: integer
+    description: "已还期数（月）"
+    required: true
+    validation:
+      ge: 0
+      le: 600
+  - name: overdue_count
+    type: integer
+    description: "历史逾期次数，可从用户画像提取"
+    required: false
+    default: 0
+  - name: has_current_overdue
+    type: boolean
+    description: "是否有当前逾期，可从用户画像或对话提取"
+    required: false
+    default: false
+  - name: loan_type
+    type: string
+    description: "贷款类型（住房贷款、消费贷款、经营贷款）"
+    required: false
+    default: "消费贷款"
+  - name: remaining_principal
+    type: float
+    description: "剩余本金（元），试算方案时需要"
+    required: false
+    default: 0
+  - name: annual_rate
+    type: float
+    description: "年利率（%），试算方案时需要"
+    required: false
+    default: 0
+  - name: remaining_months
+    type: integer
+    description: "剩余期数（月），试算方案时需要"
+    required: false
+    default: 0
+  - name: extension_months
+    type: integer
+    description: "期望延长月数，试算方案时需要"
+    required: false
+    default: 0
+  - name: method
+    type: string
+    description: "还款方式，试算方案时需要"
+    required: false
+    default: "等额本息"
+
+steps:
+  - name: check_extension_eligibility
+    tool: check_extension_eligibility
+    args:
+      total_months:
+        value: "{{ input.total_months }}"
+        type: integer
+      paid_months:
+        value: "{{ input.paid_months }}"
+        type: integer
+      overdue_count:
+        value: "{{ input.overdue_count }}"
+        type: integer
+      has_current_overdue:
+        value: "{{ input.has_current_overdue }}"
+        type: boolean
+      loan_type:
+        value: "{{ input.loan_type }}"
+        type: string
+    output_key: eligibility_result
+
+  - name: calculate_extension_plan
+    tool: calculate_extension_plan
+    args:
+      remaining_principal:
+        value: "{{ input.remaining_principal }}"
+        type: float
+      annual_rate:
+        value: "{{ input.annual_rate }}"
+        type: float
+      remaining_months:
+        value: "{{ input.remaining_months }}"
+        type: integer
+      extension_months:
+        value: "{{ input.extension_months }}"
+        type: integer
+      method:
+        value: "{{ input.method }}"
+        type: string
+    output_key: extension_result
+    optional: true
+    on_failure: skip
+
+output_template: |
+  ## 展期管理
+
+  ### 资格检查
+  {% if eligibility_result.eligible %}
+  符合展期申请条件 ✅
+  {% else %}
+  不符合展期条件 ❌
+  **原因**：
+  {% for reason in eligibility_result.reasons %}
+  - {{ reason }}
+  {% endfor %}
+  {% endif %}
+
+  {% if extension_result %}
+  ### 展期方案
+  - 当前月供：{{ extension_result.current_monthly_payment }} 元
+  - 展期后月供：{{ extension_result.new_monthly_payment }} 元（减少 {{ extension_result.monthly_reduction }} 元）
+  - 展期后总利息增加：{{ extension_result.additional_interest }} 元
+
+  {{ extension_result.disclaimer }}
+  {% endif %}
