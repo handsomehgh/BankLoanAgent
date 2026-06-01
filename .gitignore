@@ -11,4 +11,4 @@ venv/
 *.safetensors
 models/
 scripts/data
-
+.gitattributes
