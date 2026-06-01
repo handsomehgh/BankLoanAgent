@@ -78,11 +78,15 @@ services:
   bank-agent:
     build: .
     container_name: bank-agent
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - MILVUS_URI=http://standalone:19530
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=hgh970228
+      - EMBEDDING_API_URL=http://host.docker.internal:8000
+      - RERANKER_API_URL=http://host.docker.internal:8001
     volumes:
       - ./models:/app/models
       - ./config:/app/config

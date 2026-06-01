@@ -4,6 +4,7 @@
 application service container
 """
 import logging
+import os
 from pathlib import Path
 
 from infra.message_queue import MessageProducer
@@ -142,7 +143,7 @@ def _create_embedder(registry: ConfigRegistry):
 def _create_local_embeder(registry: ConfigRegistry):
     cfg = registry.get_config(RegistryModules.LLM)
     return RobustLocalEmbeder(
-        base_url=cfg.loan_embeder_url,
+        base_url=os.getenv("EMBEDDING_API_URL", cfg.loan_embeder_url),
         model_name=cfg.loan_embeder_name,
         dimensions=cfg.loan_embeder_dimension
     )
@@ -150,7 +151,7 @@ def _create_local_embeder(registry: ConfigRegistry):
 
 def _create_milvus_client(registry: ConfigRegistry):
     cfg = registry.get_config(RegistryModules.RETRIEVAL)
-    return MilvusClientManager(uri=cfg.milvus_uri)
+    return MilvusClientManager(uri=os.getenv("MILVUS_URI", cfg.milvus_uri))
 
 
 def _create_vector_store(registry: ConfigRegistry, embedder, milvus_client):

@@ -4,6 +4,7 @@
 reranker module: user cross_encoder for fine ranking
 """
 import logging
+import os
 from typing import List, Dict
 
 import requests
@@ -18,7 +19,8 @@ logger = logging.getLogger(__name__)
 class Reranker:
     def __init__(self, config: RerankerConfig):
         self.config = config
-        if config.remote_url:
+        remote_url = os.getenv("RERANKER_API_URL", config.remote_url)
+        if remote_url:
             self._mode = "remote"
             self.remote_url = config.remote_url.rstrip("/")
             logger.info("Reranker initialized as remote service at %s", self.remote_url)

@@ -1,6 +1,7 @@
 # author hgh
 # version 1.0
 import logging
+import os
 from typing import Optional
 
 import redis
@@ -68,10 +69,10 @@ class RedisManager:
     @classmethod
     def from_config(cls, config: RedisConfig):
         return cls(
-            host=config.host,
-            port=config.port,
+            host=os.getenv("REDIS_HOST", config.host),
+            port=int(os.getenv("REDIS_PORT", config.port)),
             db=config.db,
-            password=config.password,
+            password=os.getenv("REDIS_PASSWORD", config.password),
             max_connections=config.max_connections,
             socket_timeout=config.socket_timeout,
             socket_connect_timeout=config.socket_connect_timeout,
