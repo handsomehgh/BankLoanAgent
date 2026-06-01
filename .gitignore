@@ -10,5 +10,6 @@ venv/
 .idea/models/
 *.safetensors
 models/
+!config/models/
 scripts/data
 .gitattributes
