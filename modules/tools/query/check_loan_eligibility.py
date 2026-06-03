@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from config.models.bank_global_config import EligibilityRule, BankGlobalConfig
 from modules.agent.constants import AgentName
+from modules.tools.error_handler import with_tool_error_handling
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class CheckLoanEligibilityInput(BaseModel):
     args_schema=CheckLoanEligibilityInput,
     extras={"version": "1.0.0", "tags": [AgentName.LOAN_ADVISOR.value]}
 )
+@with_tool_error_handling
 def check_loan_eligibility(
     input: CheckLoanEligibilityInput,
     bank_config: Annotated[BankGlobalConfig, InjectedToolArg],

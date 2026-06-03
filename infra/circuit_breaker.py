@@ -5,12 +5,14 @@ import threading
 import time
 from typing import Callable, Any
 
-from exceptions.exception import CircuitBreakerOpenError
+from exceptions.exception import CircuitBreakerOpenError, ToolExecutionException
+from modules.tools.base_tool import ToolErrorType
 
 logger = logging.getLogger(__name__)
 
+
 class CircuitBreaker():
-    def __init__(self,name: str,failure_threshold: int = 5,recovery_timeout: int = 60):
+    def __init__(self, name: str, failure_threshold: int = 5, recovery_timeout: int = 60):
         self.name = name
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
@@ -19,7 +21,7 @@ class CircuitBreaker():
         self.state = "CLOSED"
         self._lock = threading.Lock()
 
-    def call(self,func: Callable[...,Any],*args,**kwargs) -> Any:
+    def call(self, func: Callable[..., Any], *args, **kwargs) -> Any:
         with self._lock:
             if self.state == "OPEN":
                 if time.time() - self.last_failure_time >= self.recovery_timeout:
@@ -36,11 +38,20 @@ class CircuitBreaker():
                     logger.info(f"[CircuitBreaker] {self.name} detect successfully，has been recovered")
                 self.failure_count = 0
                 return result
+            except ToolExecutionException as e:
+                if e.error_type in (ToolErrorType.TEMPORARY_ERROR, ToolErrorType.EXTERNAL_ERROR):
+                    self.failure_count += 1
+                    self.last_failure_time = time.time()
+                    if self.failure_count >= self.failure_threshold:
+                        self.state = "OPEN"
+                        logger.error(
+                            f"[CircuitBreaker] {self.name} continuous failure {self.failure_count} time，already tripped")
+                return e
             except Exception as e:
                 self.failure_count += 1
                 self.last_failure_time = time.time()
                 if self.failure_count >= self.failure_threshold:
                     self.state = "OPEN"
-                    logger.error(f"[CircuitBreaker] {self.name} continuous failure {self.failure_count} time，already tripped")
+                    logger.error(
+                        f"[CircuitBreaker] {self.name} continuous failure {self.failure_count} time，already tripped")
                 return e
-

@@ -12,6 +12,7 @@ from jinja2 import Template, Undefined
 
 from config.models.skill_config import SkillConfig, SkillArg
 from modules.tools import ToolExecutor, ToolResult
+from modules.tools.base_tool import ToolErrorType
 from utils.monitor_utils.metrics import skill_execution_total, skill_execution_duration_seconds
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 class SilentUndefined(Undefined):
     def __fail_with_undefined_error(self, *args, **kwargs):
         return None
+
 
 class SkillExecutor:
     """skill executor"""
@@ -57,21 +59,39 @@ class SkillExecutor:
             value = input_data.get(param_def.name)
             if value is None:
                 if param_def.required:
-                    skill_execution_total.labels(
-                        skill_name=skill.name, status="error"
-                    ).inc()
-                    return {"success": False, "error": f"缺少必填参数: {param_def.name}"}
+                    logger.warning("Skill '%s' 缺少必填参数: %s", skill.name, param_def.name)
+                    return {
+                        "success": False,
+                        "error": f"缺少必填参数: {param_def.name}",
+                        "error_type": ToolErrorType.PARAMETER_ERROR.value
+                    }
                 continue
             if param_def.validation:
                 v = param_def.validation
                 if v.ge is not None and value < v.ge:
-                    return {"success": False, "error": f"参数 {param_def.name} 需要 >= {v.ge}，当前值: {value}"}
+                    return {
+                        "success": False,
+                        "error": f"参数 {param_def.name} 需要 >= {v.ge}，当前值: {value}",
+                        "error_type": ToolErrorType.PARAMETER_ERROR.value
+                    }
                 if v.le is not None and value > v.le:
-                    return {"success": False, "error": f"参数 {param_def.name} 需要 <= {v.le}，当前值: {value}"}
+                    return {
+                        "success": False,
+                        "error": f"参数 {param_def.name} 需要 <= {v.le}，当前值: {value}",
+                        "error_type": ToolErrorType.PARAMETER_ERROR.value
+                    }
                 if v.gt is not None and value <= v.gt:
-                    return {"success": False, "error": f"参数 {param_def.name} 需要 > {v.gt}，当前值: {value}"}
+                    return {
+                        "success": False,
+                        "error": f"参数 {param_def.name} 需要 > {v.gt}，当前值: {value}",
+                        "error_type": ToolErrorType.PARAMETER_ERROR.value
+                    }
                 if v.lt is not None and value >= v.lt:
-                    return {"success": False, "error": f"参数 {param_def.name} 需要 < {v.lt}，当前值: {value}"}
+                    return {
+                        "success": False,
+                        "error": f"参数 {param_def.name} 需要 < {v.lt}，当前值: {value}",
+                        "error_type": ToolErrorType.PARAMETER_ERROR.value
+                    }
 
         state = {"input": input_data}
 
@@ -86,14 +106,20 @@ class SkillExecutor:
                 resolved_args = self._resolve_args(step.args, state)
             except Exception as e:
                 logger.error("failed to parsing param (step=%s): %s", step.name, e)
+
                 if step.optional:
+                    state[step.output_key] = step.fallback_value if hasattr(step, 'fallback_value') else None
                     continue
+
                 skill_execution_total.labels(
                     skill_name=skill.name, status="error"
                 ).inc()
+
                 return {
                     "success": False,
-                    "error": f"步骤 '{step.name}' 参数解析失败: {e}"
+                    "error": f"步骤 '{step.name}' 参数解析失败: {e}",
+                    "error_type": ToolErrorType.PARAMETER_ERROR.value,
+                    "failed_step": step.name
                 }
 
             # call atomic tool
@@ -106,23 +132,29 @@ class SkillExecutor:
             )
 
             # handling result
-            if not result.success:
-                logger.warning("Step '%s' execute failed: %s", step.name, result.error)
-                if step.optional and step.on_failure == "skip":
-                    state[step.output_key] = None
-                    continue
-                skill_execution_total.labels(
-                    skill_name=skill.name, status="error"
-                ).inc()
+            if result.success:
+                logger.debug("Step '%s' process successfully", step.name)
+                state[step.output_key] = result.data
+                continue
+
+            logger.warning("步骤 '%s' 执行失败: error_type=%s, error=%s", step.name, result.error_type, result.error)
+            skill_execution_total.labels(
+                skill_name=skill.name, status="error"
+            ).inc()
+            on_failure = step.on_failure if hasattr(step, 'on_failure') else "abort"
+            if on_failure == "skip":
+                state[step.output_key] = step.fallback_value if hasattr(step, 'fallback_value') else None
+                continue
+            elif on_failure == "use_fallback":
+                state[step.output_key] = step.fallback_value if hasattr(step, 'fallback_value') else None
+                continue
+            elif on_failure == "abort":
                 return {
                     "success": False,
-                    "error": f"步骤 '{step.name}' 执行失败: {result.error}",
+                    "error": result.error,
+                    "error_type": result.error_type.value if result.error_type else ToolErrorType.EXTERNAL_ERROR.value,
                     "failed_step": step.name
                 }
-
-            # store success result
-            state[step.output_key] = result.data
-            logger.debug("Step '%s' process successfully", step.name)
 
         # render output template
         try:
@@ -134,7 +166,8 @@ class SkillExecutor:
             ).inc()
             return {
                 "success": False,
-                "error": f"输出模板渲染失败: {e}"
+                "error": f"输出模板渲染失败: {e}",
+                "error_type": ToolErrorType.EXTERNAL_ERROR.value
             }
 
         duration = time.monotonic() - start_time

@@ -9,6 +9,7 @@ from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from modules.agent.constants import AgentName
+from modules.tools.error_handler import with_tool_error_handling
 
 
 class GenerateSettlementCertificateInput(BaseModel):
@@ -24,6 +25,7 @@ class GenerateSettlementCertificateInput(BaseModel):
     args_schema=GenerateSettlementCertificateInput,
     extras={"version": "1.0.0", "tags": [AgentName.AFTER_LOAN.value]}
 )
+@with_tool_error_handling
 def generate_settlement_certificate(input: GenerateSettlementCertificateInput) -> dict:
     payoff_date = input.payoff_date or datetime.now().strftime("%Y-%m-%d")
     loan_type_str = input.loan_type + " " if input.loan_type else ""

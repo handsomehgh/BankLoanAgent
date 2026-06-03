@@ -6,10 +6,13 @@ from typing import Optional, Annotated
 from pydantic import BaseModel, Field
 
 from config.models.bank_global_config import BankGlobalConfig
+from exceptions.exception import ToolExecutionException
 from modules.agent.constants import AgentName
 from modules.module_services.lpr_data_service import LPRDataService
 from langchain_core.tools import tool, InjectedToolArg
 
+from modules.tools.base_tool import ToolErrorType
+from modules.tools.error_handler import with_tool_error_handling
 from modules.tools.tool_constatnt import LoanProductType
 
 logger = logging.getLogger(__name__)
@@ -27,6 +30,7 @@ class QueryInterestRateInput(BaseModel):
     args_schema=QueryInterestRateInput,
     extras={"version": "1.0.0", "tags": [AgentName.LOAN_ADVISOR.value]}
 )
+@with_tool_error_handling
 def query_interest_rate(
     input: QueryInterestRateInput,
     lpr_service: Annotated[LPRDataService, InjectedToolArg],
@@ -36,7 +40,7 @@ def query_interest_rate(
     lpr_data = lpr_service.get_latest_lpr()
     if not lpr_data or "lpr_1y" not in lpr_data or "lpr_5y" not in lpr_data:
         logger.error("LPR数据不可用")
-        return {"error": "利率数据暂时不可用，请稍后再试"}
+        raise ToolExecutionException(f"LPR服务暂不可用",ToolErrorType.TEMPORARY_ERROR)
 
     lpr = lpr_data["lpr_5y"] if input.term_years > 5 else lpr_data["lpr_1y"]
 

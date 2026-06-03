@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from config.models.bank_global_config import BankGlobalConfig
 from modules.agent.constants import AgentName
 from modules.module_services.lpr_data_service import LPRDataService
+from modules.tools.error_handler import with_tool_error_handling
 from modules.tools.tool_constatnt import RepaymentMethod
 
 
@@ -28,6 +29,7 @@ class CalculateExtensionPlanInput(BaseModel):
     args_schema=CalculateExtensionPlanInput,
     extras={"version": "1.0.0", "tags": [AgentName.AFTER_LOAN.value]}
 )
+@with_tool_error_handling
 def calculate_extension_plan(
     input: CalculateExtensionPlanInput,
     bank_global_config: Annotated[BankGlobalConfig, InjectedToolArg],

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from config.models.bank_global_config import BankGlobalConfig
 from modules.agent.constants import AgentName
+from modules.tools.error_handler import with_tool_error_handling
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class EstimateCreditScoreInput(BaseModel):
     args_schema=EstimateCreditScoreInput,
     extras={"version": "1.0.0", "tags": [AgentName.RISK_ASSESSMENT.value]}
 )
+@with_tool_error_handling
 def estimate_credit_score(
     input: EstimateCreditScoreInput,
     bank_config: Annotated[BankGlobalConfig, InjectedToolArg],

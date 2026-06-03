@@ -12,7 +12,10 @@ from langchain_core.tools import tool, InjectedToolArg
 from pydantic import BaseModel, Field
 
 from config.models.bank_global_config import BankGlobalConfig
+from exceptions.exception import ToolExecutionException
 from modules.agent.constants import AgentName
+from modules.tools.base_tool import ToolErrorType
+from modules.tools.error_handler import with_tool_error_handling
 from modules.tools.tool_constatnt import LoanProductType
 
 logger = logging.getLogger(__name__)
@@ -20,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 class CalculateDTIInput(BaseModel):
     monthly_income: float = Field(..., gt=0, description="月收入(元)")
-    monthly_debts: List[float] = Field(default_factory=list,
+    monthly_debts: List[float] = Field(default_factory=list,ge=0,
                                        description="各项月债务（元），如车贷、信用卡最低还款、其他贷款月供等")
     loan_type: Optional[LoanProductType] = Field(default=LoanProductType.CONSUMER_LOAN, description="贷款类型：住房贷款、消费贷款、经营贷款")
 
@@ -33,11 +36,10 @@ class CalculateDTIInput(BaseModel):
                 "status（评估状态），message（说明），threshold_used（适用标准）",
     extras={"version": "1.0.0", "tags": [AgentName.RISK_ASSESSMENT.value]}
 )
+@with_tool_error_handling
 def calculate_dti(input: CalculateDTIInput, bank_global_config: Annotated[BankGlobalConfig, InjectedToolArg]) -> dict:
     # parameter validate
     total_debt = sum(input.monthly_debts)
-    if total_debt < 0:
-        return {"error": "月债务不能为负"}
 
     # calculate dit
     dti = total_debt / input.monthly_income
@@ -49,9 +51,6 @@ def calculate_dti(input: CalculateDTIInput, bank_global_config: Annotated[BankGl
             product_dti = dti
             break
     thresholds = product_dti
-
-    if thresholds is None:
-        return {"error": f"未找到产品负债比配置{loan_type}"}
 
     safe = thresholds.safe
     warn = thresholds.warn

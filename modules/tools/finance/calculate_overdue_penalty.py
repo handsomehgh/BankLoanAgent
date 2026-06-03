@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from config.models.bank_global_config import BankGlobalConfig
 from modules.agent.constants import AgentName
 from modules.module_services.lpr_data_service import LPRDataService
+from modules.tools.error_handler import with_tool_error_handling
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class CalculateOverduePenaltyInput(BaseModel):
     args_schema=CalculateOverduePenaltyInput,
     extras={"version": "1.0.0", "tags": [AgentName.AFTER_LOAN.value]}
 )
+@with_tool_error_handling
 def calculate_overdue_penalty(
     input: CalculateOverduePenaltyInput,
     bank_config: Annotated[BankGlobalConfig, InjectedToolArg],

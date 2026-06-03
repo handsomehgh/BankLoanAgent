@@ -13,6 +13,7 @@ from config.global_constant.constants import KnowledgeFileSourceType
 from modules.agent.constants import AgentName
 from modules.retrieval.knowledge_utils.knowledge_formatter import format_context
 from modules.retrieval.retrieval_service import RetrievalService
+from modules.tools.error_handler import with_tool_error_handling
 from utils.query_utils.milvus_query_builder import MilvusQueryBuilder
 from utils.query_utils.query_model import Condition, Query
 
@@ -42,35 +43,32 @@ class GeneralSearchKnowledgeInput(BaseModel):
             "tags": [AgentName.AFTER_LOAN.value, AgentName.LOAN_ADVISOR.value, AgentName.RISK_ASSESSMENT.value],
             "baseline": True}
 )
+@with_tool_error_handling
 def general_search_knowledge(input: GeneralSearchKnowledgeInput,
                              retriever: Annotated[RetrievalService, InjectedToolArg]) -> dict:
-    try:
-        parts = []
-        if input.source_type:
-            source_values = [source.value for source in input.source_type]
-            parts.append(Condition(field="source_type", value=source_values, op="in"))
-        if input.product_type:
-            parts.append(Condition(field="product_type", value=input.product_type, op="=="))
-        filter_expr = MilvusQueryBuilder().build(Query(conditions=parts, logic="AND"))
+    parts = []
+    if input.source_type:
+        source_values = [source.value for source in input.source_type]
+        parts.append(Condition(field="source_type", value=source_values, op="in"))
+    if input.product_type:
+        parts.append(Condition(field="product_type", value=input.product_type, op="=="))
+    filter_expr = MilvusQueryBuilder().build(Query(conditions=parts, logic="AND"))
 
-        # execute retrieve
-        docs = retriever.retrieve(query=input.query, context=None, filter_expr=filter_expr)
+    # execute retrieve
+    docs = retriever.retrieve(query=input.query, context=None, filter_expr=filter_expr)
 
-        if not docs:
-            logger.info("SearchKnowledge 未找到结果: query='%s', filter=%s", input.query, filter_expr)
-            return {
-                "query": input.query,
-                "documents": "",
-                "total_found": 0,
-                "message": "未找到相关知识，请尝试更换关键词或放宽过滤条件。"
-            }
-
-        knowledge_text = format_context(docs, max_context_length=3000)
+    if not docs:
+        logger.info("SearchKnowledge 未找到结果: query='%s', filter=%s", input.query, filter_expr)
         return {
             "query": input.query,
-            "documents": knowledge_text,
-            "total_found": len(docs)
+            "documents": "",
+            "total_found": 0,
+            "message": "未找到相关知识，请尝试更换关键词或放宽过滤条件。"
         }
-    except Exception as e:
-        logger.error("SearchKnowledge 检索失败: %s", e, exc_info=True)
-        return {"error": f"知识检索服务暂时不可用，请稍后重试。错误: {e}"}
+
+    knowledge_text = format_context(docs, max_context_length=3000)
+    return {
+        "query": input.query,
+        "documents": knowledge_text,
+        "total_found": len(docs)
+    }

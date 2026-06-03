@@ -8,8 +8,11 @@ from typing import Dict, Annotated, Optional
 from langchain_core.tools import tool, InjectedToolArg
 from pydantic import BaseModel, Field, field_validator
 
+from exceptions.exception import ToolExecutionException
 from modules.agent.constants import AgentName
 from modules.module_services.lpr_data_service import LPRDataService
+from modules.tools.base_tool import ToolErrorType
+from modules.tools.error_handler import with_tool_error_handling
 from modules.tools.tool_constatnt import RepaymentMethod
 
 
@@ -138,6 +141,7 @@ class CalculateMonthlyPaymentInput(BaseModel):
                 "last_monthly_payment（末月月供）, schedule（前3期和末3期详情）。所有金额单位为元，四舍五入到分。",
     args_schema=CalculateMonthlyPaymentInput,
     extras={"version": "1.0.0", "tags": [AgentName.LOAN_ADVISOR.value, AgentName.AFTER_LOAN.value]})
+@with_tool_error_handling
 def calculate_monthly_payment(input: CalculateMonthlyPaymentInput,lpr_service: Annotated[LPRDataService,InjectedToolArg]) -> dict:
     """计算等额本息或等额本金的月供和总利息。
 
@@ -152,14 +156,9 @@ def calculate_monthly_payment(input: CalculateMonthlyPaymentInput,lpr_service: A
         lpr_data = lpr_service.get_latest_lpr()
         input.annual_rate = lpr_data["lpr_5y"]
 
-    if input.term_years <= 0:
-        return {"error": "贷款期限必须大于0"}
-    if input.annual_rate < 0:
-        return {"error": "年利率不能为负"}
-
     calculator = CALCULATOR_REGISTRY.get(input.method)
     if calculator is None:
-        return {"error": f"不支持的还款方式: {input.method.value}"}
+        raise ToolExecutionException(f"不支持的还款方式",ToolErrorType.PARAMETER_ERROR)
     result = calculator.calculate(
         principal=input.principal,
         annual_rate=input.annual_rate,

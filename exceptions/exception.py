@@ -3,6 +3,7 @@
 """
 unified exception definition
 """
+from modules.tools.base_tool import ToolErrorType
 
 
 class BankLoanException(Exception):
@@ -88,3 +89,8 @@ class ToolExecutionError(BankLoanException):
 
 class CircuitBreakerOpenError(BankLoanException):
     pass
+
+class ToolExecutionException(BankLoanException):
+    def __init__(self, message: str, error_type: ToolErrorType = ToolErrorType.EXTERNAL_ERROR):
+        super().__init__(message)
+        self.error_type = error_type

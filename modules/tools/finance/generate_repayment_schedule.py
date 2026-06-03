@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from modules.agent.constants import AgentName
 from modules.module_services.lpr_data_service import LPRDataService
+from modules.tools.error_handler import with_tool_error_handling
 from modules.tools.tool_constatnt import RepaymentMethod
 
 
@@ -27,6 +28,7 @@ class GenerateRepaymentScheduleInput(BaseModel):
     args_schema=GenerateRepaymentScheduleInput,
     extras={"version": "1.0.0","tags": [AgentName.AFTER_LOAN.value,AgentName.LOAN_ADVISOR.value]}
 )
+@with_tool_error_handling
 def generate_repayment_schedule(input: GenerateRepaymentScheduleInput,lpr_service: Annotated[LPRDataService,InjectedToolArg]) -> dict:
     if input.annual_rate is None:
         lpr_data = lpr_service.get_latest_lpr()

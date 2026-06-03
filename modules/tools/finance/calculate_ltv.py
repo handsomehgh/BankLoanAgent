@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from config.models.bank_global_config import BankGlobalConfig, LtvRule
 from modules.agent.constants import AgentName
+from modules.tools.error_handler import with_tool_error_handling
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class CalculateLtvInput(BaseModel):
     args_schema=CalculateLtvInput,
     extras={"version": "1.0.0", "tags": [AgentName.RISK_ASSESSMENT.value]}
 )
+@with_tool_error_handling
 def calculate_ltv(
     input: CalculateLtvInput,
     bank_config: Annotated[BankGlobalConfig, InjectedToolArg],

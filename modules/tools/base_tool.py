@@ -8,6 +8,7 @@ import json
 import logging
 import sys
 import time
+from enum import Enum
 from typing import Any, Optional, Dict
 
 from packaging.version import Version
@@ -15,9 +16,18 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import BaseTool as LangChainBaseTool
 
 from config.models.tool_config import ToolRegistryConfig
+from exceptions.exception import ToolExecutionException
 from utils.monitor_utils.metrics import tool_call_total, tool_duration_seconds
 
 logger = logging.getLogger(__name__)
+
+
+class ToolErrorType(str, Enum):
+    PARAMETER_ERROR = "parameter_error"  # 用户输入问题：金额为负、期限为0等
+    BUSINESS_ERROR = "business_error"  # 配置/数据/业务逻辑问题：政策缺失、规则未定义
+    TEMPORARY_ERROR = "temporary_error"  # 临时性故障：超时、网络断开、服务暂时不可用
+    EXTERNAL_ERROR = "external_error"  # 其他未知异常：兜底类型
+    CIRCUIT_OPEN = "circuit_open"
 
 
 class ToolResult(BaseModel):
@@ -25,6 +35,7 @@ class ToolResult(BaseModel):
     data: Any = Field(None, description="raw data returned by the tool")
     summary: str = Field("", description="result summary (for audit logs and display)")
     error: Optional[str] = Field(None, description="error message")
+    error_type: ToolErrorType = ToolErrorType.EXTERNAL_ERROR
 
     def to_message_content(self) -> str:
         if not self.success:
@@ -73,7 +84,7 @@ class ToolRegistry:
         for _, module_name, _ in pkgutil.walk_packages(
                 [str(current_dir)], prefix="tools."
         ):
-            if module_name in ("tools.base_tool","tools.common_utils"):
+            if module_name in ("tools.base_tool", "tools.common_utils"):
                 continue
             try:
                 module = importlib.import_module(module_name)
@@ -143,55 +154,74 @@ class ToolExecutor:
             msg = f"Tool {tool_name} is unavailable or insufficient permissions"
             logger.warning(msg)
             self._audit(trace_id, tool_name, None, caller_agent, args, success=False, error=msg)
-            return ToolResult(success=False, error=msg)
+            return ToolResult(success=False, error=msg, error_type=ToolErrorType.BUSINESS_ERROR)
 
         extras = getattr(tool, 'extras', {}) or {}
         tool_version = extras.get("version", "0.0.0")
 
-        #2. parameter validation
+        # 2. parameter validation
         try:
             validated = tool.args_schema(**args) if tool.args_schema else args
         except Exception as e:
-            return ToolResult(success=False, error=f"参数验证失败: {e}")
+            logger.warning(f"工具 {tool_name} 参数校验失败: {e}")
+            return ToolResult(
+                success=False,
+                error=f"参数校验失败: {e}",
+                error_type=ToolErrorType.PARAMETER_ERROR
+            )
 
         # 3. parse injection parameters
         injected = getattr(tool, '_injected_kwargs', {})
+        max_retries = 2
+        retry_delay = 0.5
+        last_result = None
 
-        # 3. audit log（before execute）
-        self._audit(trace_id, tool_name, tool_version, caller_agent, args, success=True, pre_call=True)
-
-        # 5. execute tool
+        # 4. execute tool
         start = time.monotonic()
-        logger.info(f"Start calling tool: {tool_name},args:{validated}")
-        try:
-            result = tool.func(validated, **injected)
-            # standard result
-            if isinstance(result, str):
-                final_data = result
-            elif isinstance(result, dict):
-                final_data = result
-            else:
-                final_data = str(result)
-            success = True
-        except Exception as e:
-            logger.error("Failed execute tool: %s", e, exc_info=True)
-            success = False
-            result = str(e)
+        for attempt in range(max_retries):
+            logger.info(f"Start calling tool: {tool_name},args:{validated}")
+            try:
+                result = tool.func(validated, **injected)
+                # standard result
+                if isinstance(result, str):
+                    final_data = result
+                elif isinstance(result, dict):
+                    final_data = result
+                else:
+                    final_data = str(result)
+                duration = time.monotonic() - start
+                self._record_metrics(tool_name, caller_agent, success=True, duration=duration)
+                return ToolResult(
+                    success=True,
+                    data=final_data,
+                    summary=self._build_summary(tool_name, result)
+                )
+            except ToolExecutionException as e:
+                last_result = ToolResult(success=False, error=str(e), error_type=e.error_type)
+                if e.error_type != ToolErrorType.TEMPORARY_ERROR:
+                    break
+                logger.warning(f"工具 {tool_name} 临时性故障 (尝试 {attempt + 1}/{max_retries + 1}): {e}")
+            except Exception as e:
+                logger.exception(f"工具 {tool_name} 未捕获异常")
+                last_result = ToolResult(success=False, error=str(e), error_type=ToolErrorType.EXTERNAL_ERROR)
+                break
 
-        # 6. monitor metrics record
+            if attempt < max_retries:
+                time.sleep(retry_delay * (2 ** attempt))
+
+        # 5. monitor metrics record
         duration = time.monotonic() - start
-        tool_call_total.labels(
-            tool_name=tool_name,
-            status="success" if success else "error",
-            caller_agent=caller_agent
-        ).inc()
-        tool_duration_seconds.labels(caller_agent=caller_agent, tool_name=tool_name).observe(duration)
+        self._record_metrics(tool_name, caller_agent, success=False, duration=duration)
+        return last_result if last_result else ToolResult(
+            success=False,
+            error="未知错误",
+            error_type=ToolErrorType.EXTERNAL_ERROR
+        )
 
-        # 7. return result
-        if success:
-            return ToolResult(success=True, data=result, summary=self._build_summary(tool_name, final_data))
-        else:
-            return ToolResult(success=False, error=result)
+    def _record_metrics(self, tool_name, caller_agent, success, duration):
+        status = "success" if success else "error"
+        tool_call_total.labels(tool_name=tool_name, status=status, caller_agent=caller_agent).inc()
+        tool_duration_seconds.labels(caller_agent=caller_agent, tool_name=tool_name).observe(duration)
 
     def _audit(self, trace_id, tool_name, tool_version, caller_agent, args, success,
                error=None, result=None, pre_call=False):

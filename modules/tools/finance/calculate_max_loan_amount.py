@@ -10,8 +10,11 @@ from typing import Optional, Annotated
 from langchain_core.tools import tool, InjectedToolArg
 from pydantic import BaseModel, Field
 
+from exceptions.exception import ToolExecutionException
 from modules.agent.constants import AgentName
 from modules.module_services.lpr_data_service import LPRDataService
+from modules.tools.base_tool import ToolErrorType
+from modules.tools.error_handler import with_tool_error_handling
 from modules.tools.tool_constatnt import RepaymentMethod
 
 logger = logging.getLogger(__name__)
@@ -32,6 +35,7 @@ class CalculateMaxLoanAmountInput(BaseModel):
     args_schema=CalculateMaxLoanAmountInput,
     extras={"version": "1.0.0", "tags": [AgentName.LOAN_ADVISOR.value]}
 )
+@with_tool_error_handling
 def calculate_max_loan_amount(input: CalculateMaxLoanAmountInput,lpr_service: Annotated[LPRDataService,InjectedToolArg]) -> dict:
     if input.annual_rate is None:
         lpr_data = lpr_service.get_latest_lpr()
@@ -62,7 +66,7 @@ def calculate_max_loan_amount(input: CalculateMaxLoanAmountInput,lpr_service: An
         # max_monthly_payment = P/n + P×r → P = max_monthly_payment / (1/n + r)
         max_amount = max_monthly_payment / (1 / months + monthly_rate)
     else:
-        return {"error": f"不支持的还款方式: {input.method.value}"}
+        raise ToolExecutionException(f"不支持的还款方式",ToolErrorType.PARAMETER_ERROR)
 
     return {
         "max_amount": round(max_amount, 2),

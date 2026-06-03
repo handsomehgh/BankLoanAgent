@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from config.models.bank_global_config import BankGlobalConfig
 from modules.agent.constants import AgentName
+from modules.tools.error_handler import with_tool_error_handling
 
 
 class CheckExtensionEligibilityInput(BaseModel):
@@ -25,6 +26,7 @@ class CheckExtensionEligibilityInput(BaseModel):
     args_schema=CheckExtensionEligibilityInput,
     extras={"version": "1.0.0", "tags": [AgentName.AFTER_LOAN.value]}
 )
+@with_tool_error_handling
 def check_extension_eligibility(
     input: CheckExtensionEligibilityInput,
     bank_global_config: Annotated[BankGlobalConfig, InjectedToolArg],

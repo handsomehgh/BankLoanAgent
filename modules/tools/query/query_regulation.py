@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from modules.agent.constants import AgentName
 from modules.retrieval.retrieval_service import RetrievalService
+from modules.tools.error_handler import with_tool_error_handling
 
 logger = logging.getLogger(__name__)
 
@@ -25,22 +26,19 @@ class QueryRegulationInput(BaseModel):
     args_schema=QueryRegulationInput,
     extras={"version": "1.0.0", "tags": [AgentName.RISK_ASSESSMENT.value]}
 )
+@with_tool_error_handling
 def query_regulation(
     input: QueryRegulationInput,
     knowledge_retriever: Annotated[RetrievalService, InjectedToolArg],
 ) -> dict:
     # 1. execute retrieval
-    try:
-        docs = knowledge_retriever.retrieve(input.keyword)
-        if not docs:
-            return {
-                "keyword": input.keyword,
-                "regulations": [],
-                "message": "未找到相关法规"
-            }
-    except Exception as e:
-        logger.error(f"法规检索失败: {e}")
-        return {"error": f"法规检索服务暂时不可用: {e}"}
+    docs = knowledge_retriever.retrieve(input.keyword)
+    if not docs:
+        return {
+            "keyword": input.keyword,
+            "regulations": [],
+            "message": "未找到相关法规"
+        }
 
     # 2. format result
     regulations = []

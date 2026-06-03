@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from config.models.bank_global_config import BankGlobalConfig
 from modules.agent.constants import AgentName
+from modules.tools.error_handler import with_tool_error_handling
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class CalculateDscrInput(BaseModel):
     args_schema=CalculateDscrInput,
     extras={"version": "1.0.0", "tags": [AgentName.RISK_ASSESSMENT.value]}
 )
+@with_tool_error_handling
 def calculate_dscr(
     input: CalculateDscrInput,
     bank_config: Annotated[BankGlobalConfig, InjectedToolArg],

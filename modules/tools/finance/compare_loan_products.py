@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 from config.models.bank_global_config import BankGlobalConfig
 from modules.agent.constants import AgentName
 from modules.module_services.lpr_data_service import LPRDataService
+from modules.tools.error_handler import with_tool_error_handling
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class CompareLoanProductsInput(BaseModel):
     args_schema=CompareLoanProductsInput,
     extras={"version": "1.0.0", "tags": [AgentName.LOAN_ADVISOR.value]}
 )
+@with_tool_error_handling
 def compare_loan_products(
     input: CompareLoanProductsInput,
     bank_config: Annotated[BankGlobalConfig, InjectedToolArg],
@@ -125,8 +127,6 @@ def _calc_monthly_payment(principal: float, annual_rate: float, term_years: int,
             total_interest += interest
             remaining -= monthly_principal
         monthly_payment = monthly_principal + principal * monthly_rate
-    else:
-        raise ValueError(f"不支持的还款方式: {method}")
     return monthly_payment, total_interest
 
 

@@ -50,7 +50,7 @@ class DynamicStrategySelector:
 
         # ---------- 3. MULTI_QUERY：需要多角度表达的场景 ----------
         # 短查询或意图明确的精确查询，用多查询扩展来提升召回
-        if len(query) <= 10:
+        if len(query) <= 8:
             return RewritingStrategy.MULTI_QUERY
 
         # ---------- 4. 默认：不改写 ----------

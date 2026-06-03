@@ -51,6 +51,7 @@ class AgentConfig(BaseModel):
     res_prompt: str
     direct_prompt: str
     clarify_prompt: str
+    param_error_prompt: str
 
     use_bert_classifier: bool
 

@@ -10,8 +10,11 @@ from langchain_core.tools import tool, InjectedToolArg
 from pydantic import BaseModel, Field, field_validator
 
 from config.models.bank_global_config import BankGlobalConfig
+from exceptions.exception import ToolExecutionException
 from modules.agent.constants import AgentName
 from modules.module_services.lpr_data_service import LPRDataService
+from modules.tools.base_tool import ToolErrorType
+from modules.tools.error_handler import with_tool_error_handling
 
 logger = logging.getLogger(__name__)
 
@@ -40,15 +43,17 @@ class CalculateRepaymentMethodSwitchInput(BaseModel):
     args_schema=CalculateRepaymentMethodSwitchInput,
     extras={"version": "1.0.0", "tags": [AgentName.AFTER_LOAN.value]}
 )
+@with_tool_error_handling
 def calculate_repayment_method_switch(
     input: CalculateRepaymentMethodSwitchInput,
     bank_config: Annotated[BankGlobalConfig, InjectedToolArg],
     lpr_service: Annotated[LPRDataService, InjectedToolArg]
 ) -> dict:
     if input.paid_months >= input.total_months:
-        return {"error": "已还期数不能大于等于总期数"}
+        raise ToolExecutionException(f"已还期数不能大于等于总期数", ToolErrorType.PARAMETER_ERROR)
+
     if input.current_method == input.target_method:
-        return {"error": "当前还款方式和目标还款方式相同，无需变更"}
+        raise ToolExecutionException(f"当前还款方式和目标还款方式相同，无需变更", ToolErrorType.PARAMETER_ERROR)
 
     if input.annual_rate is None:
         lpr_data = lpr_service.get_latest_lpr()

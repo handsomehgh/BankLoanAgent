@@ -8,13 +8,14 @@ from langchain_core.runnables import RunnableConfig
 from config.global_constant.constants import RegistryModules
 from config.prompts.system_prompt import SYSTEM_PROMPT
 from config.registry import ConfigRegistry
-from exceptions.exception import ToolExecutionError, LLMTimeoutError, LLMRateLimitError, CircuitBreakerOpenError
+from exceptions.exception import ToolExecutionError, CircuitBreakerOpenError, \
+    ToolExecutionException
 from infra.circuit_breaker import CircuitBreaker
 from modules.agent.constants import StateFields
 from modules.agent.multi_agent_state import AgentContext, AgentResponse
 from modules.module_services.chat_models import RobustLLM
 from modules.tools import ToolResult
-from modules.tools.base_tool import ToolExecutor
+from modules.tools.base_tool import ToolExecutor, ToolErrorType
 from modules.tools.common_utils import assign_message_index, get_agent_tools, get_tools_metadata, build_text_a_for_bert
 from modules.tools.tool_selector import ToolSelector
 from utils.monitor_utils.metrics import record_llm_metrics, agent_executor_errors_total, circuit_breaker_state, \
@@ -57,7 +58,7 @@ class AgentNodeExecutor:
 
         self._circuit_breakers: Dict[str, CircuitBreaker] = {}
 
-    def _get_cb(self,tool_name: str) -> CircuitBreaker:
+    def _get_cb(self, tool_name: str) -> CircuitBreaker:
         if tool_name not in self._circuit_breakers:
             if self.cb_config.enabled:
                 self._circuit_breakers[tool_name] = CircuitBreaker(
@@ -67,27 +68,7 @@ class AgentNodeExecutor:
                 )
         return self._circuit_breakers[tool_name]
 
-    def _get_fallback_messages(self,stage: str,error: Exception) -> str:
-        error_type = "default"
-        if isinstance(error, LLMTimeoutError):
-            error_type = "timeout"
-        elif isinstance(error, LLMRateLimitError):
-            error_type = "rate_limit"
-        elif isinstance(error, ToolExecutionError):
-            error_type = "tool_error"
-
-        stage_msgs = self.fallback_msgs.get(stage, {})
-        return stage_msgs.get(error_type, stage_msgs.get("default", "抱歉，服务暂时不可用。"))
-
-    def _get_tool_fallback(self,tool_name: str) -> ToolResult:
-        fallback = self.tool_fallbacks.get(tool_name, {})
-        return ToolResult(
-            success=False,
-            data=fallback.get("data", {}),
-            error=fallback.get("message", "该服务暂时不可用。"),
-        )
-
-    def _execute_tool_safe(self,tool_call: dict,trace_id: str) -> ToolResult:
+    def _execute_tool_safe(self, tool_call: dict, trace_id: str) -> ToolResult:
         tool_name = tool_call["name"]
         cb = self._get_cb(tool_name)
 
@@ -101,16 +82,22 @@ class AgentNodeExecutor:
 
         try:
             result = cb.call(do_execute)
-            circuit_breaker_state.labels(tool_name=tool_name).set(0)  # CLOSED
+            circuit_breaker_state.labels(tool_name=tool_name).set(0)
             return result
         except CircuitBreakerOpenError:
             circuit_breaker_state.labels(tool_name=tool_name).set(1)  # OPEN
             logger.warning(f"[{self.agent_name}] 断路器打开，工具 {tool_name} 降级")
-            return self._get_tool_fallback(tool_name)
+            return ToolResult(
+                success=False,
+                error=f"工具 {tool_name} 暂时不可用，请稍后重试",
+                error_type=ToolErrorType.CIRCUIT_OPEN
+            )
+        except ToolExecutionException as e:
+            logger.error(f"[{self.agent_name}] 工具 {tool_name} 执行异常: {e}")
+            return ToolResult(success=False, error=str(e), error_type=e.error_type)
         except Exception as e:
             logger.error(f"[{self.agent_name}] 工具 {tool_name} 执行异常: {e}")
-            return self._get_tool_fallback(tool_name)
-
+            return ToolResult(success=False, error=str(e), error_type=ToolErrorType.EXTERNAL_ERROR)
 
     def execute(self, state: Dict[str, Any], config: RunnableConfig) -> Dict[str, Any]:
         context: AgentContext = state.get(StateFields.AGENT_CONTEXT.value)
@@ -140,7 +127,7 @@ class AgentNodeExecutor:
                 text_a = build_text_a_for_bert(context)
                 text_b = user_query
                 tool_name = self.classifier.predict(text_a, text_b)
-                agent_select_tool_total.labels(tool_name=tool_name,agent_name=self.agent_name).inc()
+                agent_select_tool_total.labels(tool_name=tool_name, agent_name=self.agent_name).inc()
                 logger.info("[%s] BERT selected tool: %s", self.agent_name, tool_name)
             else:
                 # obtain tools metadata
@@ -274,6 +261,13 @@ class AgentNodeExecutor:
                         trace_id=trace_id,
                     )
 
+                if not tool_result.success:
+                    error_response = self._handle_tool_error(user_query, tool_call["name"], tool_result, user_id,
+                                                             session_id, context_vars, messages)
+                    messages = [m for m in messages if m != sec_response]
+                    if error_response:
+                        return self._final_response(error_response, messages, context)
+
                 tool_msg = ToolMessage(
                     content=tool_result.to_message_content(),
                     tool_call_id=tool_call["id"],
@@ -340,3 +334,30 @@ class AgentNodeExecutor:
             if extra:
                 result.update(extra)
         return result
+
+    def _handle_tool_error(self, user_query: str, tool_name: str, tool_result: ToolResult, user_id: str,
+                           session_id: str, context_vars: Dict[str, Any], all_messages: list) -> Optional[AIMessage]:
+        """根据工具错误类型生成差异化用户引导"""
+        error_type = tool_result.error_type
+        error_msg = tool_result.error or ""
+
+        if error_type == ToolErrorType.PARAMETER_ERROR:
+            agent_cfg = self.registry.get_config(self.agent_module)
+            param_error_role = agent_cfg.param_error_prompt.format(error_msg=error_msg)
+            system_prompt = SYSTEM_PROMPT.format(agent_role=param_error_role, **context_vars)
+            messages = [SystemMessage(content=system_prompt),
+                        HumanMessage(content=user_query)]
+            messages.extend(all_messages)
+
+            try:
+                response = self.llm_client.invoke(messages, tool_choice="none")
+                reply = AIMessage(content=response.content.strip())
+            except Exception:
+                reply = AIMessage(content=f"抱歉，参数似乎有误：{error_msg}，请您重新提供正确的信息。")
+            assign_message_index(reply, user_id, session_id, self.seq_generator)
+            return reply
+        else:
+            fallback = self.tool_fallbacks.get(tool_name, {}).get("message", "该服务暂时不可用。")
+            reply = AIMessage(content=fallback)
+            assign_message_index(reply, user_id, session_id, self.seq_generator)
+            return reply

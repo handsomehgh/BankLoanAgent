@@ -10,8 +10,11 @@ from langchain_core.tools import tool, InjectedToolArg
 from pydantic import BaseModel, Field
 
 from config.models.bank_global_config import BankGlobalConfig
+from exceptions.exception import ToolExecutionException
 from modules.agent.constants import AgentName
 from modules.module_services.lpr_data_service import LPRDataService
+from modules.tools.base_tool import ToolErrorType
+from modules.tools.error_handler import with_tool_error_handling
 from modules.tools.tool_constatnt import RepaymentMethod, PrepaymentMethod
 
 
@@ -36,6 +39,7 @@ class CalculatePrepaymentInput(BaseModel):
     args_schema=CalculatePrepaymentInput,
     extras={"version": "1.0.0", "tags": [AgentName.AFTER_LOAN.value]}
 )
+@with_tool_error_handling
 def calculate_prepayment(
         input: CalculatePrepaymentInput,
         bank_config: Annotated[BankGlobalConfig, InjectedToolArg],
@@ -44,10 +48,10 @@ def calculate_prepayment(
     """提前还款试算主函数"""
     # 1. 参数预处理
     if input.paid_months >= input.total_months:
-        return {"error": "已还期数不能大于等于总期数"}
+        raise ToolExecutionException(f"已还期数不能大于等于总期数",ToolErrorType.PARAMETER_ERROR)
 
     if input.prepay_amount > input.remaining_principal:
-        return {"error": "提前还款金额不能超过剩余本金"}
+        raise ToolExecutionException(f"提前还款金额不能超过剩余本金", ToolErrorType.PARAMETER_ERROR)
 
     if input.prepay_amount == 0:
         input.prepay_amount = input.remaining_principal
@@ -184,7 +188,7 @@ def _calc_shorten_term(
         # 原月供计算方式不同，缩短期限需保持每月本金不变？等额本金下缩短期限需调整月供还是保持月供不变？
         # 常见做法：等额本金缩短期限，仍保持每月偿还相同本金额，但期限变短导致每月本金增加。
         # 为简化，等额本金暂不支持缩短期限方案，可返回错误提示或降级为减少月供逻辑。
-        return {"error": "等额本金暂不支持缩短期限试算，请使用减少月供方案或咨询客户经理"}
+        raise ToolExecutionException(f"等额本金暂不支持缩短期限试算，请使用减少月供方案或咨询客户经理",ToolErrorType.PARAMETER_ERROR)
 
 
 def _calc_reduce_payment(

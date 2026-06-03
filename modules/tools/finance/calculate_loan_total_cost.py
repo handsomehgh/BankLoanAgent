@@ -10,8 +10,11 @@ from langchain_core.tools import tool, InjectedToolArg
 from pydantic import Field, BaseModel
 
 from config.models.bank_global_config import FeeItem, BankGlobalConfig
+from exceptions.exception import ToolExecutionException
 from modules.agent.constants import AgentName
 from modules.module_services.lpr_data_service import LPRDataService
+from modules.tools.base_tool import ToolErrorType
+from modules.tools.error_handler import with_tool_error_handling
 from modules.tools.tool_constatnt import LoanProductType, CollateralType, FeeBaseType
 
 
@@ -33,6 +36,7 @@ class CalculateLoanTotalCostInput(BaseModel):
     args_schema=CalculateLoanTotalCostInput,
     extras={"version": "1.0.0", "tags": [AgentName.LOAN_ADVISOR.value]}
 )
+@with_tool_error_handling
 def calculate_loan_total_cost(
         input: CalculateLoanTotalCostInput,
         bank_config: Annotated[BankGlobalConfig, InjectedToolArg],
@@ -101,9 +105,9 @@ def _calc_monthly_payment(principal: float, annual_rate: float, term_years: int,
             interest = remaining * monthly_rate
             total_interest += interest
             remaining -= monthly_principal
-        monthly_payment = monthly_principal + principal * monthly_rate  # 首月
+        monthly_payment = monthly_principal + principal * monthly_rate
     else:
-        raise ValueError(f"不支持的还款方式: {method}")
+        raise ToolExecutionException(f"不支持的还款方式: {method}",ToolErrorType.PARAMETER_ERROR)
 
     return monthly_payment, total_interest
 
