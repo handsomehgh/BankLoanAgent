@@ -5,6 +5,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from exceptions.exception import ToolErrorType
+
 
 class PrepaymentMethod(str, Enum):
     """Early Repayment method"""
@@ -44,14 +46,6 @@ class ConditionType(str, Enum):
     NOT_IN = "not_in"
     CONTAINS = "contains"
     NOT_CONTAINS = "not_contains"
-
-class ToolErrorType(str, Enum):
-    PARAMETER_ERROR = "parameter_error"  # 用户输入问题：金额为负、期限为0等
-    BUSINESS_ERROR = "business_error"  # 配置/数据/业务逻辑问题：政策缺失、规则未定义
-    TEMPORARY_ERROR = "temporary_error"  # 临时性故障：超时、网络断开、服务暂时不可用
-    EXTERNAL_ERROR = "external_error"  # 其他未知异常：兜底类型
-    CIRCUIT_OPEN = "circuit_open"
-
 
 class ToolResult(BaseModel):
     success: bool = Field(..., description="whether success or not")

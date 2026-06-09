@@ -3,7 +3,15 @@
 """
 unified exception definition
 """
-from modules.tools.tool_constatnt import ToolErrorType
+from enum import Enum
+
+
+class ToolErrorType(str, Enum):
+    PARAMETER_ERROR = "parameter_error"  # 用户输入问题：金额为负、期限为0等
+    BUSINESS_ERROR = "business_error"  # 配置/数据/业务逻辑问题：政策缺失、规则未定义
+    TEMPORARY_ERROR = "temporary_error"  # 临时性故障：超时、网络断开、服务暂时不可用
+    EXTERNAL_ERROR = "external_error"  # 其他未知异常：兜底类型
+    CIRCUIT_OPEN = "circuit_open"
 
 
 class BankLoanException(Exception):
