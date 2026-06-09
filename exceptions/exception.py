@@ -3,7 +3,7 @@
 """
 unified exception definition
 """
-from modules.tools.base_tool import ToolErrorType
+from modules.tools.tool_constatnt import ToolErrorType
 
 
 class BankLoanException(Exception):
