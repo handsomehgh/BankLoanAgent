@@ -211,13 +211,13 @@ def _create_retrieval_router(registry):
     return RuleBaseRetrievalRouter(config=cfg.retrieval_routing.rule_based)
 
 def _create_loan_advisor_classifier():
-    return LoanAdvisorClassifier(model_path = str(PROJECT_ROOT / "models" / "loan_advisor_classifier_model"))
+    return LoanAdvisorClassifier()
 
 def _create_after_loan_classifier():
-    return AfterLoanClassifier(model_path = str(PROJECT_ROOT / "models" / "after_loan_classifier_model"))
+    return AfterLoanClassifier()
 
 def _create_risk_assessment_classifier():
-    return RiskAssessmentClassifier(model_path= str(PROJECT_ROOT / "models" / "risk_assessment_classifier_model"))
+    return RiskAssessmentClassifier()
 
 def _create_knowledge_retriever(knowledge_engine, query_rewriter, query_filter, reranker, compressor, retrieval_router,
                                 registry):
