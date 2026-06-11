@@ -24,7 +24,18 @@ class GraphConfig(BaseModel):
     max_connection_lifetime: int = 3600
     max_retry_attempts: int = 3
 
+class MySQLConfig(BaseModel):
+    host: str = "localhost"
+    port: int = 3306
+    user: str = "root"
+    password: str = ""
+    database: str = "bank_agent"
+    charset: str = "utf8mb4"
+    pool_size: int = 10
+    pool_recycle: int = 3600
+    echo: bool = False
 
 class DataSourceConfig(BaseModel):
     redis: RedisConfig = Field(default_factory=RedisConfig)
     neo4j: GraphConfig = Field(default_factory=GraphConfig)
+    mysql: MySQLConfig = Field(default_factory=MySQLConfig)

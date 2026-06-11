@@ -17,6 +17,7 @@ from modules.module_services.chat_models import RobustLLM
 from modules.tools import ToolResult
 from modules.tools.base_tool import ToolExecutor, ToolErrorType
 from modules.tools.common_utils import assign_message_index, get_agent_tools, get_tools_metadata, build_text_a_for_bert
+from modules.tools.response_handler.upsert_response_handler import UpsertLoanInterestHandler
 from modules.tools.tool_selector import ToolSelector
 from utils.monitor_utils.metrics import record_llm_metrics, agent_executor_errors_total, circuit_breaker_state, \
     agent_select_tool_total
@@ -55,6 +56,9 @@ class AgentNodeExecutor:
         self.cb_config = registry.get_config(RegistryModules.AGENT_EXECUTOR.value).circuit_breaker
         self.fallback_msgs = registry.get_config(RegistryModules.AGENT_EXECUTOR.value).fallback_messages
         self.tool_fallbacks = registry.get_config(RegistryModules.AGENT_EXECUTOR.value).tool_fallbacks
+        self.response_handlers_config = registry.get_config(
+            RegistryModules.AGENT_EXECUTOR.value
+        ).response_handlers
 
         self._circuit_breakers: Dict[str, CircuitBreaker] = {}
 
@@ -68,7 +72,7 @@ class AgentNodeExecutor:
                 )
         return self._circuit_breakers[tool_name]
 
-    def _execute_tool_safe(self, tool_call: dict, trace_id: str) -> ToolResult:
+    def _execute_tool_safe(self, tool_call: dict, trace_id: str, context: AgentContext) -> ToolResult:
         tool_name = tool_call["name"]
         cb = self._get_cb(tool_name)
 
@@ -78,6 +82,9 @@ class AgentNodeExecutor:
                 args=tool_call["args"],
                 caller_agent=self.agent_name,
                 trace_id=trace_id,
+                user_id=context.user_id,
+                conversation_summary=context.conversation_summary,
+                profile_summary=context.user_profile_summary,
             )
 
         try:
@@ -252,13 +259,16 @@ class AgentNodeExecutor:
             messages.append(sec_response)
             for tool_call in sec_response.tool_calls:
                 if self.cb_config.enabled:
-                    tool_result = self._execute_tool_safe(tool_call, trace_id)
+                    tool_result = self._execute_tool_safe(tool_call, trace_id, context)
                 else:
                     tool_result = self.tool_executor.execute(
                         tool_name=tool_call["name"],
                         args=tool_call["args"],
                         caller_agent=self.agent_name,
                         trace_id=trace_id,
+                        user_id=context.user_id,
+                        conversation_summary=context.conversation_summary,
+                        profile_summary=context.user_profile_summary,
                     )
 
                 if not tool_result.success:
@@ -267,6 +277,11 @@ class AgentNodeExecutor:
                     messages = [m for m in messages if m != sec_response]
                     if error_response:
                         return self._final_response(error_response, messages, context)
+
+                if tool_result.success:
+                    suggested_reply = self._handle_tool_result(tool_call['name'], tool_result)
+                    if suggested_reply:
+                        tool_result.data['suggested_reply'] = suggested_reply
 
                 tool_msg = ToolMessage(
                     content=tool_result.to_message_content(),
@@ -361,3 +376,15 @@ class AgentNodeExecutor:
             reply = AIMessage(content=fallback)
             assign_message_index(reply, user_id, session_id, self.seq_generator)
             return reply
+
+    def _handle_tool_result(self, tool_name: str, tool_result: ToolResult) -> Optional[str]:
+        """工具执行成功后，如果配置了响应处理器，生成建议回复"""
+        handler_config = self.response_handlers_config.get(tool_name)
+        if not handler_config:
+            return None  # 无配置，LLM 自行处理
+
+        if tool_name == 'upsert_loan_interest':
+            handler = UpsertLoanInterestHandler(tool_result.data, handler_config)
+            return handler.generate()
+
+        return None

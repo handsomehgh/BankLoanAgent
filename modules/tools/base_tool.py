@@ -111,9 +111,10 @@ class ToolExecutor:
     Process: Permission check → Parameter validation → Audit log (before and after) → Execution → Exception handling
     """
 
-    def __init__(self, registry: ToolRegistry, audit_logger=None):
+    def __init__(self, registry: ToolRegistry, audit_logger=None,session_factory=None):
         self.registry = registry
         self.audit_logger = audit_logger
+        self.session_factory = session_factory
 
     def execute(
             self,
@@ -121,7 +122,8 @@ class ToolExecutor:
             args: Dict[str, Any],
             caller_agent: str,
             trace_id: str,
-            version_range: str = ">=1.0.0"
+            version_range: str = ">=1.0.0",
+            **runtime_context
     ) -> ToolResult:
         # 1. permission validate + obtain tool
         tool = self.registry.get_tool(tool_name, version_range, caller_agent)
@@ -146,52 +148,71 @@ class ToolExecutor:
             )
 
         # 3. parse injection parameters
-        injected = getattr(tool, '_injected_kwargs', {})
+        injected = getattr(tool, '_injected_kwargs', {}).copy()
+
+        for param_name in getattr(tool, '_injected_params', []):
+            if param_name == 'trace_id':
+                injected[param_name] = trace_id
+            elif param_name in runtime_context:
+                injected[param_name] = runtime_context[param_name]
+
+        session = None
+        if self.session_factory and 'db_session' in getattr(tool, '_injected_params', []):
+            session = self.session_factory()
+            injected['db_session'] = session
+
         max_retries = 2
         retry_delay = 0.5
         last_result = None
-
         # 4. execute tool
-        start = time.monotonic()
-        for attempt in range(max_retries):
-            logger.info(f"Start calling tool: {tool_name},args:{validated}")
-            try:
-                result = tool.func(validated, **injected)
-                # standard result
-                if isinstance(result, str):
-                    final_data = result
-                elif isinstance(result, dict):
-                    final_data = result
-                else:
-                    final_data = str(result)
-                duration = time.monotonic() - start
-                self._record_metrics(tool_name, caller_agent, success=True, duration=duration)
-                return ToolResult(
-                    success=True,
-                    data=final_data,
-                    summary=self._build_summary(tool_name, result)
-                )
-            except ToolExecutionException as e:
-                last_result = ToolResult(success=False, error=str(e), error_type=e.error_type)
-                if e.error_type != ToolErrorType.TEMPORARY_ERROR:
+        try:
+            # 4. execute tool
+            start = time.monotonic()
+            for attempt in range(max_retries + 1):
+                logger.info(f"Start calling tool: {tool_name}, args: {validated}")
+                try:
+                    result = tool.func(validated, **injected)
+                    if isinstance(result, str):
+                        final_data = result
+                    elif isinstance(result, dict):
+                        final_data = result
+                    else:
+                        final_data = str(result)
+                    duration = time.monotonic() - start
+                    self._record_metrics(tool_name, caller_agent, success=True, duration=duration)
+                    return ToolResult(
+                        success=True,
+                        data=final_data,
+                        summary=self._build_summary(tool_name, final_data)
+                    )
+                except ToolExecutionException as e:
+                    last_result = ToolResult(success=False, error=str(e), error_type=e.error_type)
+                    if e.error_type != ToolErrorType.TEMPORARY_ERROR:
+                        break
+                    logger.warning(f"工具 {tool_name} 临时性故障 (尝试 {attempt + 1}/{max_retries + 1}): {e}")
+                    # 重试前回滚可能存在的脏数据并关闭当前会话，避免影响下一次重试
+                    if session:
+                        session.rollback()
+                except Exception as e:
+                    logger.exception(f"工具 {tool_name} 未捕获异常")
+                    last_result = ToolResult(success=False, error=str(e), error_type=ToolErrorType.EXTERNAL_ERROR)
                     break
-                logger.warning(f"工具 {tool_name} 临时性故障 (尝试 {attempt + 1}/{max_retries + 1}): {e}")
-            except Exception as e:
-                logger.exception(f"工具 {tool_name} 未捕获异常")
-                last_result = ToolResult(success=False, error=str(e), error_type=ToolErrorType.EXTERNAL_ERROR)
-                break
 
-            if attempt < max_retries:
-                time.sleep(retry_delay * (2 ** attempt))
+                if attempt < max_retries:
+                    time.sleep(retry_delay * (2 ** attempt))
 
-        # 5. monitor metrics record
-        duration = time.monotonic() - start
-        self._record_metrics(tool_name, caller_agent, success=False, duration=duration)
-        return last_result if last_result else ToolResult(
-            success=False,
-            error="未知错误",
-            error_type=ToolErrorType.EXTERNAL_ERROR
-        )
+            # 5. monitor metrics record
+            duration = time.monotonic() - start
+            self._record_metrics(tool_name, caller_agent, success=False, duration=duration)
+            return last_result if last_result else ToolResult(
+                success=False,
+                error="未知错误",
+                error_type=ToolErrorType.EXTERNAL_ERROR
+            )
+        finally:
+            # 确保会话正确关闭，释放连接回连接池
+            if session:
+                session.close()
 
     def _record_metrics(self, tool_name, caller_agent, success, duration):
         status = "success" if success else "error"

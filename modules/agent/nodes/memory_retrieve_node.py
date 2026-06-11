@@ -151,11 +151,11 @@ class MemoryRetrieveNode:
                 continue
             elif confidence >= self.memory_config.medium_conf_threshold:
                 # 中置信度：加注提示
-                lines.append(f"- {entity_key}: {content}（该信息置信度中等，仅供参考）")
+                lines.append(f"- {entity_key}: {content}（该信息置信度中等，仅供参考,建议结合上下文综合判断）")
                 continue
             else:
                 # 低置信度：默认不展示，或加强烈提示
-                lines.append(f"- {entity_key}: {content}（该信息置信度较低，建议向用户核实）")
+                lines.append(f"- {entity_key}: {content}（该信息置信度较低，不应用于关键决策，如有疑问应向用户确认）")
         return "\n".join(lines)
 
     def _assign_message_indexes(

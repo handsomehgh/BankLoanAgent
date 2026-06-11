@@ -18,3 +18,15 @@ neo4j:
   query_timeout_ms: 500
   max_connection_lifetime: 3600
   max_retry_attempts: 3
+
+
+mysql:
+  host: "127.0.0.1"
+  port: 3306
+  user: "root"
+  password: "your_password"
+  database: "bank_agent"
+  charset: "utf8mb4"
+  pool_size: 10
+  pool_recycle: 3600
+  echo: false

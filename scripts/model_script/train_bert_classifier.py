@@ -8,7 +8,6 @@ import numpy as np
 import torch
 from datasets import load_dataset
 from sklearn.metrics import accuracy_score, f1_score
-from sklearn.utils import compute_class_weight
 from torch import nn
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, EarlyStoppingCallback, \
     Trainer
@@ -17,19 +16,25 @@ os.environ["TENSORBOARD_LOGGING_DIR"] = "./logs"
 
 MODEL_NAME = "hf1/chinese-roberta-wwm-ext"
 MAX_LENGTH = 512
-OUTPUT_DIR = "./risk_assessment_classifier_model"
+OUTPUT_DIR = "./loan_advisor_classifier_model"
 LOGGING_DIR = "./logs"
 
 LABELS = [
      "DIRECT_REPLY",
     "CLARIFY",
-    "risk_assessment_skill",
-    "calculate_dti",
-    "calculate_ltv",
-    "calculate_dscr",
-    "estimate_credit_score",
-    "query_regulation",
+    "apply_home_loan_skill",
+    "apply_consumer_loan_skill",
+    "calculate_monthly_payment",
+    "query_interest_rate",
+    "calculate_loan_total_cost",
+    "calculate_max_loan_amount",
+    "check_loan_eligibility",
+    "compare_loan_products",
+    "generate_repayment_schedule",
     "general_search_knowledge",
+    "query_loan_interest",
+    "upsert_loan_interest",
+    "urge_loan_interest",
 ]
 
 LABEL2ID = {label: i for i, label in enumerate(LABELS)}
@@ -212,8 +217,8 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="训练 LoanAdvisor 意图分类器")
-    parser.add_argument("--train_file", type=str, default="train.jsonl", help="训练集文件路径")
-    parser.add_argument("--val_file", type=str, default="val.jsonl", help="验证集文件路径")
+    parser.add_argument("--train_file", type=str, default="advisor_train.jsonl", help="训练集文件路径")
+    parser.add_argument("--val_file", type=str, default="advisor_val.jsonl", help="验证集文件路径")
     parser.add_argument("--learning_rate", type=float, default=2e-5, help="学习率")
     parser.add_argument("--batch_size", type=int, default=16, help="训练批次大小")
     parser.add_argument("--epochs", type=int, default=5, help="训练轮数 (默认: 5)")

@@ -79,3 +79,4 @@ class AgentExecutorConfig(BaseModel):
     circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
     fallback_messages: Dict[str, Dict[str, str]] = Field(default_factory=dict)
     tool_fallbacks: Dict[str, Any] = Field(default_factory=dict)
+    response_handlers: Dict[str,Any] = Field(default_factory=dict)

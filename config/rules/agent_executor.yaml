@@ -135,3 +135,10 @@ tool_fallbacks:
   risk_assessment_skill:
     data: {}
     message: "综合风险评估暂时不可用，请稍后重试，或联系客户经理进行人工评估。"
+
+response_handlers:
+  upsert_loan_interest:
+    created: "已帮您登记了一笔{loan_type}意向：金额{desired_amount}元，期限{term_years}年{repayment_method}。\n您的意向编号是 {application_no}，客户经理将在1个工作日内与您联系。"
+    updated: "已帮您更新了{loan_type}意向，新的需求为：金额{desired_amount}元，期限{term_years}年。{status_hint}"
+    reactivated: "已重新激活您之前的{loan_type}意向（金额{desired_amount}元，期限{term_years}年），客户经理会尽快与您联系。"
+    need_confirm: "您的{loan_type}意向{status_hint}，确认修改后可能需要重新审核。是否继续？"

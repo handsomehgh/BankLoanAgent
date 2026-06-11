@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 
+from infra.database.mysql_manager import DatabaseManager
 from infra.message_queue import MessageProducer
 from modules.agent.after_loan_agent.after_loan_agent import AfterLoanAgent
 from modules.agent.constants import StreamName
@@ -306,8 +307,8 @@ def _create_tool_registry(registry: ConfigRegistry):
     return reg
 
 
-def _create_tool_executor(tool_registry, audit_logger):
-    return ToolExecutor(registry=tool_registry, audit_logger=audit_logger)
+def _create_tool_executor(tool_registry, audit_logger,db_manager):
+    return ToolExecutor(registry=tool_registry, audit_logger=audit_logger,session_factory=db_manager.session_factory)
 
 
 def _build_supervisor_graph(memory_retriever, seq_generator, registry, llm_client, memory_config, knowledge_retrieve):
@@ -360,6 +361,9 @@ def _register_skills(tool_registry, skill_executor):
         tool_registry.register(tool)
         logger.info("Registered skill: %s v%s", cfg.name, cfg.version)
 
+def _create_database_manager(datasource_config):
+    return DatabaseManager(datasource_config.mysql)
+
 class ApplicationContainer(containers.DeclarativeContainer):
     """Main Application Container"""
 
@@ -377,6 +381,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # Redis Manager
     redis_manager = providers.Singleton(_create_redis_manager, datasource_config)
+
+    #mysql manager
+    db_manager = providers.Singleton(_create_database_manager, datasource_config)
 
     # Cache Factory
     cache_factory = providers.Singleton(_create_cache_factory, cache_config, redis_manager)
@@ -470,7 +477,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         ToolSelector,
         registry=tool_registry
     )
-    tool_executor = providers.Singleton(_create_tool_executor, tool_registry, None)
+    tool_executor = providers.Singleton(_create_tool_executor, tool_registry, None,db_manager)
     skill_executor = providers.Singleton(SkillExecutor, tool_executor=tool_executor)
 
     skills_init = providers.Resource(

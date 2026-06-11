@@ -1,8 +1,6 @@
 # config/bootstrap.py
-import os
-
-os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 import logging
+import os
 import threading
 from pathlib import Path
 from typing import Optional
@@ -161,7 +159,7 @@ class Bootstrapper:
         type_mapping = {
             LPRDataService: container.lpr_service,
             BankGlobalConfig: container.bank_global_config,
-            RetrievalService: container.knowledge_retriever,
+            RetrievalService: container.knowledge_retriever
         }
         for versions in registry._tools.values():
             for tool in versions.values():
@@ -170,6 +168,7 @@ class Bootstrapper:
                 sig = inspect.signature(func)
                 hints = get_type_hints(func, include_extras=True)
                 injected = {}
+                injected_param_names = []
                 for name, param in sig.parameters.items():
                     ann = hints.get(name)
                     if ann and hasattr(ann, '__metadata__') and InjectedToolArg in ann.__metadata__:
@@ -177,7 +176,10 @@ class Bootstrapper:
                         dep = type_mapping.get(dep_type)
                         if dep:
                             injected[name] = dep() if callable(dep) else dep
+                        else:
+                            injected_param_names.append(name)
                 tool._injected_kwargs = injected
+                tool._injected_params = injected_param_names
 
     def _start_prometheus(self):
         port = 9090
