@@ -9,13 +9,13 @@ from typing import List, Optional, Dict
 
 from config.global_constant.constants import MemoryType, CacheNamespace
 from config.models.retrieval_config import RetrievalConfig
+from modules.retrieval.context_complete import ContextComplete
 from modules.retrieval.context_compressor import ContextCompressor
 from modules.retrieval.knowledge_model import BusinessKnowledge
 from modules.retrieval.knowledge_vector_store.knowledge_search_engine import KnowledgeSearchEngine
 from modules.retrieval.query_filter import QueryFilter
 from modules.retrieval.query_rewriter import QueryRewriter
 from modules.retrieval.rereanker import Reranker
-from modules.retrieval.router.retrieval_base_router import RetrievalRouter
 from modules.retrieval.rrf_fusion import rrf_fusion
 from utils.cache_utils.cache_decorator import custom_cached
 from utils.model_mapper.storage_to_model import StorageToMemoryMapper
@@ -33,7 +33,7 @@ class RetrievalService:
             reranker: Reranker,
             compressor: ContextCompressor,
             config: RetrievalConfig,
-            retrieve_router: Optional[RetrievalRouter] = None,
+            context_complete: ContextComplete
     ):
         self.engine = engine
         self.rewriter = rewriter
@@ -43,10 +43,9 @@ class RetrievalService:
         self._locks: Dict[str, threading.Lock] = {}
         self._locks_lock = threading.Lock()
         self.config = config
-        self.retrieve_router = retrieve_router
+        self.context_complete = context_complete
         self._executor = ThreadPoolExecutor(max_workers=9)
-        logger.info("RetrievalService initialized with router=%s, number of workers=%d",
-                    type(self.retrieve_router).__name__ if self.retrieve_router else "None", 3)
+        logger.info("RetrievalService initialized successfully")
 
     @custom_cached(
         namespace=CacheNamespace.RAG.value,
@@ -56,25 +55,20 @@ class RetrievalService:
         empty_result_factory=list,
         ignore_args=[0]
     )
-    def retrieve(self, query: str, context: Optional[Dict] = None, filter_expr: Optional[str] = None) -> List[
-        BusinessKnowledge]:
+    def retrieve(self, query: str, context: Optional[str] = None, filter_expr: Optional[str] = None) -> List[BusinessKnowledge]:
         logger.info("Incoming retrieve request: query='%s...', context=%s", query[:80],
                     "available" if context else "absent")
 
-        # router
-        # if self.config.retrieval_routing.enabled and self.retrieve_router and not self.retrieve_router.should_retrieve(
-        #         query):
-        #     logger.info("Query skipped by retrieve_router: %s", query[:80])
-        #     record_retrieval_metrics({}, route_skipped=True)
-        #     return []
+        if context:
+            logger.info("Query complete by context complete: %s", query[:80])
+            query = self.context_complete.complete(query,context)
 
         logger.info("Start retrieval for query: %s", query[:80])
-        results = asyncio.run(self._retrieve_async(query, context, filter_expr))
+        results = asyncio.run(self._retrieve_async(query,filter_expr))
         logger.info("Retrieval completed: %d results returned", len(results))
         return results
 
-    async def _retrieve_async(self, query: str, context: Optional[Dict] = None, filter_expr: Optional[str] = None) -> \
-    List[BusinessKnowledge]:
+    async def _retrieve_async(self, query: str,filter_expr: Optional[str] = None) -> List[BusinessKnowledge]:
         # rewrite query
         total_start = time.monotonic()
 
@@ -82,7 +76,7 @@ class RetrievalService:
         logger.debug("Entering _retrieve_async for query: %s", query[:80])
         queries = [query]
         if self.config.rewriter.enabled:
-            queries = self.rewriter.rewrite(query, context)
+            queries = self.rewriter.rewrite(query)
 
         # extract conditions
         if filter_expr is None and self.config.filter.enabled:

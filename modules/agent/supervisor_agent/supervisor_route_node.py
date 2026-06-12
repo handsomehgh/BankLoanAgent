@@ -242,7 +242,7 @@ class SupervisorRouteNode:
                     for agent_name in retrieve_agent_name:
                         future = executor.submit(
                             self._retrieve_knowledge_for_agent,
-                            agent_name, user_query, state
+                            agent_name, user_query, state,conversation_summary
                         )
                         future_to_agent[future] = agent_name
                     for future in future_to_agent:
@@ -271,7 +271,7 @@ class SupervisorRouteNode:
 
             else:
                 if retrieve_agent_name:
-                    knowledge = self._retrieve_knowledge_for_agent(retrieve_agent_name[0], user_query, state)
+                    knowledge = self._retrieve_knowledge_for_agent(retrieve_agent_name[0], user_query, state,conversation_summary)
 
                     sub_conversation = sub_conversation_summary.get(retrieve_agent_name[0], "")
                     recent_sub = state.get(StateFields.SUB_MESSAGES.value, {}).get(retrieve_agent_name[0], [])
@@ -332,6 +332,7 @@ class SupervisorRouteNode:
             agent_name: str,
             user_query: str,
             state: SupervisorState,
+            conversation_summary: Optional[str]
     ) -> str:
         """根据目标 Agent 执行定向知识检索并精炼为短文本"""
         # 根据 Agent 类型确定过滤条件
@@ -346,12 +347,20 @@ class SupervisorRouteNode:
                                                                         KnowledgeFileSourceType.FAQ.value]))
 
         filter = MilvusQueryBuilder().build(Query(conditions=parts, logic="AND"))
+
         last_summary = self._build_last_summary_for_entry_retrieval(state)
+        parts = []
+        if conversation_summary:
+            parts.append(f"相关对话历史:\n{conversation_summary}")
+        if last_summary:
+            parts.append(f"最近对话:\n{last_summary}")
+        context = "\n".join(parts) if parts else ""
+
         try:
             logger.info(f"Supervisor directly retrieving knowledge for agent {agent_name}")
             docs = self.knowledge_retriever.retrieve(
                 query=user_query,
-                context={"last_summary": last_summary},
+                context=context,
                 filter_expr=filter,
             )
             if not docs:
@@ -359,7 +368,7 @@ class SupervisorRouteNode:
             # 格式化并限制长度
             config = self.registry.get_config(RegistryModules.SUPERVISOR.value)
             from modules.retrieval.knowledge_utils.knowledge_formatter import format_context
-            max_length = getattr(config, 'directed_retrieval_max_length', 800)
+            max_length = getattr(config, 'directed_retrieval_max_length', 500)
             return format_context(docs, max_context_length=max_length)
         except Exception as e:
             logger.error(f"Supervisor directly retrieving failed for agent {agent_name},e:{e}")

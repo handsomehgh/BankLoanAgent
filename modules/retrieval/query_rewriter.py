@@ -8,10 +8,9 @@ function:
  - automatically downgrade to the original query in case of failure,ensuring high availability
 """
 import logging
-from typing import Optional, List, Dict
+from typing import Optional, List
 
 from config.models.retrieval_config import RewriterConfig
-from config.prompts.context_rewrite_prompt import CONTEXT_REWRITE_PROMPT
 from config.prompts.decompose import DECOMPOSE_PROMPT
 from config.prompts.hyde_query_prompt import HYDE_QUERY_PROMPT
 from config.prompts.multi_query_prompt import MULTI_QUERY_PROMPT
@@ -85,38 +84,11 @@ class QueryRewriter:
         logger.info("QueryRewriter initialized with strategy=%s",
                     "dynamic" if config.enable_dynamic else config.override_strategy)
 
-    def _needs_context_complete(self, query: str) -> bool:
-        if len(query) <= 10:
-            return True
-        if any(p in query for p in ["它", "那", "这个", "那个", "这", "其"]):
-            return True
-        return False
-
-    def _complete_context(self, query: str, last_summary: str) -> str:
-        if not last_summary and not last_summary.strip():
-            return query
-        try:
-            logger.debug("Context-aware completion with summary: %.50s...", last_summary)
-            messages = CONTEXT_REWRITE_PROMPT.invoke({"last_summary": last_summary, "query": query}).to_messages()
-            rewritten = self.llm.invoke(messages).content.strip()
-            logger.info(f"RAG Context-aware complete: '{query}' -> '{rewritten[:50]}'")
-            if rewritten and len(rewritten) > 0:
-                logger.info("Context-aware complete: '%s' -> '%s'", query[:50], rewritten[:50])
-                return rewritten
-        except Exception as e:
-            logger.warning("Context-aware completion failed: %s", e, exc_info=True)
-        return query
-
-    def rewrite(self, query: str, context: Optional[Dict] = None) -> List[str]:
+    def rewrite(self, query: str) -> List[str]:
         """
         main entrance: return the rewritten query according to the selected strategy
         return a list containing the original query when the failure or strategy is none
         """
-
-        last_summary = context.get("last_summary") if context else None
-        if last_summary and self._needs_context_complete(query):
-            query = self._complete_context(query, last_summary)
-
         if self.config.enable_dynamic and not self.config.override_strategy:
             strategy = self.selector.select(query)
         else:

@@ -117,6 +117,7 @@ class RetrievalRoutingConfig(BaseModel):
 
 class RetrievalConfig(BaseModel):
     milvus_uri: str = "http://localhost:19530"
+    context_complete_uri = "http://localhost:8005"
     sqlite_db_path: str = "./checkpoints.db"
     insert_batch_size: int = 50
 
@@ -151,4 +152,4 @@ class RetrievalConfig(BaseModel):
     compressor: CompressorConfig = Field(default_factory=CompressorConfig)
 
     # retrieve routing config
-    retrieval_routing: RetrievalRoutingConfig = Field(default_factory=RetrievalRoutingConfig)
+    # retrieval_routing: RetrievalRoutingConfig = Field(default_factory=RetrievalRoutingConfig)

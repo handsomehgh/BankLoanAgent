@@ -52,7 +52,7 @@ class MemoryVectorRetriever(BaseRetriever):
                 if mem_type == MemoryType.USER_PROFILE:
                     future = executor.submit(self.memory_store.get_all_user_profile_memories, user_id)
                 elif mem_type == MemoryType.INTERACTION_LOG:
-                    future = executor.submit(self.memory_store.get_recent_interactions, user_id, top_k)
+                    future = executor.submit(self.memory_store.search_memory, user_id, query,MemoryType.INTERACTION_LOG,3,None,True)
                 elif mem_type == MemoryType.SUB_INTERACTION_LOG:
                     future = executor.submit(self.memory_store.get_sub_recent_interactions, user_id, top_k)
                 else:

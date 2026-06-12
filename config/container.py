@@ -28,6 +28,7 @@ from modules.module_services.classifier.after_loan_classifier import AfterLoanCl
 from modules.module_services.classifier.loan_advisor_classifier import LoanAdvisorClassifier
 from modules.module_services.classifier.risk_assessment_classifier import RiskAssessmentClassifier
 from modules.module_services.lpr_data_service import LPRDataService
+from modules.retrieval.context_complete import ContextComplete
 from modules.skills.skill_executor import SkillExecutor
 from modules.tools import ToolRegistry, ToolExecutor
 from dependency_injector import containers, providers
@@ -207,9 +208,9 @@ def _create_compressor(registry):
     return ContextCompressor(config=cfg.compressor)
 
 
-def _create_retrieval_router(registry):
+def _create_retrieval_complete(registry,llm_client):
     cfg = registry.get_config(RegistryModules.RETRIEVAL)
-    return RuleBaseRetrievalRouter(config=cfg.retrieval_routing.rule_based)
+    return ContextComplete(cfg,llm_client)
 
 def _create_loan_advisor_classifier():
     return LoanAdvisorClassifier()
@@ -220,7 +221,7 @@ def _create_after_loan_classifier():
 def _create_risk_assessment_classifier():
     return RiskAssessmentClassifier()
 
-def _create_knowledge_retriever(knowledge_engine, query_rewriter, query_filter, reranker, compressor, retrieval_router,
+def _create_knowledge_retriever(knowledge_engine, query_rewriter, query_filter, reranker, compressor, context_complete,
                                 registry):
     cfg = registry.get_config(RegistryModules.RETRIEVAL)
     return RetrievalService(
@@ -230,7 +231,7 @@ def _create_knowledge_retriever(knowledge_engine, query_rewriter, query_filter, 
         reranker=reranker,
         compressor=compressor,
         config=cfg,
-        retrieve_router=retrieval_router
+        context_complete=context_complete
     )
 
 
@@ -446,13 +447,13 @@ class ApplicationContainer(containers.DeclarativeContainer):
     query_filter = providers.Singleton(_create_query_filter, config_registry, precise_llm)
     reranker = providers.Singleton(_create_reranker, config_registry)
     compressor = providers.Singleton(_create_compressor, config_registry)
-    retrieval_router = providers.Singleton(_create_retrieval_router, config_registry)
+    context_complete = providers.Singleton(_create_retrieval_complete, config_registry,precise_llm)
 
     # Knowledge Retrieve
     knowledge_retriever = providers.Singleton(
         _create_knowledge_retriever,
         knowledge_engine, query_rewriter, query_filter, reranker, compressor,
-        retrieval_router, config_registry
+        context_complete, config_registry
     )
 
     # Domain Service
