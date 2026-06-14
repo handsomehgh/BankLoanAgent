@@ -4,7 +4,8 @@ from typing import Annotated
 from langchain_core.tools import tool, InjectedToolArg
 from pydantic import BaseModel, Field
 
-from infra.repository import LoanInterestRepository
+from infra.database.mysql_manager import DatabaseManager
+from infra.repository.LoanInterestRepository import LoanInterestRepository
 from modules.agent.constants import AgentName
 from modules.tools.error_handler import with_tool_error_handling
 
@@ -24,27 +25,36 @@ class QueryLoanInterestInput(BaseModel):
 def query_loan_interest(
         input: QueryLoanInterestInput,
         user_id: Annotated[str, InjectedToolArg],
-        repository: Annotated[LoanInterestRepository, InjectedToolArg],
+        db_manager: Annotated[DatabaseManager, InjectedToolArg],
 ) -> dict:
     """查询用户对指定贷款类型的意向记录"""
-    record = repository.find_by_user_and_type(user_id, input.loan_type)
+    session = db_manager.create_session()
+    try:
+        repository = LoanInterestRepository(session)
+        record = repository.find_by_user_and_type(user_id, input.loan_type)
 
-    if not record:
+        if not record:
+            return {
+                "signal": "not_found",
+                "message": f"您目前还没有登记过{input.loan_type}的意向。"
+            }
+
         return {
-            "signal": "not_found",
-            "message": f"您目前还没有登记过{input.loan_type}的意向。"
+            "signal": "found",
+            "application_no": record.application_no,
+            "loan_type": record.loan_type,
+            "desired_amount": record.desired_amount,
+            "term_years": record.term_years,
+            "contact_time_note": record.contact_time_note or "未指定",
+            "repayment_method": record.repayment_method or "未指定",
+            "loan_purpose": record.loan_purpose or "未指定",
+            "status": record.status,
+            "urgency": record.urgency,
+            "created_at": record.created_at.isoformat() if record.created_at else None
         }
-
-    return {
-        "signal": "found",
-        "application_no": record.application_no,
-        "loan_type": record.loan_type,
-        "desired_amount": record.desired_amount,
-        "term_years": record.term_years,
-        "contact_time_note": record.contact_time_note or "未指定",
-        "repayment_method": record.repayment_method or "未指定",
-        "loan_purpose": record.loan_purpose or "未指定",
-        "status": record.status,
-        "urgency": record.urgency,
-        "created_at": record.created_at.isoformat() if record.created_at else None
-    }
+    except Exception as e:
+        if session:
+            session.rollback()
+        raise e
+    finally:
+        session.close()

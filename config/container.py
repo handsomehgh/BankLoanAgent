@@ -309,11 +309,11 @@ def _create_tool_registry(registry: ConfigRegistry):
     return reg
 
 
-def _create_tool_executor(tool_registry, audit_logger,db_manager):
-    return ToolExecutor(registry=tool_registry, audit_logger=audit_logger,db_manager=db_manager)
+def _create_tool_executor(tool_registry, audit_logger):
+    return ToolExecutor(registry=tool_registry, audit_logger=audit_logger)
 
-def _create_skill_executor(tool_registry, audit_logger,db_manager):
-    return SkillExecutor(tool_registry,db_manager,audit_logger)
+def _create_skill_executor(tool_registry, audit_logger):
+    return SkillExecutor(tool_registry,audit_logger)
 
 def _build_supervisor_graph(memory_retriever, seq_generator, registry, llm_client, memory_config, knowledge_retrieve):
     agent = SupervisorAgent(memory_retriever, seq_generator, registry, llm_client, memory_config, knowledge_retrieve)
@@ -489,8 +489,8 @@ class ApplicationContainer(containers.DeclarativeContainer):
         ToolSelector,
         registry=tool_registry
     )
-    tool_executor = providers.Singleton(_create_tool_executor, tool_registry, None,db_manager)
-    skill_executor = providers.Singleton(_create_skill_executor, tool_registry,None,db_manager)
+    tool_executor = providers.Singleton(_create_tool_executor, tool_registry, None)
+    skill_executor = providers.Singleton(_create_skill_executor, tool_registry,None)
     skill_registry = providers.Singleton(SkillRegistry)
 
     skills_init = providers.Resource(

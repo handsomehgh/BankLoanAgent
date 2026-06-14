@@ -1,10 +1,11 @@
 # author hgh
 # version 1.0
-from datetime import datetime
 from typing import Annotated
 from langchain_core.tools import tool, InjectedToolArg
 from pydantic import BaseModel, Field
-from infra.repository import LoanInterestRepository
+
+from infra.database.mysql_manager import DatabaseManager
+from infra.repository.LoanInterestRepository import LoanInterestRepository
 from modules.agent.constants import AgentName
 from modules.tools.error_handler import with_tool_error_handling
 
@@ -24,28 +25,39 @@ class UrgeLoanInterestInput(BaseModel):
 def urge_loan_interest(
         input: UrgeLoanInterestInput,
         user_id: str,
-        repository: Annotated[LoanInterestRepository, InjectedToolArg],
+        db_manager: Annotated[DatabaseManager, InjectedToolArg],
 ) -> dict:
     """标记意向为加急处理"""
-    record = repository.find_by_user_and_type(user_id, input.loan_type)
-    if not record:
-        return {
-            "signal": "not_found",
-            "message": f"您目前还没有登记过{input.loan_type}的意向。"
-        }
+    session = db_manager.create_session()
 
-    if record.status in ('待处理', '处理中'):
-        repository.mark_urgent(record)
+    try:
+        repository = LoanInterestRepository(session)
+        record = repository.find_by_user_and_type(user_id, input.loan_type)
+        if not record:
+            return {
+                "signal": "not_found",
+                "message": f"您目前还没有登记过{input.loan_type}的意向。"
+            }
+
+        if record.status in ('待处理', '处理中'):
+            repository.mark_urgent(record)
+            return {
+                "signal": "urged",
+                "application_no": record.application_no,
+                "status": record.status,
+                "message": "已为您标记为加急处理，我们会优先处理您的意向。"
+            }
+
         return {
-            "signal": "urged",
+            "signal": "status_blocked",
             "application_no": record.application_no,
             "status": record.status,
-            "message": "已为您标记为加急处理，我们会优先处理您的意向。"
+            "message": f"您的意向当前状态为「{record.status}」，无法进行催促操作。"
         }
-
-    return {
-        "signal": "status_blocked",
-        "application_no": record.application_no,
-        "status": record.status,
-        "message": f"您的意向当前状态为「{record.status}」，无法进行催促操作。"
-    }
+    except Exception as e:
+        if session:
+            session.rollback()
+        raise e
+    finally:
+        if session:
+            session.close()

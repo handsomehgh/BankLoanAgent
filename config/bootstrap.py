@@ -21,6 +21,7 @@ from config.models.tool_config import ToolRegistryConfig
 from config.global_constant.constants import RegistryModules, CacheNamespace
 from config.context_settings import set_enum_strictness
 from infra.cache.cache_registry import cache_register
+from infra.database.mysql_manager import DatabaseManager
 from infra.repository.LoanInterestRepository import LoanInterestRepository
 from utils.cache_utils.cache_decorator import set_cache_container
 from utils.logging_config import setup_logging
@@ -161,6 +162,7 @@ class Bootstrapper:
             LPRDataService: container.lpr_service,
             BankGlobalConfig: container.bank_global_config,
             RetrievalService: container.knowledge_retriever,
+            DatabaseManager: container.db_manager
         }
         for versions in registry._tools.values():
             for tool in versions.values():

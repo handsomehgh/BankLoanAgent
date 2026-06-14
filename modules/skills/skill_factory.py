@@ -25,9 +25,13 @@ def create_tool_from_skill(skill_config: SkillConfig,skill_executor: SkillExecut
 
     DynamicInputModel = create_model(f"{skill_config.name}_input", **fields)
 
+    full_description = skill_config.description
+    if skill_config.sop_description:
+        full_description = f"{skill_config.description}\n\n执行流程：{skill_config.sop_description}"
+
     @tool(
         skill_config.name,
-        description=skill_config.description,
+        description=full_description,
         args_schema=DynamicInputModel,
         extras={
             "version": skill_config.version,

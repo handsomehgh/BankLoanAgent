@@ -7,7 +7,8 @@ from langchain_core.tools import tool, InjectedToolArg
 from pydantic import BaseModel, Field
 
 from infra.data_model.loan_interest import LoanInterest
-from infra.repository import LoanInterestRepository
+from infra.database.mysql_manager import DatabaseManager
+from infra.repository.LoanInterestRepository import LoanInterestRepository
 from modules.agent.constants import AgentName
 from modules.tools.error_handler import with_tool_error_handling
 
@@ -47,161 +48,171 @@ def upsert_loan_interest(
         conversation_summary: Annotated[str, InjectedToolArg],
         profile_summary: Annotated[str, InjectedToolArg],
         trace_id: Annotated[str, InjectedToolArg],
-        repository: Annotated[LoanInterestRepository, InjectedToolArg],
+        db_manager: Annotated[DatabaseManager, InjectedToolArg],
 ) -> dict:
     """提交或更新贷款意向，内部处理新建、更新、确认逻辑"""
 
     # 1. 查询已有记录
+    session = db_manager.create_session()
+    repository = LoanInterestRepository(session)
     existing = repository.find_by_user_and_type(user_id, input.loan_type)
 
-    # 2. 无记录 → 新建
-    if not existing:
-        application_no = _generate_application_no()
-        record = LoanInterest(
-            application_no=application_no,
-            user_id=user_id,
-            loan_type=input.loan_type,
-            desired_amount=input.desired_amount,
-            term_years=input.term_years,
-            loan_purpose=input.loan_purpose,
-            repayment_method=input.repayment_method,
-            conversation_summary=conversation_summary,
-            profile_summary=profile_summary,
-            trace_id=trace_id,
-            preferred_contact_period=input.preferred_contact_period,
-            contact_time_note=input.contact_time_note,
-            status='待处理',
-            urgency=0
-        )
-        repository.create(record)
-        return {
-            "signal": "created",
-            "application_no": application_no,
-            "status": "待处理",
-            "message": "您的贷款意向已登记，客户经理将在1个工作日内与您联系。",
-            "details": {
-                "loan_type": input.loan_type,
-                "desired_amount": input.desired_amount,
-                "term_years": input.term_years,
-                "repayment_method": input.repayment_method or "未指定"
-            }
-        }
-
-    # 3. 有记录，根据状态决策
-    if existing.status in ('待处理',):
-        # 直接更新
-        existing.desired_amount = input.desired_amount
-        existing.term_years = input.term_years
-        existing.loan_purpose = input.loan_purpose
-        existing.repayment_method = input.repayment_method
-        existing.preferred_contact_period = input.preferred_contact_period
-        existing.contact_time_note = input.contact_time_note
-        existing.conversation_summary = conversation_summary
-        existing.profile_summary = profile_summary
-        repository.update(existing)
-        return {
-            "signal": "updated",
-            "application_no": existing.application_no,
-            "status": existing.status,
-            "message": "您的贷款意向已更新。",
-            "details": {
-                "loan_type": input.loan_type,
-                "desired_amount": input.desired_amount,
-                "term_years": input.term_years,
-                "repayment_method": input.repayment_method or "未指定"
-            }
-        }
-
-    elif existing.status == '处理中':
-        if not input.confirmed:
+    try:
+        # 2. 无记录 → 新建
+        if not existing:
+            application_no = _generate_application_no()
+            record = LoanInterest(
+                application_no=application_no,
+                user_id=user_id,
+                loan_type=input.loan_type,
+                desired_amount=input.desired_amount,
+                term_years=input.term_years,
+                loan_purpose=input.loan_purpose,
+                repayment_method=input.repayment_method,
+                conversation_summary=conversation_summary,
+                profile_summary=profile_summary,
+                trace_id=trace_id,
+                preferred_contact_period=input.preferred_contact_period,
+                contact_time_note=input.contact_time_note,
+                status='待处理',
+                urgency=0
+            )
+            repository.create(record)
             return {
-                "signal": "need_confirm",
-                "application_no": existing.application_no,
-                "current_status": "处理中",
-                "message": "您的意向已有工作人员在处理中，确认修改后可能需要重新审核。是否继续？"
+                "signal": "created",
+                "application_no": application_no,
+                "status": "待处理",
+                "message": "您的贷款意向已登记，客户经理将在1个工作日内与您联系。",
+                "details": {
+                    "loan_type": input.loan_type,
+                    "desired_amount": input.desired_amount,
+                    "term_years": input.term_years,
+                    "repayment_method": input.repayment_method or "未指定"
+                }
             }
-        # 确认后更新并重置状态
-        existing.desired_amount = input.desired_amount
-        existing.term_years = input.term_years
-        existing.loan_purpose = input.loan_purpose
-        existing.repayment_method = input.repayment_method
-        existing.preferred_contact_period = input.preferred_contact_period
-        existing.contact_time_note = input.contact_time_note
-        existing.conversation_summary = conversation_summary
-        existing.profile_summary = profile_summary
-        existing.status = '待处理'
-        existing.status_updated_at = datetime.now()
-        repository.update(existing)
-        return {
-            "signal": "updated",
-            "application_no": existing.application_no,
-            "status": "待处理",
-            "message": "您的意向已更新，将重新进入处理流程。",
-            "details": {
-                "loan_type": input.loan_type,
-                "desired_amount": input.desired_amount,
-                "term_years": input.term_years,
-                "repayment_method": input.repayment_method or "未指定"
-            }
-        }
 
-    elif existing.status == '已处理':
-        if not input.confirmed:
+        # 3. 有记录，根据状态决策
+        if existing.status in ('待处理',):
+            # 直接更新
+            existing.desired_amount = input.desired_amount
+            existing.term_years = input.term_years
+            existing.loan_purpose = input.loan_purpose
+            existing.repayment_method = input.repayment_method
+            existing.preferred_contact_period = input.preferred_contact_period
+            existing.contact_time_note = input.contact_time_note
+            existing.conversation_summary = conversation_summary
+            existing.profile_summary = profile_summary
+            repository.update(existing)
             return {
-                "signal": "need_confirm",
+                "signal": "updated",
                 "application_no": existing.application_no,
-                "current_status": "已处理",
-                "message": "您之前的意向已处理完毕，是否重新提交？"
+                "status": existing.status,
+                "message": "您的贷款意向已更新。",
+                "details": {
+                    "loan_type": input.loan_type,
+                    "desired_amount": input.desired_amount,
+                    "term_years": input.term_years,
+                    "repayment_method": input.repayment_method or "未指定"
+                }
             }
-        existing.desired_amount = input.desired_amount
-        existing.term_years = input.term_years
-        existing.loan_purpose = input.loan_purpose
-        existing.repayment_method = input.repayment_method
-        existing.preferred_contact_period = input.preferred_contact_period
-        existing.contact_time_note = input.contact_time_note
-        existing.conversation_summary = conversation_summary
-        existing.profile_summary = profile_summary
-        existing.status = '待处理'
-        existing.status_updated_at = datetime.now()
-        repository.update(existing)
-        return {
-            "signal": "updated",
-            "application_no": existing.application_no,
-            "status": "待处理",
-            "message": "您的意向已重新提交。",
-            "details": {
-                "loan_type": input.loan_type,
-                "desired_amount": input.desired_amount,
-                "term_years": input.term_years,
-                "repayment_method": input.repayment_method or "未指定"
-            }
-        }
 
-    elif existing.status == '已取消':
-        # 自动重新激活
-        existing.desired_amount = input.desired_amount
-        existing.term_years = input.term_years
-        existing.loan_purpose = input.loan_purpose
-        existing.repayment_method = input.repayment_method
-        existing.preferred_contact_period = input.preferred_contact_period
-        existing.contact_time_note = input.contact_time_note
-        existing.conversation_summary = conversation_summary
-        existing.profile_summary = profile_summary
-        existing.status = '待处理'
-        existing.status_updated_at = datetime.now()
-        repository.update(existing)
-        return {
-            "signal": "reactivated",
-            "application_no": existing.application_no,
-            "status": "待处理",
-            "message": "已重新激活您之前的贷款意向。",
-            "details": {
-                "loan_type": input.loan_type,
-                "desired_amount": input.desired_amount,
-                "term_years": input.term_years,
-                "repayment_method": input.repayment_method or "未指定"
+        elif existing.status == '处理中':
+            if not input.confirmed:
+                return {
+                    "signal": "need_confirm",
+                    "application_no": existing.application_no,
+                    "current_status": "处理中",
+                    "message": "您的意向已有工作人员在处理中，确认修改后可能需要重新审核。是否继续？"
+                }
+            # 确认后更新并重置状态
+            existing.desired_amount = input.desired_amount
+            existing.term_years = input.term_years
+            existing.loan_purpose = input.loan_purpose
+            existing.repayment_method = input.repayment_method
+            existing.preferred_contact_period = input.preferred_contact_period
+            existing.contact_time_note = input.contact_time_note
+            existing.conversation_summary = conversation_summary
+            existing.profile_summary = profile_summary
+            existing.status = '待处理'
+            existing.status_updated_at = datetime.now()
+            repository.update(existing)
+            return {
+                "signal": "updated",
+                "application_no": existing.application_no,
+                "status": "待处理",
+                "message": "您的意向已更新，将重新进入处理流程。",
+                "details": {
+                    "loan_type": input.loan_type,
+                    "desired_amount": input.desired_amount,
+                    "term_years": input.term_years,
+                    "repayment_method": input.repayment_method or "未指定"
+                }
             }
-        }
+
+        elif existing.status == '已处理':
+            if not input.confirmed:
+                return {
+                    "signal": "need_confirm",
+                    "application_no": existing.application_no,
+                    "current_status": "已处理",
+                    "message": "您之前的意向已处理完毕，是否重新提交？"
+                }
+            existing.desired_amount = input.desired_amount
+            existing.term_years = input.term_years
+            existing.loan_purpose = input.loan_purpose
+            existing.repayment_method = input.repayment_method
+            existing.preferred_contact_period = input.preferred_contact_period
+            existing.contact_time_note = input.contact_time_note
+            existing.conversation_summary = conversation_summary
+            existing.profile_summary = profile_summary
+            existing.status = '待处理'
+            existing.status_updated_at = datetime.now()
+            repository.update(existing)
+            return {
+                "signal": "updated",
+                "application_no": existing.application_no,
+                "status": "待处理",
+                "message": "您的意向已重新提交。",
+                "details": {
+                    "loan_type": input.loan_type,
+                    "desired_amount": input.desired_amount,
+                    "term_years": input.term_years,
+                    "repayment_method": input.repayment_method or "未指定"
+                }
+            }
+
+        elif existing.status == '已取消':
+            # 自动重新激活
+            existing.desired_amount = input.desired_amount
+            existing.term_years = input.term_years
+            existing.loan_purpose = input.loan_purpose
+            existing.repayment_method = input.repayment_method
+            existing.preferred_contact_period = input.preferred_contact_period
+            existing.contact_time_note = input.contact_time_note
+            existing.conversation_summary = conversation_summary
+            existing.profile_summary = profile_summary
+            existing.status = '待处理'
+            existing.status_updated_at = datetime.now()
+            repository.update(existing)
+            return {
+                "signal": "reactivated",
+                "application_no": existing.application_no,
+                "status": "待处理",
+                "message": "已重新激活您之前的贷款意向。",
+                "details": {
+                    "loan_type": input.loan_type,
+                    "desired_amount": input.desired_amount,
+                    "term_years": input.term_years,
+                    "repayment_method": input.repayment_method or "未指定"
+                }
+            }
+    except Exception as e:
+        if session:
+            session.rollback()
+        raise e
+    finally:
+        if session:
+            session.close()
 
 
 def _generate_application_no() -> str:

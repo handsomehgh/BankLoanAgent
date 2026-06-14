@@ -5,6 +5,7 @@ skills config model
 """
 from typing import Literal, Any, Dict, List, Union, Optional
 
+from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 
 class SkillValidation(BaseModel):
@@ -31,6 +32,13 @@ class SkillArg(BaseModel):
     )
     description: str = Field(default="", description="参数说明，便于维护")
 
+class CompensateConfig(BaseModel):
+    """补偿操作配置"""
+    tool: str = Field(..., description="补偿工具名，如 cancel_loan_interest")
+    args: Dict[str, Union[str, 'SkillArg']] = Field(
+        default_factory=dict,
+        description="补偿工具的参数映射"
+    )
 
 class SkillStep(BaseModel):
     """skill process step definition"""
@@ -43,6 +51,10 @@ class SkillStep(BaseModel):
     output_key: str = Field(...,description="the storage key name of the output of this step")
     optional: bool = Field(default=False,description="whether it is an optional step,and whether to continue execution if it is fails")
     on_failure: Literal["skip","abort"] = Field(default="skip",description="handling strategy when optional steps fail")
+    compensate: Optional[CompensateConfig] = Field(
+        None,
+        description="该步骤对应的补偿操作配置"
+    )
 
 class SkillConfig(BaseModel):
     """complete skill configuration definition"""

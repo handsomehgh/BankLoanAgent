@@ -15,8 +15,6 @@ from langchain_core.tools import BaseTool as LangChainBaseTool
 
 from config.models.tool_config import ToolRegistryConfig
 from exceptions.exception import ToolExecutionException, ToolErrorType
-from infra.database.mysql_manager import DatabaseManager
-from infra.repository.LoanInterestRepository import LoanInterestRepository
 from modules.tools.tool_constatnt import ToolResult
 from utils.monitor_utils.metrics import tool_call_total, tool_duration_seconds
 
@@ -113,10 +111,9 @@ class ToolExecutor:
     Process: Permission check → Parameter validation → Audit log (before and after) → Execution → Exception handling
     """
 
-    def __init__(self, registry: ToolRegistry, audit_logger=None, db_manager: DatabaseManager=None):
+    def __init__(self, registry: ToolRegistry, audit_logger=None):
         self.registry = registry
         self.audit_logger = audit_logger
-        self.db_manager = db_manager
 
     def execute(
             self,
@@ -128,7 +125,6 @@ class ToolExecutor:
             **runtime_context
     ) -> ToolResult:
         # 1. permission validate + obtain tool
-        session = self.db_manager.create_session()
         tool = self.registry.get_tool(tool_name, version_range, caller_agent)
         if tool is None:
             msg = f"Tool {tool_name} is unavailable or insufficient permissions"
@@ -140,13 +136,10 @@ class ToolExecutor:
         tool_version = extras.get("version", "0.0.0")
 
         # 2. parameter validation
-        logger.info(f"Tool runtime context: {runtime_context}")
         try:
             validated = tool.args_schema(**args) if tool.args_schema else args
-            injected_base = self._build_injected_base(session, runtime_context, trace_id)
-            logger.info(f"Tool injected_base: {injected_base}")
+            injected_base = self._build_injected_base(runtime_context, trace_id)
             injected = getattr(tool, '_injected_kwargs', {}).copy()
-            logger.info(f"Tool injected: {getattr(tool, '_injected_params', [])}")
             for param_name in getattr(tool, '_injected_params', []):
                 if param_name == 'trace_id':
                     injected[param_name] = trace_id
@@ -159,70 +152,57 @@ class ToolExecutor:
                 error=f"参数校验失败: {e}",
                 error_type=ToolErrorType.PARAMETER_ERROR
             )
-        logger.info(f"Tool injected parameters: {injected}")
 
+        # 4. execute tool
         max_retries = 2
         retry_delay = 0.5
         last_result = None
-        # 4. execute tool
-        try:
-            # 4. execute tool
-            start = time.monotonic()
-            for attempt in range(max_retries + 1):
-                logger.info(f"Start calling tool: {tool_name}, args: {validated}")
-                try:
-                    result = tool.func(validated, **injected)
-                    if isinstance(result, str):
-                        final_data = result
-                    elif isinstance(result, dict):
-                        final_data = result
-                    else:
-                        final_data = str(result)
-                    duration = time.monotonic() - start
-                    self._record_metrics(tool_name, caller_agent, success=True, duration=duration)
-                    return ToolResult(
-                        success=True,
-                        data=final_data,
-                        summary=self._build_summary(tool_name, final_data)
-                    )
-                except ToolExecutionException as e:
-                    last_result = ToolResult(success=False, error=str(e), error_type=e.error_type)
-                    if e.error_type != ToolErrorType.TEMPORARY_ERROR:
-                        break
-                    logger.warning(f"工具 {tool_name} 临时性故障 (尝试 {attempt + 1}/{max_retries + 1}): {e}")
-                    if session:
-                        session.rollback()
-                except Exception as e:
-                    logger.exception(f"工具 {tool_name} 未捕获异常")
-                    last_result = ToolResult(success=False, error=str(e), error_type=ToolErrorType.EXTERNAL_ERROR)
+        start = time.monotonic()
+        for attempt in range(max_retries + 1):
+            logger.info(f"Start calling tool: {tool_name}, args: {validated}")
+            try:
+                result = tool.func(validated, **injected)
+                if isinstance(result, str):
+                    final_data = result
+                elif isinstance(result, dict):
+                    final_data = result
+                else:
+                    final_data = str(result)
+                duration = time.monotonic() - start
+                self._record_metrics(tool_name, caller_agent, success=True, duration=duration)
+                return ToolResult(
+                    success=True,
+                    data=final_data,
+                    summary=self._build_summary(tool_name, final_data)
+                )
+            except ToolExecutionException as e:
+                last_result = ToolResult(success=False, error=str(e), error_type=e.error_type)
+                if e.error_type != ToolErrorType.TEMPORARY_ERROR:
                     break
+                logger.warning(f"工具 {tool_name} 临时性故障 (尝试 {attempt + 1}/{max_retries + 1}): {e}")
+            except Exception as e:
+                logger.exception(f"工具 {tool_name} 未捕获异常")
+                last_result = ToolResult(success=False, error=str(e), error_type=ToolErrorType.EXTERNAL_ERROR)
+                break
 
-                if attempt < max_retries:
-                    time.sleep(retry_delay * (2 ** attempt))
+            if attempt < max_retries:
+                time.sleep(retry_delay * (2 ** attempt))
 
-            # 5. monitor metrics record
-            duration = time.monotonic() - start
-            self._record_metrics(tool_name, caller_agent, success=False, duration=duration)
-            return last_result if last_result else ToolResult(
-                success=False,
-                error="未知错误",
-                error_type=ToolErrorType.EXTERNAL_ERROR
-            )
-        except Exception as e:
-            if session:
-                session.rollback()
-        finally:
-            # 确保会话正确关闭，释放连接回连接池
-            if session:
-                session.close()
+        # 5. monitor metrics record
+        duration = time.monotonic() - start
+        self._record_metrics(tool_name, caller_agent, success=False, duration=duration)
+        return last_result if last_result else ToolResult(
+            success=False,
+            error="未知错误",
+            error_type=ToolErrorType.EXTERNAL_ERROR
+        )
 
-    def _build_injected_base(self, session, context: dict, trace_id: str) -> dict:
+    def _build_injected_base(self, context: dict, trace_id: str) -> dict:
         return {
             "user_id": context.get("user_id", ""),
             "trace_id": trace_id,
             "conversation_summary": context.get("conversation_summary", ""),
-            "profile_summary": context.get("profile_summary", ""),
-            "repository": LoanInterestRepository(session),
+            "profile_summary": context.get("profile_summary", "")
         }
 
     def _record_metrics(self, tool_name, caller_agent, success, duration):
