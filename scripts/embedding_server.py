@@ -5,7 +5,6 @@ from pydantic import BaseModel
 import torch
 
 app = FastAPI()
-# 自动使用 GPU（如果可用）
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model = SentenceTransformer("/root/models/bge-small-loan", device=device)
 

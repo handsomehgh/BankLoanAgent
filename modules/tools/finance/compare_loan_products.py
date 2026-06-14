@@ -55,9 +55,9 @@ def compare_loan_products(
     lpr_service: Annotated[LPRDataService,InjectedToolArg]
 ) -> dict:
     """主函数"""
-    if input.annual_rate is None:
+    if input.scenarios.annual_rate is None:
         lpr_data = lpr_service.get_latest_lpr()
-        input.annual_rate = lpr_data["lpr_5y"]
+        input.scenarios.annual_rate = lpr_data["lpr_5y"]
 
     results = []
     for i, scenario in enumerate(input.scenarios):

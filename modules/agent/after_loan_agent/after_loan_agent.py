@@ -11,6 +11,8 @@ from modules.agent.multi_agent_state import AfterLoanState
 from modules.agent.after_loan_agent.after_loan_response_node import after_loan_response_node
 from modules.module_services.chat_models import RobustLLM
 from modules.module_services.classifier.after_loan_classifier import AfterLoanClassifier
+from modules.skills.skill_executor import SkillExecutor
+from modules.skills.skill_registry import SkillRegistry
 from modules.tools import ToolExecutor
 from modules.tools.tool_selector import ToolSelector
 from utils.serialize_utils.seq_generator import SequenceGenerator
@@ -25,7 +27,9 @@ class AfterLoanAgent:
             tool_executor: ToolExecutor,
             seq_generator: SequenceGenerator,
             tool_selector: ToolSelector,
-            classifier: AfterLoanClassifier
+            classifier: AfterLoanClassifier,
+            skill_executor: SkillExecutor,
+            skill_selector: SkillRegistry
     ):
         self.llm_client = llm_client
         self.registry = registry
@@ -33,6 +37,8 @@ class AfterLoanAgent:
         self.seq_generator = seq_generator
         self.tool_selector = tool_selector
         self.classifier = classifier
+        self.skill_executor = skill_executor
+        self.skill_selector = skill_selector
 
     def build_graph(self) -> StateGraph:
         graph = StateGraph(AfterLoanState)
@@ -44,9 +50,10 @@ class AfterLoanAgent:
                     tool_executor=self.tool_executor,
                     seq_generator=self.seq_generator,
                     tool_selector=self.tool_selector,
-                    classifier=self.classifier
-                    )
-        )
+                    classifier=self.classifier,
+                    skill_executor=self.skill_executor,
+                    skill_selector=self.skill_selector
+                    ))
 
         graph.set_entry_point(AgentNodeName.AFTER_LOAN_RESPONSE.value)
         graph.set_finish_point(AgentNodeName.AFTER_LOAN_RESPONSE.value)

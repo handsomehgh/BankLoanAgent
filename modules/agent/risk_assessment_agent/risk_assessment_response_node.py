@@ -12,6 +12,8 @@ from modules.agent.multi_agent_state import RiskAssessmentState
 from modules.agent.nodes.agent_node_executor import AgentNodeExecutor
 from modules.module_services.chat_models import RobustLLM
 from modules.module_services.classifier.risk_assessment_classifier import RiskAssessmentClassifier
+from modules.skills.skill_executor import SkillExecutor
+from modules.skills.skill_registry import SkillRegistry
 from modules.tools import ToolExecutor
 from modules.tools.tool_selector import ToolSelector
 from utils.serialize_utils.seq_generator import SequenceGenerator
@@ -27,7 +29,9 @@ def risk_assessment_response_node(
         tool_executor: ToolExecutor,
         seq_generator: SequenceGenerator,
         tool_selector: ToolSelector,
-        classifier: RiskAssessmentClassifier
+        classifier: RiskAssessmentClassifier,
+        skill_executor: SkillExecutor,
+        skill_selector: SkillRegistry
 ) -> Dict[str, Any]:
     executor = AgentNodeExecutor(
         agent_module=RegistryModules.RISK_ASSESSMENT,
@@ -38,7 +42,9 @@ def risk_assessment_response_node(
         seq_generator=seq_generator,
         tool_selector=tool_selector,
         post_process=_risk_post_process,
-        classifier=classifier
+        classifier=classifier,
+        skill_executor=skill_executor,
+        skill_selector=skill_selector
     )
     return executor.execute(state, config)
 

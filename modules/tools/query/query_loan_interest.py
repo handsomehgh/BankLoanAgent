@@ -1,10 +1,10 @@
 # author hgh
 # version 1.0
-from typing import Annotated, Any
+from typing import Annotated
 from langchain_core.tools import tool, InjectedToolArg
 from pydantic import BaseModel, Field
 
-from infra.data_model.loan_interest import LoanInterest
+from infra.repository import LoanInterestRepository
 from modules.agent.constants import AgentName
 from modules.tools.error_handler import with_tool_error_handling
 
@@ -22,15 +22,12 @@ class QueryLoanInterestInput(BaseModel):
 )
 @with_tool_error_handling
 def query_loan_interest(
-    input: QueryLoanInterestInput,
-    user_id: Annotated[str, InjectedToolArg],
-    db_session: Annotated[Any, InjectedToolArg]
+        input: QueryLoanInterestInput,
+        user_id: Annotated[str, InjectedToolArg],
+        repository: Annotated[LoanInterestRepository, InjectedToolArg],
 ) -> dict:
     """查询用户对指定贷款类型的意向记录"""
-    record = db_session.query(LoanInterest).filter(
-        LoanInterest.user_id == user_id,
-        LoanInterest.loan_type == input.loan_type
-    ).first()
+    record = repository.find_by_user_and_type(user_id, input.loan_type)
 
     if not record:
         return {
@@ -44,6 +41,7 @@ def query_loan_interest(
         "loan_type": record.loan_type,
         "desired_amount": record.desired_amount,
         "term_years": record.term_years,
+        "contact_time_note": record.contact_time_note or "未指定",
         "repayment_method": record.repayment_method or "未指定",
         "loan_purpose": record.loan_purpose or "未指定",
         "status": record.status,

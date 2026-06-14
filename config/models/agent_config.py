@@ -58,6 +58,7 @@ class AgentConfig(BaseModel):
 
 class LoanAdvisorConfig(AgentConfig):
     """贷款咨询 Agent 配置"""
+    judge_prompt: str = Field(default="",description="工具选择提示词")
     tool_exposure: str = Field(default="skills", description="工具选择策略")
 
 

@@ -51,18 +51,36 @@
 #         label = ID2LABEL[predicted_id]
 #         logger.debug(f"BERT predict: '{text_b[:50]}...' -> {label}")
 #         return label
+import json
+import logging
+import os
+from pathlib import Path
 
 import requests
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 class LoanAdvisorClassifier:
     def __init__(self, api_url: str = "http://localhost:8002"):
         self.api_url = api_url
 
     def predict(self, text_a: str, text_b: str) -> str:
-        resp = requests.post(
-            f"{self.api_url}/predict/advisor",
-            json={"text_a": text_a, "text_b": text_b},
-            timeout=30
-        )
-        resp.raise_for_status()
-        return resp.json()["label"]
+       try:
+           resp = requests.post(
+               f"{self.api_url}/predict/advisor",
+               json={"text_a": text_a, "text_b": text_b},
+               timeout=30
+           )
+           resp.raise_for_status()
+           probs = resp.json()["probability"]
+           if probs and probs < 0.6:
+               low_data_dir = PROJECT_ROOT / "data" / "wheel" / "tool"
+               os.makedirs(low_data_dir, exist_ok=True)
+               low_data_file = low_data_dir / "loan_advisor.jsonl"
+               with open(str(low_data_file), "a", encoding="utf-8") as f:
+                   record = {"text_a": text_a, "text_b": text_b, "label": resp.json()["label"]}
+                   f.write(json.dumps(record, ensure_ascii=False) + "\n")
+           return resp.json()["label"]
+       except Exception as e:
+           logging.error(f"Loan advisor bert failed to make prediction: {e}")
+           return "CLARIFY"

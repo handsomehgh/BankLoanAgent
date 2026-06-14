@@ -9,6 +9,8 @@ from config.registry import ConfigRegistry
 from modules.agent.nodes.agent_node_executor import AgentNodeExecutor
 from modules.module_services.chat_models import RobustLLM
 from modules.module_services.classifier.loan_advisor_classifier import LoanAdvisorClassifier
+from modules.skills.skill_executor import SkillExecutor
+from modules.skills.skill_registry import SkillRegistry
 from modules.tools import ToolExecutor
 from config.global_constant.constants import RegistryModules
 from modules.agent.constants import AgentName
@@ -27,7 +29,9 @@ def loan_advisor_response_node(
         tool_executor: ToolExecutor,
         seq_generator: SequenceGenerator,
         tool_selector: ToolSelector,
-        classifier: LoanAdvisorClassifier
+        classifier: LoanAdvisorClassifier,
+        skill_executor: SkillExecutor,
+        skill_selector: SkillRegistry
 ) -> Dict[str, Any]:
     executor = AgentNodeExecutor(
         agent_module=RegistryModules.LOAN_ADVISOR,
@@ -37,6 +41,8 @@ def loan_advisor_response_node(
         tool_executor=tool_executor,
         seq_generator=seq_generator,
         tool_selector=tool_selector,
-        classifier=classifier
+        classifier=classifier,
+        skill_executor=skill_executor,
+        skill_selector=skill_selector
     )
     return executor.execute(state, config)

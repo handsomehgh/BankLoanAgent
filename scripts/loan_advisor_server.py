@@ -25,6 +25,9 @@ ID2LABEL = {
     9: "compare_loan_products",
     10: "generate_repayment_schedule",
     11: "general_search_knowledge",
+    12: "query_loan_interest",
+    13: "upsert_loan_interest",
+    14: "urge_loan_interest"
 }
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -39,6 +42,7 @@ class PredictRequest(BaseModel):
 class PredictResponse(BaseModel):
     label: str
     label_id: int
+    probability: float
 
 @app.post("/predict/advisor", response_model=PredictResponse)
 async def predict(request: PredictRequest):
@@ -54,8 +58,10 @@ async def predict(request: PredictRequest):
         with torch.no_grad():
             outputs = model(**inputs)
             logits = outputs.logits
+            probs = torch.softmax(logits, dim=-1)
             pred_id = torch.argmax(logits, dim=-1).item()
-        return PredictResponse(label=ID2LABEL[pred_id], label_id=pred_id)
+            pred_prob = probs[0][pred_id].item()
+        return PredictResponse(label=ID2LABEL[pred_id], label_id=pred_id,probability=pred_prob)
     except Exception as e:
         logger.error(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,8 +1,10 @@
 # author hgh
 # version 1.0
-from sqlalchemy import Column, BigInteger, String, Text, JSON, DateTime, Numeric, Integer, SmallInteger
+from sqlalchemy import Column, BigInteger, String, Text, JSON, DateTime, Numeric, Integer, SmallInteger, Index
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
+
+from sqlalchemy.sql.ddl import CreateTable, CreateIndex
 
 Base = declarative_base()
 
@@ -22,6 +24,8 @@ class LoanInterest(Base):
     desired_amount      = Column(Numeric(12,2), comment='期望贷款金额（元）')
     term_years          = Column(Integer, comment='期望贷款期限（年）')
     repayment_method    = Column(String(16), comment='期望还款方式：等额本息/等额本金')
+    preferred_contact_period = Column(String(32),comment="期望联系时间段")
+    contact_time_note = Column(String(64),comment="联系时间备注")
 
     # ========== 需求场景上下文 ==========
     conversation_summary = Column(Text, comment='用户表达意向时的对话摘要（LLM生成）')
@@ -46,6 +50,14 @@ class LoanInterest(Base):
 
     # ========== 索引定义 ==========
     __table_args__ = (
-        # 唯一索引
+        # user_id + loan_type 联合唯一索引（业务幂等 + 数据幂等）
+        Index('uk_user_id_loan_type', 'user_id', 'loan_type', unique=True),
         {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4', 'comment': '贷款意向登记表'}
     )
+
+if __name__ == '__main__':
+    print(CreateTable(LoanInterest.__table__))
+
+    # 生成索引创建 SQL
+    for index in LoanInterest.__table__.indexes:
+        print(CreateIndex(index))

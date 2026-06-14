@@ -37,16 +37,7 @@ def create_tool_from_skill(skill_config: SkillConfig,skill_executor: SkillExecut
         }
     )
     def skill_func(input: DynamicInputModel) -> dict:
-        result = skill_executor.execute(
-            skill=skill_config,
-            input_data=input.model_dump(),
-            trace_id="",
-            caller_agent=skill_config.tags[0]
-        )
-        if result["success"]:
-            return result["data"]
-        else:
-            return f"Skill 执行失败: {result.get('error', '未知错误')}"
+       pass
     return skill_func
 
 

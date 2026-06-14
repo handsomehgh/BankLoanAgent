@@ -1,125 +1,139 @@
-# author hgh
-# version 1.0
+#!/usr/bin/env python3
+"""
+DIRECT_REPLY 训练数据生成脚本（均衡严苛版）
+生成策略：
+  1. 基于业务知识（business_knowledge 有内容）- 约 20%
+  2. 基于上下文（business_knowledge 空，答案在画像/摘要/工具操作/最近对话）- 约 60%
+  3. 干扰项（business_knowledge 有内容但与问题无关，答案在上下文其他部分或常识）- 约 20%
+核心原则：LLM 必须在严格判断下生成问题，答案必须明确可从上下文中直接获取，
+避免仅因少量关键词重叠就认定可回答，否则输出 SKIP。
+"""
 
 import json
 import random
 import time
 import argparse
 import os
-from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from openai import OpenAI
 
 # ======================== 配置 ========================
 DEFAULT_API_KEY = "sk-f174be45c6ce4237a4109976bf38c69b"
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
-# 各类样本数量
-SINGLE_TURN_COUNT = 10
-MULTI_TURN_NO_KNOWLEDGE_COUNT = 15
-MULTI_TURN_WITH_KNOWLEDGE_COUNT = 15
 
+TOTAL_SAMPLES = 200
 RANDOM_SEED = 42
 
-# ======================== 多轮上下文模板（需足够丰富） ========================
-# 这里放入你之前讨论过的模板，为了演示，只放少量，实际使用时应完整补充。
-# ======================== 多轮上下文模板（已完善） ========================
-
-# ======================== 评估数据专属上下文模板（与训练数据独立） ========================
-
+# ======================== 丰富上下文模板（各20条） ========================
 PROFILES = [
-    "用户画像：月收入约3万元，名下一套房无贷款。",
-    "用户画像：月收入1.2万，有消费贷月供2000元。",
-    "用户画像：个体经营者，年收入50万，征信有1次逾期已结清。",
-    "用户画像：公司职员，月收入2.5万，公积金缴存基数2万。",
-    "用户画像：退休工程师，月退休金1万元，有存款80万。",
-    "用户画像：28岁，互联网从业者，月薪4万，无房无贷。",
-    "用户画像：离异，月收入1.8万，名下无房。",
-    "用户画像：小微企业合伙人，年分红30万，有经营贷负债40万。",
-    "用户画像：设计师，自由职业，近半年月均收入2.5万。",
-    "用户画像：公务员，月收入1.6万，公积金余额20万，首次购房。",
+    "用户画像：月收入约2万元，无负债。",
+    "用户画像：月收入1.5万，有车贷3000元/月。",
+    "用户画像：个体户，年收入30万，征信良好。",
+    "用户画像：自由职业，月均入账2万但无正式流水。",
+    "用户画像：退休人员，月退休金8000元。",
+    "用户画像：国企员工，月收入1.8万，公积金缴存基数1.5万，有房贷月供4000元。",
+    "用户画像：25岁，刚工作1年，月收入8000元，无负债，信用记录空白。",
+    "用户画像：已婚，家庭月收入合计4万元，名下一套房贷款已还清，欲购二套房。",
+    "用户画像：小微企业主，年营业额200万，月均净利润5万，有经营贷负债30万。",
+    "用户画像：自由撰稿人，收入不稳定，近6个月平均月入1.2万，无资产。",
+    "用户画像：教师，月收入1万元，公积金缴存比例12%，名下无房，首次购房。",
+    "用户画像：快递员，月收入9000元，现金结算无社保，有花呗欠款5000元。",
+    "用户画像：35岁，互联网工程师，月薪3.5万，持有股票期权，负债为信用卡2万。",
+    "用户画像：宝妈，无固定工作，配偶月入3万，家庭名下无贷款，想以个人名义申请消费贷。",
+    "用户画像：退休公务员，月退休金1.2万元，有定期存款50万，征信无逾期。",
+    "用户画像：刚毕业博士生，入职3个月，月薪1.6万，无负债，意向申请住房贷款。",
+    "用户画像：外卖骑手，月收入不稳定，最近3个月均收入1.1万，无劳动合同。",
+    "用户画像：小卖部店主，月均净利1.5万，无营业执照贷款记录，征信有2次逾期已结清。",
+    "用户画像：医生，月收入2.5万，公积金基数2.2万，已有房一套，欲购学区房。",
+    "用户画像：出租车司机，月入1.3万，有车无负债，但收入难以提供流水。",
 ]
 
 SUMMARIES = [
-    "对话摘要：用户询问了公积金贷款上限，助手根据缴存基数和余额进行估算。",
-    "对话摘要：用户表示征信报告上有一次信用卡逾期，担心影响房贷审批。",
-    "对话摘要：用户咨询了装修贷款的最高额度，助手介绍了不同产品方案。",
-    "对话摘要：用户询问能否将商业贷款转为公积金贷款，助手解释了商转公的条件。",
-    "对话摘要：用户想了解贷款期间能否出售抵押房产，助手说明需先还清贷款。",
-    "对话摘要：用户对利率下调后月供是否变化有疑问，助手解释了重定价机制。",
-    "对话摘要：用户询问了房贷审批不通过的常见原因。",
-    "对话摘要：用户咨询了等额本息改为等额本金的可行性，助手说明需要重新审批。",
-    "对话摘要：用户询问了贷款用途凭证的保留要求，助手说明需保留发票和合同。",
-    "对话摘要：用户想了解夫妻离婚后贷款责任如何划分。",
+    "对话摘要：用户刚咨询了房贷利率，助手回复首套房LPR 4.2% + 30BP。",
+    "对话摘要：用户询问消费贷额度，助手表示需要评估收入和负债。",
+    "对话摘要：用户想了解经营贷和消费贷的区别，助手对比了利率和期限。",
+    "对话摘要：用户表达了想申请装修贷款的意愿，助手介绍了基本条件。",
+    "对话摘要：用户担心征信不良会影响贷款，助手询问了具体逾期情况。",
+    "对话摘要：用户询问了公积金贷款流程，助手说明了申请条件和所需材料。",
+    "对话摘要：用户对比了抵押贷和信用贷的优劣，助手建议根据额度需求选择。",
+    "对话摘要：用户询问贷款审批时效，助手回复信用贷1-3天，房贷约1-2周。",
+    "对话摘要：用户询问了提前还款政策，助手说明满一年免收违约金。",
+    "对话摘要：用户想了解组合贷款（公积金+商贷）的办理方式，助手解释了比例限制。",
+    "对话摘要：用户咨询了贷款利率与LPR的关系，助手解释了加点机制。",
+    "对话摘要：用户询问了贷款被拒后的再申请策略，助手建议改善征信和降低负债。",
+    "对话摘要：用户对还款计划表有疑问，助手解释了等额本息的利息计算方式。",
+    "对话摘要：用户询问了贷款用途的限制，助手明确禁止用于购房首付或投资。",
+    "对话摘要：用户询问了线上申请贷款的额度限制，助手答复纯信用消费贷最高30万。",
+    "对话摘要：用户询问了助学贷款或留学贷款的可能性，助手介绍了教育贷款产品。",
+    "对话摘要：用户询问了车位贷或装修贷的具体利率和期限，助手给出了参考区间。",
+    "对话摘要：用户询问了贷款保险的必要性，助手解释房贷通常强制购买抵押物保险。",
+    "对话摘要：用户询问了贷款期间能否增加共同借款人，助手说明需要重新审批。",
+    "对话摘要：用户咨询了房贷转按揭到其他银行的流程和费用。",
 ]
 
 RECENT_CONVS = [
-    "最近对话：用户: 商贷和公积金组合贷款怎么办理？\n助手: 需要分别向银行和公积金中心申请。",
-    "最近对话：用户: 我的征信报告上显示有一次逾期，会影响房贷审批吗？\n助手: 要看逾期程度和距今时间。",
-    "最近对话：用户: 贷款年限最长能选多少年？\n助手: 住房贷款最长30年，消费贷一般3-5年。",
-    "最近对话：用户: 收入证明需要盖什么章？\n助手: 需要单位公章或人事章，并注明月收入金额。",
-    "最近对话：用户: 等额本息中途能改等额本金吗？\n助手: 可以申请，但需要重新审批，可能涉及手续费。",
-    "最近对话：用户: 贷款审批没通过，多久能再申请？\n助手: 一般建议3-6个月后，先改善征信或降低负债。",
-    "最近对话：用户: 我名下有房，再买一套首付要多少？\n助手: 二套房首付一般不低于60%，具体看当地政策。",
-    "最近对话：用户: 贷款下来后可以提前还一部分吗？\n助手: 可以，满一年后申请不收违约金。",
-    "最近对话：用户: 我换工作了，试用期能贷款吗？\n助手: 一般要求工作满6个月，试用期可能受影响。",
-    "最近对话：用户: 经营贷的用途有限制吗？\n助手: 只能用于企业经营周转，不能用于购房或投资。",
+    "最近对话：用户: 那贷100万30年月供呢？\n助手: 请提供年利率和还款方式。",
+    "最近对话：用户: 能贷多少？\n助手: 您月收入和现有负债大概多少？",
+    "最近对话：用户: 等额本息和等额本金哪个更省钱？\n助手: 等额本金总利息更少。",
+    "最近对话：用户: 利率怎么这么高？\n助手: 目前的利率是根据您的征信和产品类型定的。",
+    "最近对话：用户: 材料已经提交了，什么时候能审批下来？\n助手: 通常在3个工作日内。",
+    "最近对话：用户: 我想贷20万装修，5年还，月供别超过4000行吗？\n助手: 我们试算一下。",
+    "最近对话：用户: 我征信有过一次逾期，影响大吗？\n助手: 单次非连续逾期且已结清，影响有限。",
+    "最近对话：用户: 公积金余额能用来付首付吗？\n助手: 一般不能直接用于首付。",
+    "最近对话：用户: 我老婆没有工作，我们还能贷款吗？\n助手: 可以用您的收入作为主要还款来源。",
+    "最近对话：用户: 还款日我忘了，今天才补上，算逾期吗？\n助手: 一般在还款日后3天内算宽限期。",
+    "最近对话：用户: 我想把等额本息改成等额本金可以吗？\n助手: 还款方式变更需要申请。",
+    "最近对话：用户: 我在外地有套房，再买一套算首套吗？\n助手: 认房又认贷的城市可能算二套。",
+    "最近对话：用户: 贷款批下来钱打到哪里？\n助手: 房贷会直接划入开发商或卖方账户。",
+    "最近对话：用户: 我已经有两张信用卡了，再贷款会不会影响审批？\n助手: 信用卡已用额度会算入负债。",
+    "最近对话：用户: 我月收入1万多，但都是现金，没有流水，能贷款吗？\n助手: 可以提供其他资产证明。",
+    "最近对话：用户: 经营贷的利率和房贷比哪个更低？\n助手: 目前经营贷政策性利率更低。",
+    "最近对话：用户: 我想贷500万，能不能批？\n助手: 大额贷款需要提供更多的收入证明和抵押物。",
+    "最近对话：用户: 还款方式怎么选？\n助手: 等额本息每月还款固定，等额本金前期压力大但总利息少。",
+    "最近对话：用户: 贷款合同签了，利率还会变吗？\n助手: 如果是固定利率则不变，浮动利率随LPR调整。",
+    "最近对话：用户: 提前还贷有违约金吗？\n助手: 满一年通常免收。",
 ]
 
 TOOL_OPS = [
-    "工具操作：助手: query_interest_rate\n工具结果: 消费贷年利率4.5%起。",
-    "工具操作：助手: calculate_monthly_payment\n工具结果: 贷款80万20年，月供约5100元。",
-    "工具操作：助手: check_loan_eligibility\n工具结果: 因近期征信查询次数过多，建议3个月后再申请。",
-    "工具操作：助手: calculate_max_loan_amount\n工具结果: 基于月收入2.5万，最高可贷约120万。",
-    "工具操作：助手: compare_loan_products\n工具结果: 等额本金比等额本息节省总利息约15%。",
-    "工具操作：助手: general_search_knowledge\n工具结果: 经营贷申请条件：营业执照满2年，经营流水。",
-    "工具操作：助手: calculate_loan_total_cost\n工具结果: 总成本含评估费3000元、保险费2000元。",
-    "工具操作：助手: generate_repayment_schedule\n工具结果: 已生成60期还款计划，每月本金和利息逐月变化。",
-    "工具操作：助手: apply_home_loan_skill\n工具结果: 综合评估：参考利率4.2%，建议贷款7成。",
-    "工具操作：助手: apply_consumer_loan_skill\n工具结果: 消费贷额度20万，推荐3年期，利率4.8%。",
+    "工具操作：助手: query_interest_rate\n工具结果: 首套房利率4.2%",
+    "工具操作：助手: calculate_monthly_payment\n工具结果: 月供5300元，总利息90.8万",
+    "工具操作：助手: check_loan_eligibility\n工具结果: 基本符合，但征信查询次数较多",
+    "工具操作：助手: calculate_max_loan_amount\n工具结果: 最高可贷额度180万",
+    "工具操作：助手: compare_loan_products\n工具结果: 等额本金比等额本息节省利息13.2万",
+    "工具操作：助手: general_search_knowledge\n工具结果: 申请材料清单已列出",
+    "工具操作：助手: calculate_loan_total_cost\n工具结果: 含评估费、保险费等共计约1.2万元",
+    "工具操作：助手: generate_repayment_schedule\n工具结果: 已生成36期还款计划表",
+    "工具操作：助手: apply_home_loan_skill\n工具结果: 综合评估完成，参考利率4.5%，建议贷款8成",
+    "工具操作：助手: apply_consumer_loan_skill\n工具结果: 消费贷额度30万，推荐利率4.8%，月供计算完成",
+    "工具操作：助手: query_interest_rate\n工具结果: 二套房利率不低于LPR+60BP，当前为4.95%",
+    "工具操作：助手: calculate_monthly_payment\n工具结果: 等额本金首月还款6250元，末月4210元",
+    "工具操作：助手: check_loan_eligibility\n工具结果: 因工作年限不足，暂不满足基本准入条件",
+    "工具操作：助手: calculate_max_loan_amount\n工具结果: 基于月收入1.5万、零负债，参考额度85万",
+    "工具操作：助手: general_search_knowledge\n工具结果: 经营贷申请需提供营业执照满2年",
+    "工具操作：助手: query_loan_interest\n工具结果: 您的消费贷意向正在处理中，申请编号LON202606100001",
+    "工具操作：助手: upsert_loan_interest\n工具结果: 已帮您登记一笔住房贷款意向，金额200万元，期限30年",
+    "工具操作：助手: urge_loan_interest\n工具结果: 已为您的经营贷意向标记为加急处理",
 ]
 
-MIXED_RICH = [
-    "用户画像：公务员，月收入1.6万，公积金余额20万。\n对话摘要：用户询问了贷款期间能否出售抵押房产。\n最近对话：用户: 如果我把房子卖了，贷款怎么办？\n助手: 需要先还清贷款解除抵押才能过户。",
-    "用户画像：个体经营者，年收入50万，征信有1次逾期已结清。\n对话摘要：用户咨询了经营贷的申请条件。\n工具操作：助手: general_search_knowledge\n工具结果: 经营贷申请需提供营业执照满2年。",
-    "用户画像：28岁，互联网从业者，月薪4万。\n对话摘要：用户想了解等额本息和等额本金哪个更适合。\n最近对话：用户: 我收入比较稳定，选哪种还款方式好？\n助手: 等额本金总利息少，但前期月供高。",
-    "用户画像：退休工程师，月退休金1万元，有存款80万。\n对话摘要：用户咨询了装修贷款的最高额度。\n最近对话：用户: 我想把老房子重新装修一下。\n助手: 装修贷属于消费贷，您可以先了解申请条件和额度。",
-    "用户画像：设计师，自由职业，近半年月均收入2.5万。\n对话摘要：用户对贷款审批不通过的原因有疑问。\n工具操作：助手: check_loan_eligibility\n工具结果: 因工作证明不够充分，建议提供近6个月银行流水。",
-    "用户画像：小微企业合伙人，年分红30万，有经营贷负债40万。\n对话摘要：用户咨询了利率下调后月供的变化。\n最近对话：用户: LPR降了，我的月供能跟着降吗？\n助手: 浮动利率贷款会在重定价日自动调整。",
-    "用户画像：离异，月收入1.8万，名下无房。\n对话摘要：用户询问了离婚后贷款责任的划分。\n最近对话：用户: 房子归前妻，贷款还在我名下，怎么办？\n助手: 需要办理贷款变更手续，由实际居住方承担还款责任。",
-    "用户画像：公司职员，月收入2.5万，公积金缴存基数2万。\n对话摘要：用户咨询了公积金冲还贷的办理条件。\n工具操作：助手: general_search_knowledge\n工具结果: 公积金冲还贷需连续缴存满6个月，可在公积金中心或手机APP签约。",
-    "用户画像：月收入约3万元，名下一套房无贷款。\n对话摘要：用户想了解贷款期间更换还款账户的流程。\n最近对话：用户: 我换了张工资卡，怎么改还款账户？\n助手: 需要本人携带新卡和身份证到柜台办理变更。",
-    "用户画像：月收入1.2万，有消费贷月供2000元。\n对话摘要：用户对贷款用途凭证的保留有疑问。\n最近对话：用户: 消费贷的钱用了之后要保留什么凭证？\n助手: 建议保留发票、合同等，银行可能会抽查用途。",
-]
 # ======================== 工具函数 ========================
-def load_chunks(file_path: str = "chunked_docs.jsonl", filter_source: bool = True) -> List[Dict]:
-    """加载 chunked_docs.jsonl，可选过滤 source_type=faq/product_manual"""
+def load_chunks(file_path="chunked_docs.jsonl"):
     chunks = []
     if not os.path.exists(file_path):
         print(f"警告：{file_path} 不存在")
         return []
     with open(file_path, "r", encoding="utf-8") as f:
         for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            chunk = json.loads(line)
-            if filter_source:
-                source_type = chunk.get("metadata", {}).get("source_type", "")
-                if source_type not in ("faq", "product_manual"):
-                    continue
-            chunks.append(chunk)
-    print(f"加载了 {len(chunks)} 个符合 source_type 的 chunk (faq/product_manual)")
+            if line.strip():
+                chunks.append(json.loads(line))
     return chunks
 
 def get_random_chunk(chunks: List[Dict]) -> Optional[Dict]:
-    """随机返回一个 chunk"""
     if not chunks:
         return None
     return random.choice(chunks)
 
 def build_base_context(with_profile=True, with_summary=True, with_tools=True, with_recent=True) -> str:
-    """构造不含业务知识的上下文（四个字段）"""
     parts = []
     parts.append(f"用户画像：{random.choice(PROFILES) if with_profile else '暂无相关信息'}")
     parts.append(f"对话摘要：{random.choice(SUMMARIES) if with_summary else '暂无相关信息'}")
@@ -127,46 +141,59 @@ def build_base_context(with_profile=True, with_summary=True, with_tools=True, wi
     parts.append(f"最近对话：{random.choice(RECENT_CONVS) if with_recent else '暂无相关信息'}")
     return "\n".join(parts)
 
-def build_text_a(base_context: str, business_knowledge: str) -> str:
-    """拼接完整 text_a（五个字段）"""
+def build_text_a(base_context: str, business_knowledge: str = "暂无相关信息") -> str:
     return f"{base_context}\n业务知识：{business_knowledge}"
 
-def query_llm_for_direct_reply(client: OpenAI, model: str, text_a: str) -> Optional[str]:
-    """让 LLM 判断能否生成可直接回答的问题，返回问题或 SKIP"""
-    prompt = f"""你是一个正在咨询银行贷款的用户。
+def is_valid_sample(text: str) -> bool:
+    forbidden = ["我注意到", "根据您提供的信息", "我来提取参数", "目前已知信息"]
+    return not any(w in text for w in forbidden) and len(text) >= 2
 
-下面是你的对话上下文：
-{text_a}
-
-请判断：基于以上上下文，能否生成一个用户提问，其答案可以直接从上下文中找到？
-
-如果能，请输出这个口语化的用户提问。
-如果不能（上下文信息不足以支撑一个可直接回答的问题），请只输出：SKIP
-
-不要输出任何其他内容。"""
-
+def call_llm(client, model, prompt, max_tokens=120):
     for attempt in range(3):
         try:
             resp = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.9,
-                max_tokens=100,
+                max_tokens=max_tokens,
             )
             result = resp.choices[0].message.content.strip()
             if result == "SKIP":
                 return None
             if result and len(result) >= 2:
                 return result
-            # 如果返回空或极短，重试
         except Exception as e:
             print(f"LLM 调用失败，重试 {attempt+1}: {e}")
             time.sleep(2)
     return None
 
+# ======================== 严苛提示词模板 ========================
+STRICT_DIRECT_PROMPT = """你是一个正在咨询银行贷款的用户。
+你的对话上下文如下：
+{text_a}
+
+请严格判断：基于以上上下文，能否生成一个用户提问，该提问的答案必须**完整、明确、直接**地从上下文中找到，不能仅凭一两个关键词重叠就认为可以回答。
+
+如果能，请输出这个口语化的用户提问（一句话，不要任何解释）。
+如果不能，请只输出 SKIP。
+
+输出规则（严格遵守，违反将被拒绝）：
+1. 如果判断为“能”，只输出一个纯净的口语化问句。不要包含“能。”、“可以。”、“提问：”等任何前缀、后缀或解释。
+2. 如果判断为“不能”，只输出单词 SKIP，不要包含任何其他文字。
+3. 绝对不要输出换行符，你的回复必须是一行文本。
+4. 绝对不要输出思考过程，只输出最终结果。
+
+示例：
+- 正确输出：您之前提到的那笔贷款，最后批了多少额度？
+- 错误输出：能。 根据上下文，提问：您之前提到的那笔贷款，最后批了多少额度？
+- 正确输出：SKIP
+- 错误输出：不能。因为上下文没有提到具体金额。
+
+现在请输出："""
+
 # ======================== 生成函数 ========================
-def generate_single_turn(client: OpenAI, model: str, chunks: List[Dict], count: int) -> List[Dict]:
-    """单轮：仅业务知识，生成 DIRECT_REPLY 样本"""
+def generate_samples_business_knowledge(client, model, chunks, count):
+    """基于业务知识生成样本，业务知识字段有内容，答案在业务知识中"""
     samples = []
     while len(samples) < count:
         chunk = get_random_chunk(chunks)
@@ -175,100 +202,107 @@ def generate_single_turn(client: OpenAI, model: str, chunks: List[Dict], count: 
         content = chunk.get("content", "")
         if not content:
             continue
-
-        base_context = "用户画像：暂无相关信息\n对话摘要：暂无相关信息\n近期工具操作：暂无相关信息\n最近对话：暂无相关信息"
-        text_a = build_text_a(base_context, content)
-        question = query_llm_for_direct_reply(client, model, text_a)
-        if question:
+        # 随机单轮/多轮
+        if random.random() < 0.4:
+            base = "用户画像：暂无相关信息\n对话摘要：暂无相关信息\n近期工具操作：暂无相关信息\n最近对话：暂无相关信息"
+        else:
+            base = build_base_context()
+        text_a = build_text_a(base, content)
+        question = call_llm(client, model, STRICT_DIRECT_PROMPT.format(text_a=text_a))
+        if question and is_valid_sample(question):
             samples.append({"text_a": text_a, "text_b": question, "label": "DIRECT_REPLY"})
-            print(f"单轮 生成 {len(samples)}/{count}")
     return samples
 
-def generate_multi_no_knowledge(client: OpenAI, model: str, count: int) -> List[Dict]:
-    """多轮情况1：上下文不含业务知识"""
+def generate_samples_context(client, model, count, with_business_knowledge=False, chunks=None):
+    """基于上下文生成样本，业务知识字段为空或可选，答案在其他字段"""
     samples = []
     while len(samples) < count:
-        base_context = build_base_context(
-            with_profile=random.random() > 0.3,
-            with_summary=random.random() > 0.3,
-            with_tools=random.random() > 0.5,
-            with_recent=random.random() > 0.2
-        )
-        text_a = build_text_a(base_context, "暂无相关信息")
-        question = query_llm_for_direct_reply(client, model, text_a)
-        if question:
+        base = build_base_context(with_tools=True, with_recent=True)
+        bk = "暂无相关信息"
+        if with_business_knowledge and chunks:
+            chunk = get_random_chunk(chunks)
+            if chunk:
+                bk = chunk.get("content", "")[:600]
+        text_a = build_text_a(base, bk)
+        question = call_llm(client, model, STRICT_DIRECT_PROMPT.format(text_a=text_a))
+        if question and is_valid_sample(question):
             samples.append({"text_a": text_a, "text_b": question, "label": "DIRECT_REPLY"})
-            print(f"多轮(无知识) 生成 {len(samples)}/{count}")
     return samples
 
-def generate_multi_with_knowledge(client: OpenAI, model: str, chunks: List[Dict], count: int) -> List[Dict]:
-    """多轮情况2：上下文含业务知识"""
+def generate_samples_noise(client, model, chunks, count):
+    """干扰项：有业务知识但与问题无关，答案在上下文其他地方"""
     samples = []
     while len(samples) < count:
+        # 获取一个业务知识片段
         chunk = get_random_chunk(chunks)
         if not chunk:
             break
-        content = chunk.get("content", "")
-        if not content:
-            continue
+        bk_content = chunk.get("content", "")[:600]
+        base = build_base_context(with_tools=True, with_recent=True)
+        text_a = build_text_a(base, bk_content)
+        # 要求 LLM 生成一个与业务知识无关、但可以从其他上下文回答的问题
+        prompt = f"""你是一个正在咨询银行贷款的用户。
+你的对话上下文如下：
+{text_a}
 
-        base_context = build_base_context(
-            with_profile=random.random() > 0.3,
-            with_summary=random.random() > 0.3,
-            with_tools=random.random() > 0.5,
-            with_recent=random.random() > 0.2
-        )
-        text_a = build_text_a(base_context, content)
-        question = query_llm_for_direct_reply(client, model, text_a)
-        if question:
+请严格判断：基于上述上下文中**除“业务知识”以外的部分**（即用户画像、对话摘要、近期工具操作、最近对话），能否生成一个用户提问，其答案必须完整、明确、直接地从中找到？
+
+如果能，请输出这个提问。如果不能，请只输出 SKIP。
+
+输出规则（严格遵守，违反将被拒绝）：
+1. 如果判断为“能”，只输出一个纯净的口语化问句。不要包含任何前缀、后缀或解释。
+2. 如果判断为“不能”，只输出单词 SKIP，不要包含任何其他文字。
+3. 绝对不要输出换行符，你的回复必须是一行文本。
+4. 绝对不要输出思考过程，只输出最终结果。
+5. 不要从“业务知识”字段中找答案。
+
+现在请输出："""
+        question = call_llm(client, model, prompt)
+        if question and is_valid_sample(question) and "\n" not in question:
             samples.append({"text_a": text_a, "text_b": question, "label": "DIRECT_REPLY"})
-            print(f"多轮(含知识) 生成 {len(samples)}/{count}")
     return samples
 
 # ======================== 主函数 ========================
 def main(args):
     client = OpenAI(api_key=DEFAULT_API_KEY, base_url=DEFAULT_BASE_URL)
     model = args.model
-
-    # 加载 chunk
     chunks = load_chunks(args.chunk_file)
-    if not chunks:
-        print("未加载到 chunk，退出。")
-        return
-
     random.seed(RANDOM_SEED)
 
+    bk_count = int(TOTAL_SAMPLES * 0.2)
+    context_count = int(TOTAL_SAMPLES * 0.6)
+    noise_count = TOTAL_SAMPLES - bk_count - context_count
+
     all_samples = []
+    print("生成基于业务知识的样本...")
+    all_samples.extend(generate_samples_business_knowledge(client, model, chunks, bk_count))
+    print("生成基于上下文的样本（无业务知识）...")
+    all_samples.extend(generate_samples_context(client, model, context_count, with_business_knowledge=False))
+    print("生成干扰项样本...")
+    all_samples.extend(generate_samples_noise(client, model, chunks, noise_count))
 
-    print("生成单轮 DIRECT_REPLY 样本...")
-    single = generate_single_turn(client, model, chunks, SINGLE_TURN_COUNT)
-    all_samples.extend(single)
+    # 去重
+    seen = set()
+    unique = []
+    for item in all_samples:
+        key = (item["text_a"], item["text_b"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
 
-    print("生成多轮(无知识) DIRECT_REPLY 样本...")
-    multi_no = generate_multi_no_knowledge(client, model, MULTI_TURN_NO_KNOWLEDGE_COUNT)
-    all_samples.extend(multi_no)
-
-    print("生成多轮(含知识) DIRECT_REPLY 样本...")
-    multi_with = generate_multi_with_knowledge(client, model, chunks, MULTI_TURN_WITH_KNOWLEDGE_COUNT)
-    all_samples.extend(multi_with)
-
-    # 保存
-    output_file = args.output or "advisor_direct_reply_samples.jsonl"
+    output_file = args.output or "direct_reply_samples.jsonl"
     with open(output_file, "w", encoding="utf-8") as f:
-        for item in all_samples:
+        for item in unique:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
-    print(f"\n生成完毕，共 {len(all_samples)} 条 DIRECT_REPLY 样本，保存至 {output_file}")
-    print(f"  单轮: {len(single)}")
-    print(f"  多轮(无知识): {len(multi_no)}")
-    print(f"  多轮(含知识): {len(multi_with)}")
+    print(f"\n生成完毕，共 {len(unique)} 条 DIRECT_REPLY 样本，保存至 {output_file}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--api_key", type=str, default=DEFAULT_API_KEY)
     parser.add_argument("--base_url", type=str, default=DEFAULT_BASE_URL)
     parser.add_argument("--model", type=str, default=DEFAULT_MODEL)
-    parser.add_argument("--chunk_file", type=str, default="chunked_docs.jsonl", help="chunked_docs.jsonl 路径")
-    parser.add_argument("--output", type=str, default="advisor_direct_reply_samples.jsonl")
+    parser.add_argument("--chunk_file", type=str, default="chunked_docs.jsonl")
+    parser.add_argument("--output", type=str, default="direct_reply_samples.jsonl")
     args = parser.parse_args()
     main(args)

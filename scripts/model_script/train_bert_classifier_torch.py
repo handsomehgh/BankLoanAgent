@@ -66,7 +66,7 @@ class IntentDataset(Dataset):
                 self.labels.append(label)
 
     def __len__(self):
-        return self.labels
+        return len(self.labels)
 
     def __getitem__(self, idx):
         item = self.encodings[idx]
@@ -143,7 +143,9 @@ def eval_epoch(model, loader, criterion, device):
 
     acc = accuracy_score(all_labels, all_preds)
     f1_macro = f1_score(all_labels, all_preds, average="macro")
-    return total_loss / len(loader), acc, f1_macro
+    f1_per_class = f1_score(all_labels, all_preds, average="none",labels=list(range(len(ID2LABEL))))
+    f1_details = {ID2LABEL[i]: round(f1, 4) for i, f1 in enumerate(f1_per_class)}
+    return total_loss / len(loader), acc, f1_macro,f1_details
 
 
 def main(args):
@@ -157,14 +159,14 @@ def main(args):
     train_loader, val_loader, train_labels = load_data(args.train_path, args.val_path, tokenizer, args.max_length,
                                                        args.batch_size)
 
-    class_weights = compute_class_weight(
-        class_weight="balanced",
-        classes=np.unique(train_labels),
-        y=train_labels
-    )
-    class_weights = torch.tensor(class_weights, dtype=torch.float).to(DEVICE)
+    # class_weights = compute_class_weight(
+    #     class_weight="balanced",
+    #     classes=np.unique(train_labels),
+    #     y=train_labels
+    # )
+    # class_weights = torch.tensor(class_weights, dtype=torch.float).to(DEVICE)
 
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    criterion = nn.CrossEntropyLoss()
     model = get_model(args.model_name)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
 
@@ -175,15 +177,20 @@ def main(args):
     for epoch in range(1, args.epochs + 1):
         print(f"\nEpoch {epoch} / {args.epochs}")
         train_loss, train_acc, train_f1 = train_epoch(model, train_loader, optimizer, criterion, DEVICE)
-        val_loss, val_acc, val_f1 = eval_epoch(model, val_loader, criterion, DEVICE)
+        val_loss, val_acc, val_f1,val_f1_details = eval_epoch(model, val_loader, criterion, DEVICE)
 
         print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | Train F1: {train_f1:.4f}")
         print(f"Val   Loss: {val_loss:.4f} | Acc: {val_acc:.4f} | F1: {val_f1:.4f}")
+        print("Per-Class F1 (Val):")
+        for label, f1 in val_f1_details.items():
+            print(f"  {label}: {f1:.4f}")
+        print()
 
         if val_f1 > best_f1:
             best_f1 = val_f1
             patience_counter = 0
-            torch.save(model.state_dict(), os.path.join(args.output_path, "best_model.pt"))
+            model.save_pretrained(args.output_path)
+            tokenizer.save_pretrained(args.output_path)
             print(f"  -> New best model saved (F1={best_f1:.4f})")
         else:
             patience_counter += 1
@@ -191,15 +198,21 @@ def main(args):
                 print(f"Early stopping triggered after {epoch} epochs")
                 break
 
-    model.load_state_dict(torch.load(os.path.join(args.output_path, "best_model.pt"),map_location=DEVICE))
-    final_loss, final_acc, final_f1 = eval_epoch(model, val_loader, criterion, DEVICE)
-    print(f"\nFinal validation: Loss={final_loss:.4f}, Acc={final_acc:.4f}, F1={final_f1:.4f}")
-    print(f"Best F1: {best_f1:.4f}")
+    print(f"\nLoading best model from {args.output_path}...")
+    model = AutoModelForSequenceClassification.from_pretrained(args.output_path).to(DEVICE)
+    final_loss, final_acc, final_f1,final_f1_details = eval_epoch(model, val_loader, criterion, DEVICE)
+    print(f"\n{'=' * 50}")
+    print(f"Final validation on best model:")
+    print(f"Loss: {final_loss:.4f} | Acc: {final_acc:.4f} | F1: {final_f1:.4f}")
+    print("Per-Class F1 (Final):")
+    for label, f1 in final_f1_details.items():
+        print(f"  {label}: {f1:.4f}")
+    print(f"{'=' * 50}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="上下文完整性 BERT 二分类训练")
-    parser.add_argument("--train_path", type=str, required=True, help="训练集文件路径")
-    parser.add_argument("--val_path", type=str, required=True, help="验证集文件路径")
+    parser.add_argument("--train_path", type=str, default="./advisor_train.jsonl", help="训练集文件路径")
+    parser.add_argument("--val_path", type=str, default="./advisor_val_jsonl", help="验证集文件路径")
     parser.add_argument("--model_name", type=str, default="chinese-roberta-wwm-ext", help="预训练模型名称")
     parser.add_argument("--output_path", type=str, default="./context_classifier", help="模型保存路径")
     parser.add_argument("--max_length", type=int, default=512, help="最大输入长度")

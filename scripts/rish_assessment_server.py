@@ -36,6 +36,7 @@ class PredictRequest(BaseModel):
 class PredictResponse(BaseModel):
     label: str
     label_id: int
+    probability: float
 
 @app.post("/predict/risk", response_model=PredictResponse)
 async def predict(request: PredictRequest):
@@ -51,8 +52,10 @@ async def predict(request: PredictRequest):
         with torch.no_grad():
             outputs = model(**inputs)
             logits = outputs.logits
+            probs = torch.softmax(logits, dim=-1)
             pred_id = torch.argmax(logits, dim=-1).item()
-        return PredictResponse(label=ID2LABEL[pred_id], label_id=pred_id)
+            pred_prob = probs[0][pred_id].item()
+        return PredictResponse(label=ID2LABEL[pred_id], label_id=pred_id,probability=pred_prob)
     except Exception as e:
         logger.error(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

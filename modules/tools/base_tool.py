@@ -15,6 +15,8 @@ from langchain_core.tools import BaseTool as LangChainBaseTool
 
 from config.models.tool_config import ToolRegistryConfig
 from exceptions.exception import ToolExecutionException, ToolErrorType
+from infra.database.mysql_manager import DatabaseManager
+from infra.repository.LoanInterestRepository import LoanInterestRepository
 from modules.tools.tool_constatnt import ToolResult
 from utils.monitor_utils.metrics import tool_call_total, tool_duration_seconds
 
@@ -111,10 +113,10 @@ class ToolExecutor:
     Process: Permission check → Parameter validation → Audit log (before and after) → Execution → Exception handling
     """
 
-    def __init__(self, registry: ToolRegistry, audit_logger=None,session_factory=None):
+    def __init__(self, registry: ToolRegistry, audit_logger=None, db_manager: DatabaseManager=None):
         self.registry = registry
         self.audit_logger = audit_logger
-        self.session_factory = session_factory
+        self.db_manager = db_manager
 
     def execute(
             self,
@@ -126,6 +128,7 @@ class ToolExecutor:
             **runtime_context
     ) -> ToolResult:
         # 1. permission validate + obtain tool
+        session = self.db_manager.create_session()
         tool = self.registry.get_tool(tool_name, version_range, caller_agent)
         if tool is None:
             msg = f"Tool {tool_name} is unavailable or insufficient permissions"
@@ -137,8 +140,18 @@ class ToolExecutor:
         tool_version = extras.get("version", "0.0.0")
 
         # 2. parameter validation
+        logger.info(f"Tool runtime context: {runtime_context}")
         try:
             validated = tool.args_schema(**args) if tool.args_schema else args
+            injected_base = self._build_injected_base(session, runtime_context, trace_id)
+            logger.info(f"Tool injected_base: {injected_base}")
+            injected = getattr(tool, '_injected_kwargs', {}).copy()
+            logger.info(f"Tool injected: {getattr(tool, '_injected_params', [])}")
+            for param_name in getattr(tool, '_injected_params', []):
+                if param_name == 'trace_id':
+                    injected[param_name] = trace_id
+                elif param_name in injected_base:
+                    injected[param_name] = injected_base[param_name]
         except Exception as e:
             logger.warning(f"工具 {tool_name} 参数校验失败: {e}")
             return ToolResult(
@@ -146,20 +159,7 @@ class ToolExecutor:
                 error=f"参数校验失败: {e}",
                 error_type=ToolErrorType.PARAMETER_ERROR
             )
-
-        # 3. parse injection parameters
-        injected = getattr(tool, '_injected_kwargs', {}).copy()
-
-        for param_name in getattr(tool, '_injected_params', []):
-            if param_name == 'trace_id':
-                injected[param_name] = trace_id
-            elif param_name in runtime_context:
-                injected[param_name] = runtime_context[param_name]
-
-        session = None
-        if self.session_factory and 'db_session' in getattr(tool, '_injected_params', []):
-            session = self.session_factory()
-            injected['db_session'] = session
+        logger.info(f"Tool injected parameters: {injected}")
 
         max_retries = 2
         retry_delay = 0.5
@@ -190,7 +190,6 @@ class ToolExecutor:
                     if e.error_type != ToolErrorType.TEMPORARY_ERROR:
                         break
                     logger.warning(f"工具 {tool_name} 临时性故障 (尝试 {attempt + 1}/{max_retries + 1}): {e}")
-                    # 重试前回滚可能存在的脏数据并关闭当前会话，避免影响下一次重试
                     if session:
                         session.rollback()
                 except Exception as e:
@@ -209,10 +208,22 @@ class ToolExecutor:
                 error="未知错误",
                 error_type=ToolErrorType.EXTERNAL_ERROR
             )
+        except Exception as e:
+            if session:
+                session.rollback()
         finally:
             # 确保会话正确关闭，释放连接回连接池
             if session:
                 session.close()
+
+    def _build_injected_base(self, session, context: dict, trace_id: str) -> dict:
+        return {
+            "user_id": context.get("user_id", ""),
+            "trace_id": trace_id,
+            "conversation_summary": context.get("conversation_summary", ""),
+            "profile_summary": context.get("profile_summary", ""),
+            "repository": LoanInterestRepository(session),
+        }
 
     def _record_metrics(self, tool_name, caller_agent, success, duration):
         status = "success" if success else "error"

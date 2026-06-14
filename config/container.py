@@ -9,6 +9,7 @@ from pathlib import Path
 
 from infra.database.mysql_manager import DatabaseManager
 from infra.message_queue import MessageProducer
+from infra.repository.LoanInterestRepository import LoanInterestRepository
 from modules.agent.after_loan_agent.after_loan_agent import AfterLoanAgent
 from modules.agent.constants import StreamName
 from modules.agent.loan_advisor_agent.loan_advisor_agent import LoanAdvisorAgent
@@ -30,6 +31,7 @@ from modules.module_services.classifier.risk_assessment_classifier import RiskAs
 from modules.module_services.lpr_data_service import LPRDataService
 from modules.retrieval.context_complete import ContextComplete
 from modules.skills.skill_executor import SkillExecutor
+from modules.skills.skill_registry import SkillRegistry
 from modules.tools import ToolRegistry, ToolExecutor
 from dependency_injector import containers, providers
 
@@ -57,7 +59,6 @@ from modules.retrieval.query_filter import QueryFilter
 from modules.retrieval.query_rewriter import QueryRewriter
 from modules.retrieval.rereanker import Reranker
 from modules.retrieval.retrieval_service import RetrievalService
-from modules.retrieval.router.retrieval_rule_router import RuleBaseRetrievalRouter
 from modules.tools.tool_selector import ToolSelector
 from utils.serialize_utils.seq_generator import SequenceGenerator
 
@@ -309,34 +310,37 @@ def _create_tool_registry(registry: ConfigRegistry):
 
 
 def _create_tool_executor(tool_registry, audit_logger,db_manager):
-    return ToolExecutor(registry=tool_registry, audit_logger=audit_logger,session_factory=db_manager.session_factory)
+    return ToolExecutor(registry=tool_registry, audit_logger=audit_logger,db_manager=db_manager)
 
+def _create_skill_executor(tool_registry, audit_logger,db_manager):
+    return SkillExecutor(tool_registry,db_manager,audit_logger)
 
 def _build_supervisor_graph(memory_retriever, seq_generator, registry, llm_client, memory_config, knowledge_retrieve):
     agent = SupervisorAgent(memory_retriever, seq_generator, registry, llm_client, memory_config, knowledge_retrieve)
     return agent.build_graph()
 
 
-def _build_loan_advisor_graph(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier):
+def _build_loan_advisor_graph(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier,skill_executor,skill_selector):
     agent = LoanAdvisorAgent(
         llm_client=llm_client,
         registry=registry,
         tool_executor=tool_executor,
         seq_generator=seq_generator,
         tool_selector=tool_selector,
-        classifier = classifier
-
+        classifier = classifier,
+        skill_executor=skill_executor,
+        skill_selector=skill_selector
     )
     return agent.build_graph()
 
 
-def _build_risk_assessment_graph(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier):
-    agent = RiskAssessmentAgent(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier)
+def _build_risk_assessment_graph(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier,skill_executor,skill_selector):
+    agent = RiskAssessmentAgent(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier,skill_executor,skill_selector)
     return agent.build_graph()
 
 
-def _build_after_loan_graph(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier):
-    agent = AfterLoanAgent(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier)
+def _build_after_loan_graph(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier,skill_executor,skill_selector):
+    agent = AfterLoanAgent(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier,skill_executor,skill_selector)
     return agent.build_graph()
 
 
@@ -349,7 +353,7 @@ def _build_extract_profile_node(memory_store,profile_gate,memory_config,evidence
 def _build_interaction_node(memory_store, memory_config, summary_generator, sentiment_analyzer, message_producer):
     return SummaryInteractionNode(memory_store, memory_config, summary_generator, sentiment_analyzer, message_producer)
 
-def _register_skills(tool_registry, skill_executor):
+def _register_skills(tool_registry, skill_executor,skill_registry):
     from config.skills_loader import load_skill_configs
     from modules.skills.skill_factory import create_tool_from_skill
     import logging
@@ -358,6 +362,7 @@ def _register_skills(tool_registry, skill_executor):
     skill_configs = load_skill_configs(PROJECT_ROOT / "config/skills")
     logger.info("Loaded %d skill configs", len(skill_configs))
     for cfg in skill_configs:
+        skill_registry.register(cfg)
         tool = create_tool_from_skill(cfg, skill_executor)
         tool_registry.register(tool)
         logger.info("Registered skill: %s v%s", cfg.name, cfg.version)
@@ -472,6 +477,12 @@ class ApplicationContainer(containers.DeclarativeContainer):
     # lpr service
     lpr_service = providers.Singleton(_create_lpr_service, config_registry, lpr_cache)
 
+    # loan repository
+    loan_interest_repository = providers.Factory(
+        LoanInterestRepository,
+        db_session=None
+    )
+
     # Tool System
     tool_registry = providers.Singleton(_create_tool_registry, config_registry)
     tool_selector = providers.Singleton(
@@ -479,12 +490,14 @@ class ApplicationContainer(containers.DeclarativeContainer):
         registry=tool_registry
     )
     tool_executor = providers.Singleton(_create_tool_executor, tool_registry, None,db_manager)
-    skill_executor = providers.Singleton(SkillExecutor, tool_executor=tool_executor)
+    skill_executor = providers.Singleton(_create_skill_executor, tool_registry,None,db_manager)
+    skill_registry = providers.Singleton(SkillRegistry)
 
     skills_init = providers.Resource(
         _register_skills,
         tool_registry=tool_registry,
-        skill_executor=skill_executor
+        skill_executor=skill_executor,
+        skill_registry=skill_registry,
     )
 
     def _init_skills(self):
@@ -539,7 +552,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
         tool_executor=tool_executor,
         seq_generator=seq_generator,
         tool_selector=tool_selector,
-        classifier = loan_advisor_classifier
+        classifier = loan_advisor_classifier,
+        skill_executor=skill_executor,
+        skill_selector=skill_registry,
     )
 
     # risk assessment graph
@@ -550,7 +565,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
         tool_executor=tool_executor,
         seq_generator=seq_generator,
         tool_selector=tool_selector,
-        classifier=risk_assessment_classifier
+        classifier=risk_assessment_classifier,
+        skill_executor=skill_executor,
+        skill_selector=skill_registry,
     )
 
     # after loan graph
@@ -561,7 +578,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
         tool_executor=tool_executor,
         seq_generator=seq_generator,
         tool_selector=tool_selector,
-        classifier = after_loan_classifier
+        classifier = after_loan_classifier,
+        skill_executor=skill_executor,
+        skill_selector=skill_registry,
     )
 
     #result aggregator node

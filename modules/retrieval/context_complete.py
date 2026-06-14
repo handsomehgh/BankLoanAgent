@@ -30,11 +30,12 @@ class ContextComplete:
             resp.raise_for_status()
             result = resp.json()["label"]
             result_probability = resp.json()["probability"]
+            logger.info(f"Context complete result: {result}, probability: {result_probability}")
 
             if result == "COMPLETE" and result_probability <= 0.6:
-                low_data_dir = PROJECT_ROOT / "data" / "context_low"
+                low_data_dir = PROJECT_ROOT / "data" / "wheel" / "complete"
                 os.makedirs(low_data_dir, exist_ok=True)
-                low_data_file = low_data_dir / "low_data.jsonl"
+                low_data_file = low_data_dir / "context_complete.jsonl"
 
                 with open(str(low_data_file), "a", encoding="utf-8") as f:
                     record = {"text_a": context, "text_b": query, "label": result}

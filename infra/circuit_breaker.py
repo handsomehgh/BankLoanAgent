@@ -46,7 +46,7 @@ class CircuitBreaker():
                         self.state = "OPEN"
                         logger.error(
                             f"[CircuitBreaker] {self.name} continuous failure {self.failure_count} time，already tripped")
-                return e
+                raise e
             except Exception as e:
                 self.failure_count += 1
                 self.last_failure_time = time.time()
@@ -54,4 +54,4 @@ class CircuitBreaker():
                     self.state = "OPEN"
                     logger.error(
                         f"[CircuitBreaker] {self.name} continuous failure {self.failure_count} time，already tripped")
-                return e
+                raise e

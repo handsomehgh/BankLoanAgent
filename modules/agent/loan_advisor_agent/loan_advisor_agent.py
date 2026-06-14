@@ -21,6 +21,8 @@ from modules.agent.loan_advisor_agent.loan_advisor_response_node import loan_adv
 from modules.agent.multi_agent_state import LoanAdvisorState
 from modules.module_services.chat_models import RobustLLM
 from modules.module_services.classifier.loan_advisor_classifier import LoanAdvisorClassifier
+from modules.skills.skill_executor import SkillExecutor
+from modules.skills.skill_registry import SkillRegistry
 from modules.tools import ToolExecutor
 from modules.tools.tool_selector import ToolSelector
 from utils.serialize_utils.seq_generator import SequenceGenerator
@@ -39,6 +41,8 @@ class LoanAdvisorAgent:
             seq_generator: SequenceGenerator,
             tool_selector: ToolSelector,
             classifier: LoanAdvisorClassifier,
+            skill_executor: SkillExecutor,
+            skill_selector: SkillRegistry
     ):
         self.llm_client = llm_client
         self.registry = registry
@@ -46,6 +50,8 @@ class LoanAdvisorAgent:
         self.seq_generator = seq_generator
         self.tool_selector = tool_selector
         self.classifier = classifier
+        self.skill_executor = skill_executor,
+        self.skill_selector = skill_selector
 
     def build_graph(self) -> StateGraph:
         """build loanAdvisor subgraph"""
@@ -58,7 +64,9 @@ class LoanAdvisorAgent:
                            tool_executor=self.tool_executor,
                            seq_generator=self.seq_generator,
                            tool_selector=self.tool_selector,
-                           classifier=self.classifier
+                           classifier=self.classifier,
+                           skill_executor=self.skill_executor,
+                           skill_selector=self.skill_selector
                        )
         )
         graph.set_entry_point(AgentNodeName.LOAN_ADVISOR_RESPONSE.value)

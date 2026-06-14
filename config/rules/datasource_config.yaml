@@ -21,11 +21,11 @@ neo4j:
 
 
 mysql:
-  host: "127.0.0.1"
+  host: "192.168.24.128"
   port: 3306
   user: "root"
-  password: "your_password"
-  database: "bank_agent"
+  password: "root"
+  database: "loan_interests"
   charset: "utf8mb4"
   pool_size: 10
   pool_recycle: 3600

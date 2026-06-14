@@ -227,8 +227,12 @@ class MultiAgentGraphBuilder:
         if not ctx:
             logger.warning(f"[LoanAdvisor] miss agent context")
             return {
-                StateFields.AGENT_RESPONSES.value: {},
-                StateFields.SUB_MESSAGES.value: {},
+                StateFields.AGENT_RESPONSES.value: {
+                    AgentName.LOAN_ADVISOR.value: AgentResponse(content="抱歉，贷款咨询服务暂时不可用，请稍后重试。")
+                },
+                StateFields.SUB_MESSAGES.value: {
+                    AgentName.LOAN_ADVISOR.value: []
+                }
             }
         try:
             sub_state = {StateFields.AGENT_CONTEXT.value: ctx}
@@ -257,8 +261,12 @@ class MultiAgentGraphBuilder:
         if not ctx:
             logger.warning(f"[RiskAssessment] miss agent context")
             return {
-                StateFields.AGENT_RESPONSES.value: {},
-                StateFields.SUB_MESSAGES.value: {},
+                StateFields.AGENT_RESPONSES.value: {
+                    AgentName.RISK_ASSESSMENT.value: AgentResponse(content="抱歉，风控服务暂时不可用，请稍后重试。")
+                },
+                StateFields.SUB_MESSAGES.value: {
+                    AgentName.RISK_ASSESSMENT.value: []
+                },
                 StateFields.TRIGGER_HUMAN_HANDOFF.value: False
             }
         try:
@@ -290,8 +298,12 @@ class MultiAgentGraphBuilder:
         if not ctx:
             logger.warning(f"[AfterLoan] miss agent context")
             return {
-                StateFields.AGENT_RESPONSES.value: {},
-                StateFields.SUB_MESSAGES.value: {},
+                StateFields.AGENT_RESPONSES.value: {
+                    AgentName.AFTER_LOAN.value: AgentResponse(content="抱歉，贷后服务暂时不可用，请稍后重试。")
+                },
+                StateFields.SUB_MESSAGES.value: {
+                    AgentName.AFTER_LOAN.value: []
+                },
             }
         try:
             sub_state = {StateFields.AGENT_CONTEXT.value: ctx}

@@ -6,13 +6,15 @@ responsible for executing steps in order according to skill config,parsing param
 """
 import logging
 import time
-from typing import Dict, Any,Union
+from typing import Dict, Any, Union
 
 from jinja2 import Template, Undefined
 
 from config.models.skill_config import SkillConfig, SkillArg
-from modules.tools import ToolExecutor, ToolResult
-from modules.tools.base_tool import ToolErrorType
+from infra.database.mysql_manager import DatabaseManager
+from infra.repository.LoanInterestRepository import LoanInterestRepository
+from modules.tools import ToolRegistry
+from modules.tools.base_tool import ToolErrorType, ToolExecutionException
 from utils.monitor_utils.metrics import skill_execution_total, skill_execution_duration_seconds
 
 logger = logging.getLogger(__name__)
@@ -24,166 +26,159 @@ class SilentUndefined(Undefined):
 
 
 class SkillExecutor:
-    """skill executor"""
+    """技能执行器（重构版）"""
 
-    def __init__(self, tool_executor: ToolExecutor):
-        self.tool_executor = tool_executor
+    def __init__(self, registry: ToolRegistry, db_manager: DatabaseManager, audit_logger=None):
+        self.registry = registry          # 工具注册中心
+        self.db_manager = db_manager      # 数据库会话工厂
+        self.audit_logger = audit_logger
 
     def execute(
             self,
             skill: SkillConfig,
             input_data: Dict[str, Any],
             trace_id: str = "",
-            caller_agent: str = ""
+            caller_agent: str = "",
+            **context
     ) -> Dict[str, Any]:
-        """
-        execute skill
-
-        Args:
-            skill: skill config model
-            input_data: the parameters passed by the LLM correspond to Skill.input_schema
-            trace_id: trace id
-            caller_agent: agent name
-
-        Returns:
-            result,contain fields such as success/data/error etc.
-        """
-        # store execute state
+        session = self.db_manager.create_session()
         start_time = time.monotonic()
-        logger.info(
-            "Start process Skill '%s' (version=%s), trace_id=%s, input=%s",
-            skill.name, skill.version, trace_id, input_data
-        )
+        logger.info("Skill '%s' (v%s) start, trace=%s", skill.name, skill.version, trace_id)
 
+        try:
+            # ===== 1. build base dict =====
+            injected_base = self._build_injected_base(session, context, trace_id)
+
+            # ===== 2. validate input =====
+            self._validate_input(skill, input_data)
+
+            state = {"input": input_data}
+            for step in skill.steps:
+                state[step.output_key] = None
+
+            # ===== 3. execute step =====
+            for step in skill.steps:
+                logger.debug("Skill '%s' step '%s'", skill.name, step.name)
+
+                # 3.1 validate step param
+                try:
+                    resolved_args = self._resolve_args(step.args, state)
+                except Exception as e:
+                    logger.error("步骤参数解析失败 step=%s: %s", step.name, e)
+                    if step.optional:
+                        state[step.output_key] = getattr(step, 'fallback_value', None)
+                        continue
+                    raise ToolExecutionException(
+                        f"步骤 '{step.name}' 参数解析失败: {e}",
+                        ToolErrorType.PARAMETER_ERROR
+                    )
+
+                # 3.2 get tool
+                tool = self.registry.get_tool(step.tool, ">=1.0.0", caller_agent)
+                if not tool:
+                    raise ToolExecutionException(
+                        f"工具 {step.tool} 未注册或无权调用",
+                        ToolErrorType.BUSINESS_ERROR
+                    )
+
+                # 3.3 injected param
+                injected = getattr(tool, '_injected_kwargs', {}).copy()
+                for param_name in getattr(tool, '_injected_params', []):
+                    if param_name == 'trace_id':
+                        injected[param_name] = trace_id
+                    elif param_name in injected_base:
+                        injected[param_name] = injected_base[param_name]
+
+                # 3.4 execute tools
+                validated = tool.args_schema(**resolved_args) if tool.args_schema else resolved_args
+                max_step_retries = 2
+                for attempt in range(max_step_retries + 1):
+                    try:
+                        result = tool.func(validated, **injected)
+                        state[step.output_key] = self._normalize_result(result)
+                        break
+                    except ToolExecutionException as e:
+                        if e.error_type == ToolErrorType.TEMPORARY_ERROR and attempt < max_step_retries:
+                            time.sleep(0.5 * (2 ** attempt))
+                            continue
+                        self._handle_failure(skill.name, step, state, session)
+                        break
+                    except Exception:
+                        self._handle_failure(skill.name, step, state, session)
+                        break
+
+            # ===== 4. success/commit transaction =====
+            session.commit()
+            duration = time.monotonic() - start_time
+            logger.info("Skill '%s' success, time=%.3fs", skill.name, duration)
+            skill_execution_total.labels(skill_name=skill.name, status="success").inc()
+            skill_execution_duration_seconds.labels(skill_name=skill.name).observe(duration)
+
+            # ===== 5. render output =====
+            output = self._render_template(skill.output_template, state)
+            return {"success": True, "data": output, "raw_state": state}
+
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def _build_injected_base(self, session, context: dict, trace_id: str) -> dict:
+        return {
+            "user_id": context.get("user_id", ""),
+            "trace_id": trace_id,
+            "conversation_summary": context.get("conversation_summary", ""),
+            "profile_summary": context.get("profile_summary", ""),
+            "repository": LoanInterestRepository(session),
+        }
+
+    def _build_injected(self, tool, base_injected: dict) -> dict:
+        needed = set(getattr(tool, '_injected_params', []))
+        return {k: v for k, v in base_injected.items() if k in needed}
+
+    def _handle_failure(self, skill_name: str, step, state: dict, session):
+        on_failure = getattr(step, 'on_failure', 'abort')
+        skill_execution_total.labels(skill_name=skill_name, status="error").inc()
+
+        if on_failure == "skip":
+            state[step.output_key] = getattr(step, 'fallback_value', None)
+        elif on_failure == "use_fallback":
+            state[step.output_key] = getattr(step, 'fallback_value', None)
+        elif on_failure == "abort":
+            raise ToolExecutionException(
+                f"步骤 '{step.name}' 失败且策略为 abort",
+                ToolErrorType.EXTERNAL_ERROR
+            )
+
+    def _validate_input(self, skill: SkillConfig, input_data: Dict[str, Any]):
         for param_def in skill.input_schema:
             value = input_data.get(param_def.name)
             if value is None:
                 if param_def.required:
-                    logger.warning("Skill '%s' 缺少必填参数: %s", skill.name, param_def.name)
-                    return {
-                        "success": False,
-                        "error": f"缺少必填参数: {param_def.name}",
-                        "error_type": ToolErrorType.PARAMETER_ERROR.value
-                    }
+                    raise ToolExecutionException(
+                        f"缺少必填参数: {param_def.name}",
+                        ToolErrorType.PARAMETER_ERROR
+                    )
                 continue
             if param_def.validation:
                 v = param_def.validation
                 if v.ge is not None and value < v.ge:
-                    return {
-                        "success": False,
-                        "error": f"参数 {param_def.name} 需要 >= {v.ge}，当前值: {value}",
-                        "error_type": ToolErrorType.PARAMETER_ERROR.value
-                    }
+                    raise ToolExecutionException(f"参数 {param_def.name} 需要 >= {v.ge}, 当前 {value}", ToolErrorType.PARAMETER_ERROR)
                 if v.le is not None and value > v.le:
-                    return {
-                        "success": False,
-                        "error": f"参数 {param_def.name} 需要 <= {v.le}，当前值: {value}",
-                        "error_type": ToolErrorType.PARAMETER_ERROR.value
-                    }
+                    raise ToolExecutionException(f"参数 {param_def.name} 需要 <= {v.le}, 当前 {value}", ToolErrorType.PARAMETER_ERROR)
                 if v.gt is not None and value <= v.gt:
-                    return {
-                        "success": False,
-                        "error": f"参数 {param_def.name} 需要 > {v.gt}，当前值: {value}",
-                        "error_type": ToolErrorType.PARAMETER_ERROR.value
-                    }
+                    raise ToolExecutionException(f"参数 {param_def.name} 需要 > {v.gt}, 当前 {value}", ToolErrorType.PARAMETER_ERROR)
                 if v.lt is not None and value >= v.lt:
-                    return {
-                        "success": False,
-                        "error": f"参数 {param_def.name} 需要 < {v.lt}，当前值: {value}",
-                        "error_type": ToolErrorType.PARAMETER_ERROR.value
-                    }
+                    raise ToolExecutionException(f"参数 {param_def.name} 需要 < {v.lt}, 当前 {value}", ToolErrorType.PARAMETER_ERROR)
 
-        state = {"input": input_data}
-
-        for step in skill.steps:
-            state[step.output_key] = None
-
-        # excute skill steps
-        for step in skill.steps:
-            logger.debug("Skill '%s' strat processing step '%s'", skill.name, step.name)
-            try:
-                # parsing step args
-                resolved_args = self._resolve_args(step.args, state)
-            except Exception as e:
-                logger.error("failed to parsing param (step=%s): %s", step.name, e)
-
-                if step.optional:
-                    state[step.output_key] = step.fallback_value if hasattr(step, 'fallback_value') else None
-                    continue
-
-                skill_execution_total.labels(
-                    skill_name=skill.name, status="error"
-                ).inc()
-
-                return {
-                    "success": False,
-                    "error": f"步骤 '{step.name}' 参数解析失败: {e}",
-                    "error_type": ToolErrorType.PARAMETER_ERROR.value,
-                    "failed_step": step.name
-                }
-
-            # call atomic tool
-            logger.info("Skill '%s' execute step '%s' calling tool '%s'", skill.name, step.name, step.tool)
-            result: ToolResult = self.tool_executor.execute(
-                tool_name=step.tool,
-                args=resolved_args,
-                caller_agent=caller_agent,
-                trace_id=trace_id
-            )
-
-            # handling result
-            if result.success:
-                logger.debug("Step '%s' process successfully", step.name)
-                state[step.output_key] = result.data
-                continue
-
-            logger.warning("步骤 '%s' 执行失败: error_type=%s, error=%s", step.name, result.error_type, result.error)
-            skill_execution_total.labels(
-                skill_name=skill.name, status="error"
-            ).inc()
-            on_failure = step.on_failure if hasattr(step, 'on_failure') else "abort"
-            if on_failure == "skip":
-                state[step.output_key] = step.fallback_value if hasattr(step, 'fallback_value') else None
-                continue
-            elif on_failure == "use_fallback":
-                state[step.output_key] = step.fallback_value if hasattr(step, 'fallback_value') else None
-                continue
-            elif on_failure == "abort":
-                return {
-                    "success": False,
-                    "error": result.error,
-                    "error_type": result.error_type.value if result.error_type else ToolErrorType.EXTERNAL_ERROR.value,
-                    "failed_step": step.name
-                }
-
-        # render output template
-        try:
-            output = self._render_template(skill.output_template, state)
-        except Exception as e:
-            logger.error("Failed to render output template: %s", e)
-            skill_execution_total.labels(
-                skill_name=skill.name, status="error"
-            ).inc()
-            return {
-                "success": False,
-                "error": f"输出模板渲染失败: {e}",
-                "error_type": ToolErrorType.EXTERNAL_ERROR.value
-            }
-
-        duration = time.monotonic() - start_time
-        skill_execution_total.labels(
-            skill_name=skill.name, status="success"
-        ).inc()
-        skill_execution_duration_seconds.labels(skill_name=skill.name).observe(duration)
-        logger.info(
-            "Skill '%s' process successfully, cost time %.3f second", skill.name, duration
-        )
-
-        return {
-            "success": True,
-            "data": output,
-            "raw_state": state
-        }
+    def _normalize_result(self, result):
+        if isinstance(result, str):
+            return result
+        elif isinstance(result, dict):
+            return result
+        else:
+            return str(result)
 
     def _build_render_context(self, state: Dict[str, Any]) -> Dict[str, Any]:
         render_ctx = {"input": state.get("input", {})}
@@ -227,11 +222,9 @@ class SkillExecutor:
             return str(template_str)
         template = Template(template_str, undefined=SilentUndefined)
         result = template.render(**render_ctx)
-        # 如果渲染结果是 None，返回空字符串以便后续过滤
         return result if result is not None else ""
 
     def _cast_value(self, value: str, target_type: str) -> Any:
-        """根据目标类型转换渲染后的字符串值"""
         if value.strip() == "" or value.strip().lower() == "null":
             return None
         if target_type == "string":
@@ -251,7 +244,6 @@ class SkillExecutor:
         if target_type == "json":
             import json
             return json.loads(value.strip())
-        # 默认原样返回
         return value
 
     def _render_template(self, template_str: str, state: Dict[str, Any]) -> str:

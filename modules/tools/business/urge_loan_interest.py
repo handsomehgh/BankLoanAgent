@@ -1,11 +1,10 @@
 # author hgh
 # version 1.0
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated
 from langchain_core.tools import tool, InjectedToolArg
 from pydantic import BaseModel, Field
-
-from infra.data_model.loan_interest import LoanInterest
+from infra.repository import LoanInterestRepository
 from modules.agent.constants import AgentName
 from modules.tools.error_handler import with_tool_error_handling
 
@@ -23,16 +22,12 @@ class UrgeLoanInterestInput(BaseModel):
 )
 @with_tool_error_handling
 def urge_loan_interest(
-    input: UrgeLoanInterestInput,
-    user_id: str,
-    db_session: Annotated[Any, InjectedToolArg]
+        input: UrgeLoanInterestInput,
+        user_id: str,
+        repository: Annotated[LoanInterestRepository, InjectedToolArg],
 ) -> dict:
     """标记意向为加急处理"""
-    record = db_session.query(LoanInterest).filter(
-        LoanInterest.user_id == user_id,
-        LoanInterest.loan_type == input.loan_type
-    ).first()
-
+    record = repository.find_by_user_and_type(user_id, input.loan_type)
     if not record:
         return {
             "signal": "not_found",
@@ -40,9 +35,7 @@ def urge_loan_interest(
         }
 
     if record.status in ('待处理', '处理中'):
-        record.urgency = 1
-        record.last_urged_at = datetime.now()
-        db_session.commit()
+        repository.mark_urgent(record)
         return {
             "signal": "urged",
             "application_no": record.application_no,
