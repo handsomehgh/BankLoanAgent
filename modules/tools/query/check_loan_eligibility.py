@@ -19,16 +19,16 @@ logger = logging.getLogger(__name__)
 class CheckLoanEligibilityInput(BaseModel):
     """贷款资格预审输入"""
     loan_type: str = Field(..., description="贷款类型：住房贷款、消费贷款、经营贷款")
-    desired_amount: Optional[float] = Field(None, description="期望贷款金额（元），不提供则跳过额度相关检查")
-    term_years: Optional[int] = Field(None, description="期望贷款期限（年），不提供则跳过期限相关检查")
-    age: Optional[int] = Field(None, description="年龄（岁）")
-    monthly_income: Optional[float] = Field(None, description="月收入（元）")
+    desired_amount: float = Field(None, description="期望贷款金额（元），不提供则跳过额度相关检查")
+    term_years: int = Field(None, description="期望贷款期限（年），不提供则跳过期限相关检查")
+    age: int = Field(None, description="年龄（岁）")
+    monthly_income: float = Field(None, description="月收入（元）")
     occupation: Optional[str] = Field(None, description="职业")
     credit_history: Optional[str] = Field(None, description="征信简况")
-    existing_monthly_debt: Optional[float] = Field(0, description="现有月债务（元）")
+    existing_monthly_debt: float = Field(0, description="现有月债务（元）")
     loan_purpose: Optional[str] = Field(None, description="贷款用途描述")
     has_real_estate: Optional[bool] = Field(None, description="名下是否有房产")
-    work_years: Optional[int] = Field(None, description="当前工作年限（年）")
+    work_years: int = Field(None, description="当前工作年限（年）")
 
     @field_validator("loan_type")
     @classmethod

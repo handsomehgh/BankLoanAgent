@@ -15,6 +15,7 @@ from exceptions.exception import ToolExecutionError, CircuitBreakerOpenError, \
 from infra.circuit_breaker import CircuitBreaker
 from modules.agent.constants import StateFields
 from modules.agent.multi_agent_state import AgentContext, AgentResponse
+from modules.memory.memory_utils.base_memory_utils import format_messages
 from modules.module_services.chat_models import RobustLLM
 from modules.skills.skill_executor import SkillExecutor
 from modules.skills.skill_registry import SkillRegistry
@@ -283,9 +284,9 @@ class AgentNodeExecutor:
             stage = "final"
             try:
                 # build messages
-                res_prompt = SYSTEM_PROMPT.format(agent_role=agent_cfg.res_prompt, **context_vars)
+                current_tool_content = format_messages(messages)
+                res_prompt = SYSTEM_PROMPT.format({**context_vars,"tool_facts":current_tool_content},agent_role=agent_cfg.res_prompt)
                 res_messages = [SystemMessage(content=res_prompt), HumanMessage(content=user_query)]
-                res_messages.extend(messages)
 
                 # call llm
                 total_start = time.monotonic()
@@ -348,10 +349,11 @@ class AgentNodeExecutor:
         if error_type == ToolErrorType.PARAMETER_ERROR:
             agent_cfg = self.registry.get_config(self.agent_module)
             param_error_role = agent_cfg.param_error_prompt.format(error_msg=error_msg)
-            system_prompt = SYSTEM_PROMPT.format(agent_role=param_error_role, **context_vars)
+
+            current_tool_content = format_messages(all_messages)
+            system_prompt = SYSTEM_PROMPT.format({**context_vars,"tool_facts":current_tool_content},agent_role=param_error_role)
             messages = [SystemMessage(content=system_prompt),
                         HumanMessage(content=user_query)]
-            messages.extend(all_messages)
 
             try:
                 response = self.llm_client.invoke(messages, tool_choice="none")

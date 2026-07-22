@@ -61,14 +61,14 @@ class RetrievalService:
 
         if context:
             logger.info("Query complete by context complete: %s", query[:80])
-            query = self.context_complete.complete(query,context)
+            query = self.context_complete.complete(query, context)
 
         logger.info("Start retrieval for query: %s", query[:80])
-        results = asyncio.run(self._retrieve_async(query,filter_expr))
+        results = asyncio.run(self._retrieve_async(query, filter_expr))
         logger.info("Retrieval completed: %d results returned", len(results))
         return results
 
-    async def _retrieve_async(self, query: str,filter_expr: Optional[str] = None) -> List[BusinessKnowledge]:
+    async def _retrieve_async(self, query: str, filter_expr: Optional[str] = None) -> List[BusinessKnowledge]:
         # rewrite query
         total_start = time.monotonic()
 

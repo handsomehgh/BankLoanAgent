@@ -1,5 +1,5 @@
-# app.py
 import logging
+import time
 import uuid
 
 import streamlit as st
@@ -9,6 +9,7 @@ from langgraph.errors import GraphInterrupt
 from config.bootstrap import get_bootstrapper
 from config.global_constant.constants import MemoryType
 from modules.memory.memory_constant.constants import MemoryStatus
+from modules.agent.constants import StateFields
 from utils.logging_config import set_log_context
 import streamlit.watcher.local_sources_watcher as watcher
 
@@ -16,11 +17,10 @@ watcher.MODULE_IGNORE_LIST = ["transformers"]
 
 # ==================== 初始化 ====================
 boot = get_bootstrapper()
-boot.start()
+runtime = boot.start()
 
-container = boot.container
-memory_store = boot.memory_store
-agent = boot.graph
+agent = runtime.graph
+memory_store = runtime.memory_store
 
 logger = logging.getLogger(__name__)
 
@@ -35,18 +35,28 @@ if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 if "waiting_for_human" not in st.session_state:
     st.session_state.waiting_for_human = False
+if "processing" not in st.session_state:
+    st.session_state.processing = False
+
+# 侧边栏禁用的条件：处理中 或 等待人工
+sidebar_disabled = st.session_state.processing or st.session_state.waiting_for_human
 
 # ==================== 侧边栏 ====================
 with st.sidebar:
     st.subheader("👤 用户管理")
-    new_user = st.text_input("用户ID", value=st.session_state.user_id, key="sidebar_user_id_input")
-    if new_user != st.session_state.user_id:
+    new_user = st.text_input(
+        "用户ID",
+        value=st.session_state.user_id,
+        disabled=sidebar_disabled,
+        key="sidebar_user_id_input"
+    )
+    if not sidebar_disabled and new_user != st.session_state.user_id:
         st.session_state.user_id = new_user
         st.session_state.thread_id = str(uuid.uuid4())
         st.rerun()
 
     st.caption(f"会话ID: `{st.session_state.thread_id[:8]}...`")
-    if st.button("🔄 新建会话"):
+    if st.button("🔄 新建会话", disabled=sidebar_disabled):
         st.session_state.thread_id = str(uuid.uuid4())
         st.rerun()
 
@@ -75,7 +85,7 @@ with st.sidebar:
     else:
         st.info("暂无画像记忆，开始对话后自动提取。")
 
-    if st.button("🧹 执行遗忘清理", type="secondary"):
+    if st.button("🧹 执行遗忘清理", type="secondary", disabled=sidebar_disabled):
         try:
             count = memory_store.apply_forgetting(
                 memory_type=MemoryType.USER_PROFILE,
@@ -86,7 +96,7 @@ with st.sidebar:
             st.error(f"遗忘清理失败: {e}")
         st.rerun()
 
-    if st.button("🗑️ 清空当前用户记忆", type="secondary"):
+    if st.button("🗑️ 清空当前用户记忆", type="secondary", disabled=sidebar_disabled):
         try:
             success = memory_store.delete_user_memories(
                 user_id=st.session_state.user_id,
@@ -120,7 +130,6 @@ for msg in messages:
             st.write(msg.content)
 
 if st.session_state.waiting_for_human:
-    # 如果最后一条助手消息不是转接提示，说明人工已回复
     last_ai_msgs = [m for m in messages if isinstance(m, AIMessage)]
     if last_ai_msgs:
         last_content = last_ai_msgs[-1].content
@@ -131,73 +140,110 @@ if st.session_state.waiting_for_human:
 # ==================== 对话逻辑 ====================
 if st.session_state.waiting_for_human:
     st.warning("您的请求正在等待人工客服处理中，请稍候...")
-    # 不显示输入框，直接停止继续执行
+    st.stop()
+elif st.session_state.processing:
+    st.info("正在处理您的上一个请求，请稍候…")
     st.stop()
 else:
     prompt = st.chat_input("请输入您的问题...")
     if prompt:
+        st.session_state.processing = True
         with st.chat_message("user"):
             st.write(prompt)
         with st.chat_message("assistant"):
-            with st.spinner("思考中..."):
-                trace_id = str(uuid.uuid4())
-                input_state = {
-                    "messages": [HumanMessage(content=prompt)],
-                    "user_id": st.session_state.user_id,
-                    "trace_id": trace_id
-                }
+            status_placeholder = st.empty()
+            response_placeholder = st.empty()
 
-                set_log_context(
-                    user_id=st.session_state.user_id,
-                    thread_id=st.session_state.thread_id,
-                    trace_id=trace_id,
-                )
+            trace_id = str(uuid.uuid4())
+            input_state = {
+                "messages": [HumanMessage(content=prompt)],
+                "user_id": st.session_state.user_id,
+                "trace_id": trace_id
+            }
+            config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
-                config = {"configurable": {"thread_id": st.session_state.thread_id}}
+            set_log_context(
+                user_id=st.session_state.user_id,
+                thread_id=st.session_state.thread_id,
+                trace_id=trace_id,
+            )
 
-                try:
-                    final_state = input_state.copy()
-                    for chunk in agent.stream(input_state, config, stream_mode="updates"):
-                        if "__interrupt__" in chunk:
-                            interrupt_info = chunk["__interrupt__"]
-                            logger.info("Human-in-the-Loop 中断挂起, trace_id=%s", trace_id)
-                            st.session_state.waiting_for_human = True
-                            messages = final_state.get("messages", [])
-                            for msg in messages:
-                                if isinstance(msg, AIMessage):
-                                    st.write(msg.content)
-                            st.caption("⏳ 等待人工客服处理中...")
-                            break
+            handoff_occurred = False
 
-                        for node_name, node_output in chunk.items():
-                            if isinstance(node_output, dict):
-                                if "messages" in node_output:
-                                    final_state["messages"] = node_output["messages"]
-                                for key, value in node_output.items():
-                                    if key != "messages":
-                                        final_state[key] = value
+            try:
+                # 同步流式执行
+                for chunk in agent.stream(input_state, config, stream_mode="updates"):
+                    if "__interrupt__" in chunk:
+                        logger.info("Human-in-the-Loop 中断挂起")
+                        st.session_state.waiting_for_human = True
+                        handoff_occurred = True
+                        # 从当前已获取的状态中提取最后一条助手消息
+                        try:
+                            current = agent.get_state(config)
+                            if current and current.values:
+                                msgs = current.values.get("messages", [])
+                                if msgs and isinstance(msgs[-1], AIMessage):
+                                    response_placeholder.markdown(msgs[-1].content)
+                                else:
+                                    response_placeholder.markdown("您的问题已转接至人工客服，请稍候。")
                             else:
-                                logger.warning("Unexpected node output type from %s: %s", node_name, type(node_output))
-                    else:
-                        messages = final_state.get("messages", [])
-                        assistant_reply = messages[-1].content if messages else "系统无响应"
-                        st.write(assistant_reply)
-                        if final_state.get("error"):
-                            st.caption(f"⚠️ 处理过程中出现非致命错误: {final_state['error']}")
-                        if final_state.get("profile_updated"):
-                            st.caption("✅ 已更新长期画像记忆")
-                        if st.session_state.waiting_for_human:
-                            st.session_state.waiting_for_human = False
+                                response_placeholder.markdown("您的问题已转接至人工客服，请稍候。")
+                        except Exception:
+                            response_placeholder.markdown("您的问题已转接至人工客服，请稍候。")
+                        break
 
-                except GraphInterrupt as e:
-                    logger.info("Human-in-the-Loop 中断挂起 (GraphInterrupt), trace_id=%s", trace_id)
-                    st.session_state.waiting_for_human = True
-                    messages = e.state.get("messages", [])
-                    for msg in messages:
-                        if isinstance(msg, AIMessage):
-                            st.write(msg.content)
-                    st.caption("⏳ 等待人工客服处理中...")
-                except Exception as e:
-                    logger.exception("Agent invocation failed")
-                    st.error(f"系统错误: {e}")
+                # 如果未发生转接，获取最终回复
+                if not handoff_occurred:
+                    final_state = agent.get_state(config)
+                    if final_state and final_state.values:
+                        final_messages = final_state.values.get("messages", [])
+                        if final_messages:
+                            last_msg = final_messages[-1]
+                            if isinstance(last_msg, AIMessage):
+                                final_response = last_msg.content
+                                # 前端模拟打字机
+                                def char_gen(text):
+                                    for c in text:
+                                        yield c
+                                        time.sleep(0.02)
+                                st.write_stream(char_gen(final_response))
+                            else:
+                                response_placeholder.markdown("系统无响应")
+                        else:
+                            response_placeholder.markdown("系统无响应")
+                    else:
+                        response_placeholder.markdown("系统无响应")
+
+            except GraphInterrupt as e:
+                logger.info("Human-in-the-Loop 中断挂起 (GraphInterrupt)")
+                st.session_state.waiting_for_human = True
+                handoff_occurred = True
+                try:
+                    current = agent.get_state(config)
+                    if current and current.values:
+                        msgs = current.values.get("messages", [])
+                        if msgs and isinstance(msgs[-1], AIMessage):
+                            response_placeholder.markdown(msgs[-1].content)
+                        else:
+                            response_placeholder.markdown("您的问题已转接至人工客服，请稍候。")
+                    else:
+                        response_placeholder.markdown("您的问题已转接至人工客服，请稍候。")
+                except Exception:
+                    response_placeholder.markdown("您的问题已转接至人工客服，请稍候。")
+            except Exception as e:
+                logger.exception("Agent invocation failed")
+                st.error(f"系统错误: {e}")
+
+            # 显示非致命错误和画像更新提示
+            try:
+                final_state = agent.get_state(config)
+                if final_state and final_state.values:
+                    if final_state.values.get("error"):
+                        st.caption(f"⚠️ 处理过程中出现非致命错误: {final_state.values['error']}")
+                    if final_state.values.get("profile_updated"):
+                        st.caption("✅ 已更新长期画像记忆")
+            except Exception:
+                pass
+
+        st.session_state.processing = False
         st.rerun()

@@ -1,26 +1,22 @@
 # author hgh
 # version 1.0
 import logging
-import time
-from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 from langchain_core.messages import HumanMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
 from config.global_constant.fields import CommonFields
-from config.global_constant.constants import MemoryType
+from config.global_constant.constants import MemoryType, ConfigFields
 from config.models.memory_config import MemorySystemConfig
 from infra.message_queue import MessageProducer
-from modules.agent.constants import MessageCommonFields, StateFields
+from modules.agent.constants import MessageCommonFields, StateFields, StreamName, AgentContextFields
 from modules.agent.multi_agent_state import SupervisorState
-from exceptions.exception import MemoryWriteFailedError
 from modules.memory.memory_business_store.base_memory_store import BaseMemoryStore
-from modules.memory.memory_constant.constants import ProfileEntityKey, MemorySource, MemoryStatus, EvidenceType
-from modules.memory.memory_utils.base_memory_utils import get_message_index, \
-    safe_parse_extraction_output, format_messages
+from modules.memory.memory_utils.base_memory_utils import get_message_index, format_messages
 from modules.memory.memory_utils.profile_gate_util import ProfileGate
 from modules.module_services.evidence_infer import EvidenceTypeInfer
 from modules.module_services.profile_extractor import ProfileExtractor
+from utils.serialize_utils.write_to_dlq import write_to_local_dlq
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +45,9 @@ class ExtractProfileNode:
 
         # 1. no messages,return false
         user_id = state.get(StateFields.USER_ID.value)
+        configurable = config.get(ConfigFields.CONFIGURABLE, {})
+        session_id = configurable.get(ConfigFields.THREAD_ID.value, "unknown")
+
         messages = state.get(StateFields.MESSAGES.value, [])
         if not messages:
             logger.debug("[ExtractProfileNode] no messages to extract profile")
@@ -87,88 +86,36 @@ class ExtractProfileNode:
         summary = formatted.get(MemoryType.INTERACTION_LOG.value, "")
         conversations = summary + "\n" + format_messages(new_user_messages)
 
-        # 6. obtain a desensitized profile summary
-        known_profile = "暂无已知用户画像"
         try:
-            summary = self.memory_store.get_profile_summary(user_id)
-            if summary:
-                known_profile = summary
-                logger.debug("[ExtractProfileNode] using existing profile summary %s", summary)
-        except Exception as e:
-            logger.warning("[ExtractProfileNode] failed to get profile summary for user_id=%s, exception is: %s",
-                           user_id, e)
-
-        # 7. llm extract
-        logger.info("[ExtractProfileNode] calling LLM for profile extraction")
-        extract_str = self.profile_extractor.extract(conversations, known_profile)
-        logger.info("[ExtractProfileNode] LLM extraction response (first 200 chars): %.200s", extract_str)
-
-        # 8. parsing,verification
-        items = safe_parse_extraction_output(extract_str)
-        allowed_entity_keys = {e.value for e in ProfileEntityKey}
-        updated = False
-
-        # 9. insert to store
-        logger.info("[ExtractProfileNode] extracted %d potential profile items", len(items))
-        for item in items:
-            confidence = item.get(CommonFields.CONFIDENCE, 0.0)
-            content = item.get(CommonFields.CONTENT)
-            entity_key_raw = item.get(CommonFields.ENTITY_KEY)
-            if not content or not entity_key_raw:
-                continue
-            if confidence < 0.5:
-                logger.warning("[ExtractProfileNode] ignored low confidence entity_key '%s' for user_id=%s", entity_key_raw,user_id)
-                continue
-            if entity_key_raw not in allowed_entity_keys:
-                logger.warning("[ExtractProfileNode] ignored invalid entity_key '%s' for user_id=%s", entity_key_raw,user_id)
-                continue
-
-            # infer evidence type
-            evidence_type = self.evidence_infer.infer(content, [m.content for m in new_user_messages])
-            logger.debug("[ExtractProfileNode] inferred evidence type '%s' for entity '%s'", evidence_type,
-                         entity_key_raw)
-
-            metadata = {
-                CommonFields.SOURCE: MemorySource.CHAT_EXTRACTION,
-                CommonFields.CONFIDENCE: item.get(CommonFields.CONFIDENCE, 0.7),
-                CommonFields.STATUS: MemoryStatus.ACTIVE,
-                CommonFields.EVIDENCE_TYPE: EvidenceType(evidence_type),
-                CommonFields.EFFECTIVE_DATE: datetime.now().isoformat(),
-                CommonFields.EXPIRES_AT: None,
+            payload = {
+                CommonFields.USER_ID: user_id,
+                CommonFields.SESSION_ID: session_id,
+                CommonFields.CONTENT: conversations,
+                CommonFields.TEXT: " ".join([m.content for m in new_user_messages])
             }
+            msg_id = self.message_producer.publish(
+                stream_name=StreamName.USER_PROFILE.value,
+                event_type=StreamName.USER_PROFILE.value,
+                payload=payload,
+                trace_id=state.get(AgentContextFields.TRACE_ID.value, "")
+            )
+            logger.info("[ExtractProfileNode] user profile has send to redis: user=%s", user_id)
+        except Exception as e:
+            logger.error(
+                "[ExtractProfileNode] user profile failed send to redis: %s, write to local DLQ",
+                e)
+            write_to_local_dlq(payload, StreamName.USER_PROFILE.value)
 
-            # insert the extract profile
-            try:
-                self.memory_store.add_memory(
-                    user_id=user_id,
-                    content=content,
-                    memory_type=MemoryType.USER_PROFILE,
-                    entity_key=ProfileEntityKey(entity_key_raw),
-                    metadata=metadata
-                )
-                updated = True
-                logger.info("[ExtractProfileNode] added profile memory for user_id=%s, entity=%s", user_id,
-                            entity_key_raw)
-            except MemoryWriteFailedError as e:
-                logger.error("[ExtractProfileNode] memory write failed (DLQ): %s", e, exc_info=True)
-            except Exception as e:
-                logger.error("[ExtractProfileNode] unexpected error during profile extraction: %s", e, exc_info=True)
-
-            if updated:
-                logger.info("[ExtractProfileNode] profile updated for user_id=%s: %d new items", user_id, len(items))
-            else:
-                logger.info("[ExtractProfileNode] no new profile information for user_id=%s", user_id)
-
-        # 10. update cursor
+            # 10. update cursor
         last_msg = messages[-1]
         last_index = get_message_index(last_msg)
         if last_index is None:
             logger.warning(
                 "[ExtractProfileNode] cannot update cursor after extraction: no message_index for user_id=%s", user_id)
-            return {StateFields.PROFILE_UPDATED.value: updated}
+            return {StateFields.PROFILE_UPDATED.value: True}
 
         return {
-            StateFields.PROFILE_UPDATED.value: updated,
+            StateFields.PROFILE_UPDATED.value: True,
             StateFields.LAST_EXTRACTED_MESSAGE_INDEX.value: last_index
         }
 

@@ -101,6 +101,17 @@ def create_index(collection: Collection):
     else:
         logger.info(f"Dense index on dense_vector already exists")
 
+    sparse_idx_name = "sparse_vector_idx"
+    if not collection.has_index(index_name=sparse_idx_name):
+        collection.create_index(
+            index_name=sparse_idx_name,
+            index_params=SPARSE_INDEX_PARAM,
+            field_name="sparse_vector"
+        )
+        utility.wait_for_index_building_complete(collection.name, sparse_idx_name)
+    else:
+        logger.info(f"Dense index on dense_vector already exists")
+
     term_vector_idx__name = "term_vector_idx"
     if not collection.has_index(index_name=term_vector_idx__name):
         collection.create_index(
@@ -162,6 +173,7 @@ def create_index(collection: Collection):
 
 if __name__ == '__main__':
     client = MilvusClientManager("http://192.168.24.128:19530")
+    # client.delete_collection(CollectionNames.for_type(MemoryType.BUSINESS_KNOWLEDGE))
     init_collections()
     # utility.drop_collection(CollectionNames.for_type(MemoryType.BUSINESS_KNOWLEDGE))
     # flag = client.has_collection(CollectionNames.for_type(MemoryType.BUSINESS_KNOWLEDGE))

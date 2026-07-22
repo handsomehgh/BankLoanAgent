@@ -24,12 +24,8 @@ st.markdown(hide_header_style, unsafe_allow_html=True)
 st.title("🎧 人工坐席工作台")
 
 boot = get_bootstrapper()
-boot.start()  # 如果已启动则无操作
-container = boot.container
-graph = boot.graph
-redis_manager = container.redis_manager()
-task_manager = HandoffTaskManager(graph, redis_manager)
-
+run_time = boot.start()
+task_manager = HandoffTaskManager(run_time.graph, run_time.redis_manager)
 
 if st.button("🔄 刷新工单列表"):
     st.rerun()

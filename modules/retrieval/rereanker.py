@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class Reranker:
     def __init__(self, config: RerankerConfig):
         self.config = config
-        remote_url = os.getenv("RERANKER_API_URL", config.remote_url)
+        remote_url = os.getenv("RERANKER_API_URL") or config.remote_url
         if remote_url:
             self._mode = "remote"
             self.remote_url = config.remote_url.rstrip("/")

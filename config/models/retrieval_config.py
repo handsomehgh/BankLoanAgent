@@ -78,9 +78,7 @@ class RerankerConfig(BaseModel):
 class CompressorConfig(BaseModel):
     enabled: bool = True
     max_context_tokens: int = 1500
-    sentences_to_keep: int = 3
-    fallback_to_full: bool = True
-    model_name: str = "BAAI/bge-reranker-v2-m3"
+    compress_top_key: int = 5
 
 class WeakSignalItem(BaseModel):
     words: List[str] = Field(...)

@@ -80,5 +80,5 @@ def verify_import(store: LongTermMemoryStore):
 
 if __name__ == "__main__":
     store = create_test_memory_store("http://192.168.24.128:19530")
-    # import_profiles(PROJECT_ROOT / "data" / "test" / "user_profiles_test.jsonl",store)
-    verify_import(store)
+    import_profiles(PROJECT_ROOT / "data" / "test" / "user_profiles_test.jsonl",store)
+    # verify_import(store)

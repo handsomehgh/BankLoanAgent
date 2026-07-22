@@ -249,21 +249,21 @@ def init_all_collections():
 
 
 if __name__ == '__main__':
-    # try:
-    #     init_all_collections()
-    # except Exception as e:
-    #     logger.exception("Initialization failed")
-    #     sys.exit(1)
-    connections.connect(
-        alias="default",
-        uri="http://192.168.24.128:19530",
-        timeout=30
-    )
-    col = Collection(name=COLLECTION_NAMES[MemoryType.INTERACTION_LOG.value])
-    col.load()
-    fields = set(InteractionLogMemory.model_fields.keys())
-    fields.add(MemoryFields.TEXT)
-    print(col.query(expr="user_id == 'test_user_33'",output_fields=list(fields)))
+    try:
+        init_all_collections()
+    except Exception as e:
+        logger.exception("Initialization failed")
+        sys.exit(1)
+    # connections.connect(
+    #     alias="default",
+    #     uri="http://192.168.24.128:19530",
+    #     timeout=30
+    # )
+    # col = Collection(name=COLLECTION_NAMES[MemoryType.INTERACTION_LOG.value])
+    # col.load()
+    # fields = set(InteractionLogMemory.model_fields.keys())
+    # fields.add(MemoryFields.TEXT)
+    # print(col.query(expr="user_id == 'test_user_33'",output_fields=list(fields)))
     # # res = col.delete("id in ['1596f346-f309-45d8-9cc7-3612cb963bea','e108494d-c09a-4c66-beec-f119dbe8535']")
     # # print(res)
     # utility.drop_collection("compliance_rules")

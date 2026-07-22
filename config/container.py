@@ -24,6 +24,7 @@ from modules.agent.nodes.human_handoff_notify_node import HumanHandoffResponseNo
 from modules.agent.supervisor_agent.supervisor_agent import SupervisorAgent
 from modules.agent.nodes.memory_retrieve_node import MemoryRetrieveNode
 from modules.consumer.interaction_log_consumer import InteractionLogConsumer
+from modules.consumer.user_profile_consumer import UserProfileConsumer
 from modules.memory.memory_utils.cursor_manager import CursorManager
 from modules.module_services.classifier.after_loan_classifier import AfterLoanClassifier
 from modules.module_services.classifier.loan_advisor_classifier import LoanAdvisorClassifier
@@ -65,7 +66,11 @@ from utils.serialize_utils.seq_generator import SequenceGenerator
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# ---------- Factory Function ----------
+
+# =====================================================================
+# 工厂函数：纯粹的"如何创建对象"定义，不包含任何执行逻辑
+# =====================================================================
+
 def _get_llm_config(registry: ConfigRegistry):
     return registry.get_config(RegistryModules.LLM)
 
@@ -98,7 +103,6 @@ def _get_supervisor_config(registry: ConfigRegistry):
     return registry.get_config(RegistryModules.SUPERVISOR)
 
 
-# ---------- 工厂函数：创建带配置依赖的服务 ----------
 def _create_cache_factory(cache_config, redis_manager):
     return CacheFactory(config=cache_config, redis_manager=redis_manager)
 
@@ -133,6 +137,26 @@ def _create_precise_llm(registry: ConfigRegistry):
         provider=cfg.openai_provider
     )
 
+def _create_local_llm(registry: ConfigRegistry):
+    cfg = registry.get_config(RegistryModules.LLM)
+    return RobustLLM(
+        temperature=cfg.precise_temperature,
+        api_key="not_need",
+        base_url=cfg.local_qwen_url,
+        model=cfg.local_qwen_name,
+        provider=cfg.openai_provider
+    )
+
+def _create_local_creative_llm(registry: ConfigRegistry):
+    cfg = registry.get_config(RegistryModules.LLM)
+    return RobustLLM(
+        temperature=cfg.creative_temperature,
+        api_key="not_need",
+        base_url=cfg.local_qwen_url,
+        model=cfg.local_qwen_name,
+        provider=cfg.openai_provider
+    )
+
 
 def _create_embedder(registry: ConfigRegistry):
     cfg = registry.get_config(RegistryModules.LLM)
@@ -142,6 +166,7 @@ def _create_embedder(registry: ConfigRegistry):
         backup_model_name=cfg.alibaba_emb_backup,
         dimensions=cfg.dimension
     )
+
 
 def _create_local_embeder(registry: ConfigRegistry):
     cfg = registry.get_config(RegistryModules.LLM)
@@ -204,23 +229,27 @@ def _create_reranker(registry):
     return Reranker(config=cfg.reranker)
 
 
-def _create_compressor(registry):
+def _create_compressor(registry,llm_client):
     cfg = registry.get_config(RegistryModules.RETRIEVAL)
-    return ContextCompressor(config=cfg.compressor)
+    return ContextCompressor(config=cfg.compressor,llm_client=llm_client)
 
 
-def _create_retrieval_complete(registry,llm_client):
+def _create_retrieval_complete(registry, llm_client):
     cfg = registry.get_config(RegistryModules.RETRIEVAL)
-    return ContextComplete(cfg,llm_client)
+    return ContextComplete(cfg, llm_client)
+
 
 def _create_loan_advisor_classifier():
     return LoanAdvisorClassifier()
 
+
 def _create_after_loan_classifier():
     return AfterLoanClassifier()
 
+
 def _create_risk_assessment_classifier():
     return RiskAssessmentClassifier()
+
 
 def _create_knowledge_retriever(knowledge_engine, query_rewriter, query_filter, reranker, compressor, context_complete,
                                 registry):
@@ -244,6 +273,7 @@ def _create_summary_generator(creative_llm, registry):
         max_summary_length=mem_cfg.max_summary_length,
         max_interaction_length=mem_cfg.interaction_log_max_length
     )
+
 
 def _create_sub_summary_generator(creative_llm, registry):
     mem_cfg = registry.get_config(RegistryModules.MEMORY_SYSTEM)
@@ -290,10 +320,27 @@ def _create_message_producer(redis_manager):
 
 
 def _create_interaction_consumer(redis_manager, memory_store, summary_generator, sentiment_analyzer):
-    return InteractionLogConsumer(StreamName.INTERACTION_LOG.value,StreamName.INTERACTION_LOG.value,redis_manager, memory_store, summary_generator, sentiment_analyzer)
+    return InteractionLogConsumer(
+        StreamName.INTERACTION_LOG.value,
+        StreamName.INTERACTION_LOG.value,
+        redis_manager, memory_store, summary_generator, sentiment_analyzer
+    )
+
 
 def _create_sub_interaction_consumer(redis_manager, memory_store, summary_generator, sentiment_analyzer):
-    return InteractionLogConsumer(StreamName.SUB_INTERACTION.value,StreamName.SUB_INTERACTION.value,redis_manager, memory_store, summary_generator, sentiment_analyzer)
+    return InteractionLogConsumer(
+        StreamName.SUB_INTERACTION.value,
+        StreamName.SUB_INTERACTION.value,
+        redis_manager, memory_store, summary_generator, sentiment_analyzer
+    )
+
+
+def _create_user_profile_consumer(redis_manager, memory_store, evidence_infer, profile_extractor):
+    return UserProfileConsumer(
+        StreamName.USER_PROFILE.value,
+        StreamName.USER_PROFILE.value,
+        redis_manager, memory_store, evidence_infer, profile_extractor
+    )
 
 
 def _create_lpr_service(registry, cache):
@@ -302,81 +349,85 @@ def _create_lpr_service(registry, cache):
 
 
 def _create_tool_registry(registry: ConfigRegistry):
+    """
+    创建工具注册表（仅创建对象，不执行扫描和验证）。
+    扫描和验证在 bootstrap.py 阶段3显式调用，保证启动顺序可观测。
+    """
     cfg = registry.get_config(RegistryModules.TOOL_REGISTRY)
-    reg = ToolRegistry(cfg)
-    reg.scan_and_register()
-    reg.validate_against_config()
-    return reg
+    return ToolRegistry(cfg)
 
 
 def _create_tool_executor(tool_registry, audit_logger):
     return ToolExecutor(registry=tool_registry, audit_logger=audit_logger)
 
+
 def _create_skill_executor(tool_registry, audit_logger):
-    return SkillExecutor(tool_registry,audit_logger)
+    return SkillExecutor(tool_registry, audit_logger)
+
 
 def _build_supervisor_graph(memory_retriever, seq_generator, registry, llm_client, memory_config, knowledge_retrieve):
     agent = SupervisorAgent(memory_retriever, seq_generator, registry, llm_client, memory_config, knowledge_retrieve)
     return agent.build_graph()
 
 
-def _build_loan_advisor_graph(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier,skill_executor,skill_selector):
+def _build_loan_advisor_graph(llm_client, registry, tool_executor, seq_generator, tool_selector, classifier,
+                              skill_executor, skill_selector):
     agent = LoanAdvisorAgent(
         llm_client=llm_client,
         registry=registry,
         tool_executor=tool_executor,
         seq_generator=seq_generator,
         tool_selector=tool_selector,
-        classifier = classifier,
+        classifier=classifier,
         skill_executor=skill_executor,
         skill_selector=skill_selector
     )
     return agent.build_graph()
 
 
-def _build_risk_assessment_graph(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier,skill_executor,skill_selector):
-    agent = RiskAssessmentAgent(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier,skill_executor,skill_selector)
+def _build_risk_assessment_graph(llm_client, registry, tool_executor, seq_generator, tool_selector, classifier,
+                                 skill_executor, skill_selector):
+    agent = RiskAssessmentAgent(llm_client, registry, tool_executor, seq_generator, tool_selector, classifier,
+                                skill_executor, skill_selector)
     return agent.build_graph()
 
 
-def _build_after_loan_graph(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier,skill_executor,skill_selector):
-    agent = AfterLoanAgent(llm_client, registry, tool_executor, seq_generator,tool_selector,classifier,skill_executor,skill_selector)
+def _build_after_loan_graph(llm_client, registry, tool_executor, seq_generator, tool_selector, classifier,
+                            skill_executor, skill_selector):
+    agent = AfterLoanAgent(llm_client, registry, tool_executor, seq_generator, tool_selector, classifier,
+                           skill_executor, skill_selector)
     return agent.build_graph()
 
 
 def _build_human_handoff_interrupt_node(redis_manager):
     return HumanHandoffInterruptNode(redis_manager)
 
-def _build_extract_profile_node(memory_store,profile_gate,memory_config,evidence_infer, profile_extractor,message_producer):
-    return ExtractProfileNode(memory_store,profile_gate,memory_config,evidence_infer,profile_extractor,message_producer)
+
+def _build_extract_profile_node(memory_store, profile_gate, memory_config, evidence_infer, profile_extractor,
+                                message_producer):
+    return ExtractProfileNode(memory_store, profile_gate, memory_config, evidence_infer, profile_extractor,
+                              message_producer)
+
 
 def _build_interaction_node(memory_store, memory_config, summary_generator, sentiment_analyzer, message_producer):
     return SummaryInteractionNode(memory_store, memory_config, summary_generator, sentiment_analyzer, message_producer)
 
-def _register_skills(tool_registry, skill_executor,skill_registry):
-    from config.skills_loader import load_skill_configs
-    from modules.skills.skill_factory import create_tool_from_skill
-    import logging
-    logger = logging.getLogger(__name__)
-
-    skill_configs = load_skill_configs(PROJECT_ROOT / "config/skills")
-    logger.info("Loaded %d skill configs", len(skill_configs))
-    for cfg in skill_configs:
-        skill_registry.register(cfg)
-        tool = create_tool_from_skill(cfg, skill_executor)
-        tool_registry.register(tool)
-        logger.info("Registered skill: %s v%s", cfg.name, cfg.version)
 
 def _create_database_manager(datasource_config):
     return DatabaseManager(datasource_config.mysql)
 
-class ApplicationContainer(containers.DeclarativeContainer):
-    """Main Application Container"""
 
-    # Config Register Center
+# =====================================================================
+# 应用容器：纯粹的依赖定义（无执行逻辑）
+# =====================================================================
+
+class ApplicationContainer(containers.DeclarativeContainer):
+    """Main Application Container —— 只定义'如何创建'，不执行任何初始化"""
+
+    # ---------- Config Register Center ----------
     config_registry = providers.Singleton(ConfigRegistry)
 
-    # Configuration
+    # ---------- Configuration ----------
     llm_config = providers.Callable(_get_llm_config, config_registry)
     memory_config = providers.Callable(_get_memory_config, config_registry)
     retrieval_config = providers.Callable(_get_retrieval_config, config_registry)
@@ -385,16 +436,13 @@ class ApplicationContainer(containers.DeclarativeContainer):
     tool_registry_config = providers.Callable(_get_tool_registry_config, config_registry)
     bank_global_config = providers.Callable(_get_bank_global_config, config_registry)
 
-    # Redis Manager
+    # ---------- Infrastructure ----------
     redis_manager = providers.Singleton(_create_redis_manager, datasource_config)
-
-    #mysql manager
     db_manager = providers.Singleton(_create_database_manager, datasource_config)
 
-    # Cache Factory
+    # ---------- Cache ----------
     cache_factory = providers.Singleton(_create_cache_factory, cache_config, redis_manager)
 
-    # Cache Manager
     rag_cache = providers.Singleton(
         cache_factory.provided.create.call(namespace=CacheNamespace.RAG.value)
     )
@@ -411,103 +459,88 @@ class ApplicationContainer(containers.DeclarativeContainer):
         cache_factory.provided.create.call(namespace=CacheNamespace.LPR.value)
     )
 
-    # Sequence Generator
+    # ---------- Sequence Generator ----------
     seq_generator = providers.Singleton(_create_seq_generator, redis_manager)
 
-    # LLM client
+    # ---------- LLM Clients ----------
     creative_llm = providers.Singleton(_create_creative_llm, config_registry)
     precise_llm = providers.Singleton(_create_precise_llm, config_registry)
+    local_llm = providers.Singleton(_create_local_llm, config_registry)
+    local_creative_llm = providers.Singleton(_create_local_llm, config_registry)
 
-    # Embedding Service
+    # ---------- Embedding Services ----------
     embedder = providers.Singleton(_create_embedder, config_registry)
-    local_embedder = providers.Singleton(_create_local_embeder,config_registry)
+    local_embedder = providers.Singleton(_create_local_embeder, config_registry)
 
-    # Milvus client
+    # ---------- Milvus ----------
     milvus_client = providers.Singleton(_create_milvus_client, config_registry)
 
-    # Memory Vector Store
+    # ---------- Memory System ----------
     vector_store = providers.Singleton(
         _create_vector_store, config_registry, embedder, milvus_client
     )
-
-    # cursor manager
-    cursor_manager = providers.Singleton(
-        _create_cursor_manager,
-        redis_manager
-    )
-
-    # Memory Store
+    cursor_manager = providers.Singleton(_create_cursor_manager, redis_manager)
     memory_store = providers.Singleton(_create_memory_store, vector_store, config_registry, cursor_manager)
-
-    # Memory Retriever
     memory_retriever = providers.Singleton(_create_memory_retriever, memory_store, config_registry)
 
-    # Knowledge Engine
+    # ---------- Knowledge Retrieval ----------
     knowledge_engine = providers.Singleton(
         _create_knowledge_engine, milvus_client, local_embedder, config_registry
     )
-
-    # Retrieve Component
-    query_rewriter = providers.Singleton(_create_query_rewriter, config_registry, creative_llm)
+    query_rewriter = providers.Singleton(_create_query_rewriter, config_registry, local_creative_llm)
     query_filter = providers.Singleton(_create_query_filter, config_registry, precise_llm)
     reranker = providers.Singleton(_create_reranker, config_registry)
-    compressor = providers.Singleton(_create_compressor, config_registry)
-    context_complete = providers.Singleton(_create_retrieval_complete, config_registry,precise_llm)
-
-    # Knowledge Retrieve
+    compressor = providers.Singleton(_create_compressor, config_registry,local_llm)
+    context_complete = providers.Singleton(_create_retrieval_complete, config_registry, local_llm)
     knowledge_retriever = providers.Singleton(
         _create_knowledge_retriever,
         knowledge_engine, query_rewriter, query_filter, reranker, compressor,
         context_complete, config_registry
     )
 
-    # Domain Service
-    summary_generator = providers.Singleton(_create_summary_generator, creative_llm, config_registry)
-    sub_summary_generator = providers.Singleton(_create_sub_summary_generator,creative_llm,config_registry)
-    sentiment_analyzer = providers.Singleton(_create_sentiment_analyzer, precise_llm, config_registry)
-    evidence_infer = providers.Singleton(_create_evidence_infer, precise_llm, config_registry)
+    # ---------- Domain Services ----------
+    summary_generator = providers.Singleton(_create_summary_generator, local_llm, config_registry)
+    sub_summary_generator = providers.Singleton(_create_sub_summary_generator, local_llm, config_registry)
+    sentiment_analyzer = providers.Singleton(_create_sentiment_analyzer, local_llm, config_registry)
+    evidence_infer = providers.Singleton(_create_evidence_infer, local_llm, config_registry)
     profile_extractor = providers.Singleton(_create_profile_extractor, precise_llm, config_registry)
     profile_gate = providers.Singleton(_create_profile_gate, config_registry)
     message_producer = providers.Singleton(_create_message_producer, redis_manager)
-    interaction_log_consumer = providers.Singleton(_create_interaction_consumer, redis_manager, memory_store,
-                                                   summary_generator, sentiment_analyzer)
-    sub_interaction_log_consumer = providers.Singleton(_create_sub_interaction_consumer, redis_manager, memory_store,
-                                                   sub_summary_generator, sentiment_analyzer)
+    interaction_log_consumer = providers.Singleton(
+        _create_interaction_consumer, redis_manager, memory_store,
+        summary_generator, sentiment_analyzer
+    )
+    sub_interaction_log_consumer = providers.Singleton(
+        _create_sub_interaction_consumer, redis_manager, memory_store,
+        sub_summary_generator, sentiment_analyzer
+    )
+    user_profile_consumer = providers.Singleton(
+        _create_user_profile_consumer, redis_manager, memory_store,
+        evidence_infer, profile_extractor
+    )
 
-    # lpr service
+    # ---------- LPR Service ----------
     lpr_service = providers.Singleton(_create_lpr_service, config_registry, lpr_cache)
 
-    # loan repository
+    # ---------- Repository ----------
     loan_interest_repository = providers.Factory(
         LoanInterestRepository,
         db_session=None
     )
 
-    # Tool System
+    # ---------- Tool System ----------
     tool_registry = providers.Singleton(_create_tool_registry, config_registry)
-    tool_selector = providers.Singleton(
-        ToolSelector,
-        registry=tool_registry
-    )
+    tool_selector = providers.Singleton(ToolSelector, registry=tool_registry)
     tool_executor = providers.Singleton(_create_tool_executor, tool_registry, None)
-    skill_executor = providers.Singleton(_create_skill_executor, tool_registry,None)
+    skill_executor = providers.Singleton(_create_skill_executor, tool_registry, None)
     skill_registry = providers.Singleton(SkillRegistry)
 
-    skills_init = providers.Resource(
-        _register_skills,
-        tool_registry=tool_registry,
-        skill_executor=skill_executor,
-        skill_registry=skill_registry,
-    )
-
-    def _init_skills(self):
-        """初始化Skills注册"""
-        self._register_skills()
-
+    # ---------- Classifiers ----------
     loan_advisor_classifier = _create_loan_advisor_classifier()
     after_loan_classifier = _create_after_loan_classifier()
     risk_assessment_classifier = _create_risk_assessment_classifier()
-    # pre compliance filter
+
+    # ---------- Agent Nodes ----------
     compliance_prefilter_node = providers.Singleton(
         CompliancePrefilter,
         memory_store=memory_store,
@@ -517,15 +550,13 @@ class ApplicationContainer(containers.DeclarativeContainer):
         seq_generator=seq_generator
     )
 
-    #direct reply
     direct_reply_node = providers.Singleton(
         DirectReplyNode,
-        llm_client=creative_llm,
+        llm_client=local_creative_llm,
         registry=config_registry,
         seq_generator=seq_generator
     )
 
-    #memory retrieve node
     memory_retrieve_node = providers.Singleton(
         MemoryRetrieveNode,
         retriever=memory_retriever,
@@ -533,7 +564,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         memory_config=memory_config
     )
 
-    # supervisor graph
+    # ---------- Subgraphs ----------
     supervisor_graph = providers.Singleton(
         _build_supervisor_graph,
         memory_retriever=memory_retriever,
@@ -544,7 +575,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         knowledge_retrieve=knowledge_retriever
     )
 
-    # loanAdvisor graph
     loan_advisor_graph = providers.Singleton(
         _build_loan_advisor_graph,
         llm_client=creative_llm,
@@ -552,12 +582,11 @@ class ApplicationContainer(containers.DeclarativeContainer):
         tool_executor=tool_executor,
         seq_generator=seq_generator,
         tool_selector=tool_selector,
-        classifier = loan_advisor_classifier,
+        classifier=loan_advisor_classifier,
         skill_executor=skill_executor,
         skill_selector=skill_registry,
     )
 
-    # risk assessment graph
     risk_assessment_graph = providers.Singleton(
         _build_risk_assessment_graph,
         llm_client=creative_llm,
@@ -570,7 +599,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         skill_selector=skill_registry,
     )
 
-    # after loan graph
     after_loan_graph = providers.Singleton(
         _build_after_loan_graph,
         llm_client=creative_llm,
@@ -578,21 +606,16 @@ class ApplicationContainer(containers.DeclarativeContainer):
         tool_executor=tool_executor,
         seq_generator=seq_generator,
         tool_selector=tool_selector,
-        classifier = after_loan_classifier,
+        classifier=after_loan_classifier,
         skill_executor=skill_executor,
         skill_selector=skill_registry,
     )
 
-    #result aggregator node
+    # ---------- Other Nodes ----------
     result_aggregator_node = providers.Singleton(ResultAggregatorAgent)
-
-    # human handoff notify node
     human_handoff_notify_node = providers.Singleton(HumanHandoffResponseNode)
+    human_handoff_interrupt_node = providers.Singleton(_build_human_handoff_interrupt_node, redis_manager)
 
-    #huamn handoff interrupt node
-    human_handoff_interrupt_node=providers.Singleton(_build_human_handoff_interrupt_node,redis_manager)
-
-    # extract profile node
     extract_profile_node = providers.Singleton(
         _build_extract_profile_node,
         memory_store=memory_store,
@@ -603,7 +626,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         message_producer=message_producer
     )
 
-    # interaction log
     summary_interaction_node = providers.Singleton(
         _build_interaction_node,
         memory_store,

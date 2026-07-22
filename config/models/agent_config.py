@@ -47,6 +47,7 @@ class DirectReplyConfig(BaseModel):
 
 class AgentConfig(BaseModel):
     system_prompt: str = Field(default="", description="Agent 系统提示词")
+    judge_prompt: str = Field(default="", description="工具选择提示词")
     execute_prompt: str
     res_prompt: str
     direct_prompt: str
@@ -58,7 +59,6 @@ class AgentConfig(BaseModel):
 
 class LoanAdvisorConfig(AgentConfig):
     """贷款咨询 Agent 配置"""
-    judge_prompt: str = Field(default="",description="工具选择提示词")
     tool_exposure: str = Field(default="skills", description="工具选择策略")
 
 

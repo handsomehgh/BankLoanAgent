@@ -431,10 +431,7 @@ class LongTermMemoryStore(BaseMemoryStore):
         # build query_utils condition
         where = Query(conditions=[
             Condition(field=MemoryFields.USER_ID, op="==", value=user_id),
-            Condition(field=MemoryFields.STATUS, op="==", value=MemoryStatus.ACTIVE.value),
-            Condition(field=MemoryFields.SOURCE, op="!=", value=MemorySource.LOAN_ADVISOR.value),
-            Condition(field=MemoryFields.SOURCE, op="!=", value=MemorySource.RISK_ASSESSMENT.value),
-            Condition(field=MemoryFields.SOURCE, op="!=", value=MemorySource.AFTER_LOAN.value)
+            Condition(field=MemoryFields.STATUS, op="==", value=MemoryStatus.ACTIVE.value)
         ])
 
         # execute query_utils

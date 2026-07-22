@@ -52,9 +52,10 @@ def import_compliance_rules(json_path: str):
 
 
 if __name__ == "__main__":
-    # import_compliance_rules(PROJECT_ROOT / "data" / "test" / "user_profiles_test.jsonl")
-    store = create_test_memory_store("http://192.168.24.128:19530")
+    # pass
+    import_compliance_rules(PROJECT_ROOT / "data" / "base_data" / "compliance_rules.json")
+    # store = create_test_memory_store("http://192.168.24.128:19530")
     # store.delete_user_memories(user_id="test_user_002",memory_type=MemoryType.USER_PROFILE)
-    rules = store.get_all_user_profile_memories(user_id="test_user_001")
-    for rule in rules:
-        print(rule)
+    # rules = store.get_all_user_profile_memories(user_id="test_user_001")
+    # for rule in rules:
+    #     print(rule)

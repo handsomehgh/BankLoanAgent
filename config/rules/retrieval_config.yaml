@@ -1,7 +1,7 @@
 # RAG config file
 milvus_uri: "http://192.168.24.128:19530"
 context_complete_uri: "http://localhost:8005"
-sqlite_db_path: "./checkpoints.db"
+sqlite_db_path: "./data/work_memory/checkpoints.db"
 retrieval_top_k: 5
 retrieval_fetch_k: 10
 retrieval_min_similarity: 0.3
@@ -72,10 +72,8 @@ reranker:
 # ------------ context compressor ----------
 compressor:
   enabled: true
-  max_context_tokens: 1500
-  sentences_to_keep: 6
-  fallback_to_full: true
-  model_name: "BAAI/bge-reranker-v2-m3"
+  max_context_tokens: 1000
+  compress_top_key: 5
 
 # -------------- structure query ------------
 filter:

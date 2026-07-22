@@ -92,6 +92,7 @@ class MessageCommonFields(str, Enum):
 class StreamName(str,Enum):
     INTERACTION_LOG = "interaction_log"
     SUB_INTERACTION = "sub_interaction"
+    USER_PROFILE = "user_profile"
 
 class ConsumerGroupName(str,Enum):
     PROFILE_GROUP_FIRST = "profile_group_first"

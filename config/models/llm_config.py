@@ -9,6 +9,8 @@ class LLMConfig(BaseModel):
     openai_provider: str = "openai"
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
+    local_qwen_url: str = "http://localhost:8006/v1"
+    local_qwen_name: str = "qwen2.5-7b"
     deepseek_llm_name: str = "deepseek-chat"
     alibaba_api_key: str = ""
     alibaba_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"

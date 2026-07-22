@@ -17,6 +17,9 @@ SYSTEM_PROMPT = """
 ### 历史工具操作摘要
 {tool_conversation}
 
+## 本轮工具执行结果
+{tool_facts}
+
 ## 知识库内容
 {business_knowledge}
 

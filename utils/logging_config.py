@@ -62,7 +62,7 @@ def setup_logging(log_level: str = "INFO") -> None:
     # Set the root logger to DEBUG, allowing all levels to pass through the handler filter (the actual output level is controlled by the handler)
     root.setLevel(logging.DEBUG)
 
-    for lib in ("httpx", "urllib3", "watchdog", "pymilvus", "transformers"):
+    for lib in ("httpx", "urllib3", "watchdog", "pymilvus", "transformers","dashscope","urllib3","sshtunnel", "paramiko"):
         logging.getLogger(lib).setLevel(logging.WARNING)
 
 

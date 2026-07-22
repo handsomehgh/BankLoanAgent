@@ -78,6 +78,7 @@ def upsert_loan_interest(
                 urgency=0
             )
             repository.create(record)
+            session.commit()
             return {
                 "signal": "created",
                 "application_no": application_no,
@@ -103,6 +104,7 @@ def upsert_loan_interest(
             existing.conversation_summary = conversation_summary
             existing.profile_summary = profile_summary
             repository.update(existing)
+            session.commit()
             return {
                 "signal": "updated",
                 "application_no": existing.application_no,
@@ -136,6 +138,7 @@ def upsert_loan_interest(
             existing.status = '待处理'
             existing.status_updated_at = datetime.now()
             repository.update(existing)
+            session.commit()
             return {
                 "signal": "updated",
                 "application_no": existing.application_no,
@@ -168,6 +171,7 @@ def upsert_loan_interest(
             existing.status = '待处理'
             existing.status_updated_at = datetime.now()
             repository.update(existing)
+            session.commit()
             return {
                 "signal": "updated",
                 "application_no": existing.application_no,
@@ -194,6 +198,7 @@ def upsert_loan_interest(
             existing.status = '待处理'
             existing.status_updated_at = datetime.now()
             repository.update(existing)
+            session.commit()
             return {
                 "signal": "reactivated",
                 "application_no": existing.application_no,
@@ -209,7 +214,7 @@ def upsert_loan_interest(
     except Exception as e:
         if session:
             session.rollback()
-        raise e
+        raise
     finally:
         if session:
             session.close()

@@ -9,11 +9,10 @@ from langchain_core.tools import tool
 from pydantic import Field, create_model
 
 from config.models.skill_config import SkillConfig
-from modules.skills.skill_executor import SkillExecutor
 
 logger = logging.getLogger(__name__)
 
-def create_tool_from_skill(skill_config: SkillConfig,skill_executor: SkillExecutor):
+def create_tool_from_skill(skill_config: SkillConfig):
     fields = {}
     for param in skill_config.input_schema:
         py_type = _map_type(param.type)

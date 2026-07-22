@@ -13,19 +13,19 @@ from modules.agent.constants import MessageCommonFields
 
 logger = logging.getLogger(__name__)
 
-def format_message(msg: BaseMessage) -> str:
-    """格式化单条消息"""
-    if isinstance(msg, HumanMessage):
-        return f"用户: {msg.content}"
-    elif isinstance(msg, AIMessage):
-        prefix = "助手"
-        if hasattr(msg, 'tool_calls') and msg.tool_calls:
-            prefix += " [调用工具]"
-        return f"{prefix}: {msg.content}"
-    elif isinstance(msg, ToolMessage):
-        return f"工具结果({msg.name}): {msg.content}"
-    else:
-        return f"系统: {msg.content}"
+# def format_message(msg: BaseMessage) -> str:
+#     """格式化单条消息"""
+#     if isinstance(msg, HumanMessage):
+#         return f"用户: {msg.content}"
+#     elif isinstance(msg, AIMessage):
+#         prefix = "助手"
+#         if hasattr(msg, 'tool_calls') and msg.tool_calls:
+#             prefix += " [调用工具]"
+#         return f"{prefix}: {msg.content}"
+#     elif isinstance(msg, ToolMessage):
+#         return f"工具结果({msg.name}): {msg.content}"
+#     else:
+#         return f"系统: {msg.content}"
 
 def format_messages(messages: List[BaseMessage]) -> str:
     """格式化消息列表，用换行符拼接"""
@@ -108,5 +108,28 @@ def is_extraction_processed(self, user_id: str, seq: int) -> bool:
 def is_logging_processed(self, user_id: str, seq: int) -> bool:
     """检查某序号是否已被日志记录"""
     return self._cursor_manager.is_processed(user_id, CursorType.LOGGING, seq)
+
+def format_message(msg: BaseMessage) -> str:
+    """格式化单条消息，将工具调用痕迹转化为纯自然语言事实"""
+    if isinstance(msg, HumanMessage):
+        return f"用户: {msg.content}"
+    elif isinstance(msg, AIMessage):
+        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+            parts = []
+            for tc in msg.tool_calls:
+                args_str = ", ".join(f"{k}={v}" for k, v in tc.get("args", {}).items())
+                parts.append(f"系统内部已调用 {tc['name']}({args_str})")
+            return "；".join(parts)
+        else:
+            return f"助手: {msg.content}"
+    elif isinstance(msg, ToolMessage):
+        try:
+            data = json.loads(msg.content)
+            flat = ", ".join(f"{k}={v}" for k, v in data.items() if isinstance(v, (str, int, float, bool)))
+            return "系统内部计算结果：" + "；".join(f"结果为：{flat}") + "。"
+        except (json.JSONDecodeError, TypeError):
+            return f"系统内部计算结果：{msg.content[:200]}"
+    else:
+        return f"系统: {msg.content}"
 
 
