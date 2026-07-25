@@ -31,8 +31,8 @@ ID2LABEL = {
 }
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-tokenizer = AutoTokenizer.from_pretrained("../models/loan_advisor_classifier_model")
-model = AutoModelForSequenceClassification.from_pretrained("../models/loan_advisor_classifier_model",local_files_only=True).to(device)
+tokenizer = AutoTokenizer.from_pretrained("../../models/loan_advisor_classifier_model")
+model = AutoModelForSequenceClassification.from_pretrained("../../models/loan_advisor_classifier_model", local_files_only=True).to(device)
 model.eval()
 
 class PredictRequest(BaseModel):

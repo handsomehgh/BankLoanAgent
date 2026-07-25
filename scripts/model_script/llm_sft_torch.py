@@ -3,82 +3,45 @@ import gc
 import json
 import math
 import os
-from typing import Dict, List
+from functools import partial
+from typing import Optional, List
 
-import numpy as np
 import torch
 from peft import prepare_model_for_kbit_training, LoraConfig, get_peft_model
-from torch import nn, GradScaler
-from torch.cuda.amp import autocast
+from torch import nn
+from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
-from transformers import BitsAndBytesConfig, AutoModelForCausalLM, AutoTokenizer, \
-    get_linear_schedule_with_warmup
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--model_name", type=str, default="meta-llama/Llama-2-7b-chat-hf")
-parser.add_argument("--train_file", type=str, required=True, default="./model/train.jsonl")
-parser.add_argument("--val_file", type=str, required=True, default="./model/val.jsonl")
-parser.add_argument("--output_dir", type=str, default="./qlora_sft_output")
-parser.add_argument("--resume_from", type=str, default=None, help="断点续训 checkpoint 路径")
-parser.add_argument("--max_length", type=int, default=2048)
-parser.add_argument("--batch_size", type=int, default=4)
-parser.add_argument("--gradient_accumulation_steps", type=int, default=4)
-parser.add_argument("--learning_rate", type=float, default=2e-4)
-parser.add_argument("--warmup_ratio", type=float, default=0.03)
-parser.add_argument("--weight_decay", type=float, default=0.001)
-parser.add_argument("--max_grad_norm", type=float, default=0.3)
-parser.add_argument("--epochs", type=int, default=3)
-parser.add_argument("--lora_r", type=int, default=8)
-parser.add_argument("--lora_alpha", type=int, default=16)
-parser.add_argument("--lora_dropout", type=float, default=0.05)
-parser.add_argument("--fp16", action="store_true", help="启用 FP16 混合精度")
-parser.add_argument("--bf16", action="store_true", help="启用 BF16 混合精度")
-parser.add_argument("--seed", type=int, default=42)
-parser.add_argument("--patience", type=int, default=2, help="早停耐心值（无验证集时忽略）")
-parser.add_argument("--use_chat_template", action="store_true", default=True,
-                    help="使用 tokenizer.apply_chat_template 自动拼接（推荐）")
-parser.add_argument("--no_cuda", action="store_true")
-args = parser.parse_args()
-
-DEVICE = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
-torch.manual_seed(args.seed)
-np.random.seed(args.seed)
+from transformers import BitsAndBytesConfig, AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup
 
 
-def format_sample(sample: dict, tokenizer) -> str:
-    """
-        将一条样本转换为训练所需的文本字符串。
-        支持两种格式：
-          1) {"instruction": "...", "input": "...", "output": "..."}  （单轮）
-          2) {"messages": [{"role": "user", "content": "..."}, ...]} （多轮）
-        返回完整的对话文本，可直接 tokenize。
-    """
+def format_sample(sample: dict, tokenizer) -> Optional[str]:
     if "messages" in sample:
-        return tokenizer.apply_chat_template(
+        text = tokenizer.apply_chat_template(
             sample["messages"],
-            tokenizer=False,
+            tokenize=False,
             add_generation_prompt=False
         )
+        return text
     else:
         instruction = sample.get("instruction", "")
         input_text = sample.get("input", "")
-        output = sample.get("output", "")
-        if not instruction or not output:
+        output_text = sample.get("output", "")
+
+        if not instruction or not output_text:
             return None
-        if input_text:
-            user_content = f"{instruction}\n{input_text}"
-        else:
-            user_content = instruction
+
+        user_content = f"{instruction}\n{input_text}" if input_text else instruction
         messages = [
             {"role": "user", "content": user_content},
-            {"role": "assistant", "content": output}
+            {"role": "assistant", "content": output_text}
         ]
-        return tokenizer.apply_chat_template(
+        text = tokenizer.apply_chat_template(
             messages,
             tokenizer=False,
             add_generation_prompt=False
         )
+        return text
 
 
 class SFTDataset(Dataset):
@@ -87,50 +50,56 @@ class SFTDataset(Dataset):
         skipped = 0
         with open(file_path, "r", encoding="utf-8") as f:
             for line in f:
+                if not line.strip():
+                    continue
                 item = json.loads(line.strip())
                 text = format_sample(item, tokenizer)
                 if text is None:
                     skipped += 1
+                else:
+                    self.samples.append(text)
+
         print(f"Loaded {len(self.samples)} samples from {file_path}" +
               (f" (skipped {skipped})" if skipped else ""))
 
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, idx):
-        return self.samples[idx]
+    def __getitem__(self, index):
+        return self.samples[index]
 
 
-def collate_fn(batch: List[str], tokenizer, max_length: int) -> Dict[str, torch.Tensor]:
-    enc = tokenizer(batch, padding=False, truncation=False, max_length=max_length)
+def collate_fn(batch: List[str], tokenizer, max_length):
+    encoded = tokenizer(batch, add_special_tokens=False, max_length=None, truncation=False, padding=False)
+
+    assistant_marker = tokenizer.encode("[/INST]", add_special_tokens=False)
 
     input_ids_batch = []
     attention_mask_batch = []
     labels_batch = []
 
-    assistant_marker = tokenizer.encode("assistant", add_special_tokens=False)
+    for raw_id in encoded["input_ids"]:
+        if len(raw_id) > max_length:
+            raw_id = raw_id[:max_length]
 
-    for raw_ids in enc["input_ids"]:
-        if len(raw_ids) > max_length:
-            head = raw_ids[:512]
-            tail = raw_ids[-(max_length - 512):]
-            raw_ids = head + tail
-
-        seq_len = len(raw_ids)
+        seq_len = len(raw_id)
         pad_len = max_length - seq_len
-        input_ids = raw_ids + [tokenizer.pad_token_id] * pad_len
+
+        input_ids = raw_id + [tokenizer.pad_token_id] * pad_len
         attention_mask = [1] * seq_len + [0] * pad_len
 
         labels = [-100] * max_length
+
         assistant_start = None
-        for i in range(len(raw_ids) - len(attention_mask) + 1):
-            if raw_ids[i:i + len(assistant_marker)] == assistant_marker:
-                assistant_start = i + len(assistant_marker)
+        marker_len = len(assistant_marker)
+        for i in range(seq_len - marker_len + 1):
+            if raw_id[i:i + marker_len] == assistant_marker:
+                assistant_start = i + marker_len
                 break
-        if assistant_start is None:
-            assistant_start = 0
-        for i in range(assistant_start, seq_len):
-            labels[i] = raw_ids[i]
+
+        if assistant_start is not None:
+            for i in range(assistant_start, seq_len):
+                labels[i] = raw_id[i]
 
         input_ids_batch.append(input_ids)
         attention_mask_batch.append(attention_mask)
@@ -139,36 +108,33 @@ def collate_fn(batch: List[str], tokenizer, max_length: int) -> Dict[str, torch.
     return {
         "input_ids": torch.tensor(input_ids_batch, dtype=torch.long),
         "attention_mask": torch.tensor(attention_mask_batch, dtype=torch.long),
-        "labels": torch.tensor(labels_batch, dtype=torch.long),
+        "labels": torch.tensor(labels_batch, dtype=torch.long)
     }
 
 
-def load_model_and_tokenizer(model_name: str, resume_ckpt=None):
-    compute_dtype = torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32)
+def load_model_and_tokenizer(args):
+    compute_type = torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32)
+
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=compute_dtype,
-        bnb_4bit_use_double_quant=True
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_compute_dtype=compute_type
     )
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        quantization_config=bnb_config,
-        device_map="auto",
-        trust_remote_code=True
-    )
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-    tokenizer.pad_token = tokenizer.eos_token if tokenizer.eos_token else tokenizer.unk_token
+    model = AutoModelForCausalLM.from_pretrained(args.model_name, quantization_config=bnb_config, device_map="auto",
+                                                 trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
+    tokenizer.pad_token_id = tokenizer.eos_token_id if tokenizer.eos_token_id else tokenizer.unk_token_id
     model.config.pad_token_id = tokenizer.pad_token_id
 
     model = prepare_model_for_kbit_training(model)
     lora_config = LoraConfig(
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
-        target_modules="all-linear",
+        target_modules=["q", "v"],
         lora_dropout=args.lora_dropout,
         bias="none",
-        task_type="CAUSAL_LM"
+        task_type="CASUAL_LM"
     )
     model = get_peft_model(model, lora_config)
     return model, tokenizer
@@ -176,22 +142,22 @@ def load_model_and_tokenizer(model_name: str, resume_ckpt=None):
 
 def compute_loss_and_metrics(logits, labels, ignore_index=-100):
     shift_logits = logits[..., :-1, :].contiguous()
-    shift_labels = labels[..., :1:].contiguous()
+    shift_labels = labels[..., 1:].contiguous()
     loss_fn = nn.CrossEntropyLoss(ignore_index=ignore_index)
     loss = loss_fn(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
 
     active_mask = (shift_labels != ignore_index)
     if active_mask.sum() > 0:
-        preds = shift_logits.argmax(dim=-1)
+        preds = shift_logits.argmax(-1)
         correct = (preds == shift_labels) & active_mask
         token_acc = correct.sum().float() / active_mask.sum().float()
     else:
-        token_acc = 0.0
+        token_acc = 0
 
     return loss, token_acc
 
 
-def train_epoch(model, loader, optimizer, scheduler, scaler, device, accumulation_steps, max_grad_norm):
+def train_epoch(args, model, loader, optimizer, scheduler, scaler, device, accumulation_steps, max_grad_norm):
     model.train()
     total_loss = 0.0
     total_acc = 0.0
@@ -205,13 +171,13 @@ def train_epoch(model, loader, optimizer, scheduler, scaler, device, accumulatio
 
         with autocast(enabled=args.fp16 or args.bf16):
             outputs = model(input_ids, attention_mask=attention_mask)
-            loss, token_acc = compute_loss_and_metrics(outputs.logits, labels, ignore_index=-100)
+            loss, token_acc = compute_loss_and_metrics(outputs.logits, labels)
 
         loss = loss / accumulation_steps
         scaler.scale(loss).backward()
 
         if (step + 1) % accumulation_steps == 0:
-            scaler.unscaler_(optimizer)
+            scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             scaler.step(optimizer)
             scaler.update()
@@ -234,7 +200,7 @@ def train_epoch(model, loader, optimizer, scheduler, scaler, device, accumulatio
 
 
 @torch.no_grad()
-def eval_epoch(model, loader, device):
+def eval_epoch(args, model, loader, device):
     model.eval()
     total_loss = 0.0
     total_acc = 0.0
@@ -256,41 +222,35 @@ def eval_epoch(model, loader, device):
     return avg_loss, avg_acc, perplexity
 
 
-def main():
-    # 加载模型
-    model, tokenizer = load_model_and_tokenizer(args.model_name, args.resume_from)
+def main(args):
+    device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
 
-    # 数据
+    model, tokenizer = load_model_and_tokenizer(args)
+
     train_dataset = SFTDataset(args.train_file, tokenizer)
     val_dataset = SFTDataset(args.val_file, tokenizer) if args.val_file else None
 
-    from functools import partial
     train_collate = partial(collate_fn, tokenizer=tokenizer, max_length=args.max_length)
     val_collate = train_collate
 
-    train_loader = DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True,
-        collate_fn=train_collate, num_workers=4, pin_memory=True
-    )
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=train_collate,
+                              num_workers=4, pin_memory=True)
     val_loader = DataLoader(
         val_dataset, batch_size=args.batch_size, shuffle=False,
         collate_fn=val_collate, num_workers=4, pin_memory=True
     ) if val_dataset else None
 
-    # 优化器与调度器
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
-    total_steps = len(train_loader) * args.epochs // args.gradient_accumulation_steps
-    warmup_steps = int(total_steps * args.warmup_ratio)
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps,
-                                                num_training_steps=total_steps)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    total_step = len(train_loader) * args.epochs // args.gradient_accumulation_steps
+    warmup_steps = int(total_step * args.warmup_ratio)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_step)
     scaler = GradScaler(enabled=args.fp16)
 
-    # 断点续训
     start_epoch = 1
     best_val_loss = float("inf")
     patience_counter = 0
     if args.resume_from and os.path.exists(args.resume_from):
-        checkpoint = torch.load(args.resume_from, map_location=DEVICE)
+        checkpoint = torch.load(args.resume_from, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
@@ -304,13 +264,13 @@ def main():
     for epoch in range(start_epoch, args.epochs + 1):
         print(f"\n{'=' * 60}\nEpoch {epoch}/{args.epochs}\n{'=' * 60}")
         train_loss, train_acc = train_epoch(
-            model, train_loader, optimizer, scheduler, scaler, DEVICE,
+            args, model, train_loader, optimizer, scheduler, scaler, device,
             args.gradient_accumulation_steps, args.max_grad_norm
         )
         print(f"Train Loss: {train_loss:.4f} | Train Token Acc: {train_acc:.4f}")
 
         if val_loader:
-            val_loss, val_acc, val_ppl = eval_epoch(model, val_loader, DEVICE)
+            val_loss, val_acc, val_ppl = eval_epoch(args, model, val_loader, device)
             print(f"Val Loss: {val_loss:.4f} | Val Token Acc: {val_acc:.4f} | Val Perplexity: {val_ppl:.2f}")
 
             if val_loss < best_val_loss:
@@ -346,5 +306,58 @@ def main():
     print("Training finished. Model saved to", args.output_dir)
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Llama-2 LoRA SFT 训练脚本")
+
+    # 模型与数据
+    parser.add_argument("--model_name", type=str, required=True,
+                        help="模型路径或HuggingFace模型名称")
+    parser.add_argument("--train_file", type=str, required=True,
+                        help="训练数据 JSONL 文件路径")
+    parser.add_argument("--val_file", type=str, default=None,
+                        help="验证数据 JSONL 文件路径（可选）")
+    parser.add_argument("--output_dir", type=str, default="./lora_output",
+                        help="输出目录（保存模型和训练状态）")
+
+    # 训练超参数
+    parser.add_argument("--epochs", type=int, default=3,
+                        help="训练轮数")
+    parser.add_argument("--batch_size", type=int, default=1,
+                        help="每GPU批大小（微批次）")
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=8,
+                        help="梯度累积步数")
+    parser.add_argument("--lr", type=float, default=2e-4,
+                        help="学习率")
+    parser.add_argument("--weight_decay", type=float, default=0.0,
+                        help="权重衰减")
+    parser.add_argument("--warmup_ratio", type=float, default=0.03,
+                        help="预热步数占比")
+    parser.add_argument("--max_grad_norm", type=float, default=1.0,
+                        help="梯度裁剪阈值")
+    parser.add_argument("--max_length", type=int, default=512,
+                        help="输入序列最大长度")
+
+    # 混合精度
+    parser.add_argument("--fp16", action="store_true", default=False,
+                        help="启用 FP16 混合精度")
+    parser.add_argument("--bf16", action="store_true", default=False,
+                        help="启用 BF16 混合精度")
+    parser.add_argument("--no_cuda", action="store_true", default=False,
+                        help="禁用 CUDA（强制使用 CPU）")
+
+    # LoRA 参数
+    parser.add_argument("--lora_r", type=int, default=8,
+                        help="LoRA 秩")
+    parser.add_argument("--lora_alpha", type=int, default=16,
+                        help="LoRA 缩放因子")
+    parser.add_argument("--lora_dropout", type=float, default=0.05,
+                        help="LoRA dropout 概率")
+
+    # 早停与恢复
+    parser.add_argument("--patience", type=int, default=3,
+                        help="早停耐心值（验证集无改善的 epoch 数）")
+    parser.add_argument("--resume_from", type=str, default=None,
+                        help="从训练状态文件恢复（如 training_state.pt）")
+
+    args = parser.parse_args()
+    main(args)
