@@ -1,12 +1,8 @@
-# author hgh
-# version 1.0
+import asyncio
 import logging
-import os
-from pathlib import Path
 
 import numpy as np
-import onnxruntime as ort
-
+import onnxruntime
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from transformers import AutoTokenizer
@@ -31,21 +27,21 @@ LABELS = [
     "upsert_loan_interest",
     "urge_loan_interest",
 ]
-ID2LABEL = {i: label for i, label in enumerate(LABELS)}
+ID2LABEL = {
+    i: label for i, label in enumerate(LABELS)
+}
+ONNX_MODEL_PATH = r"D:\code\pycode\BankLoanAgent\models\onnx\loan_advisor_bert\advisor.onnx"
+ONNX_TOKENIZER_PATH = r"D:\code\pycode\BankLoanAgent\models\onnx\loan_advisor_bert\tokenizer"
 
-MODEL_DIR = Path(__file__).parent.parent.parent / "models" / "onnx" / "advisor_bert"
-ONNX_PATH = os.path.join(MODEL_DIR, "advisor.onnx")
-TOKENIZER_PATH = os.path.join(MODEL_DIR, "tokenizer")
+session = onnxruntime.InferenceSession(ONNX_MODEL_PATH, providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+tokenizer = AutoTokenizer.from_pretrained(ONNX_TOKENIZER_PATH)
 
-session = ort.InferenceSession(ONNX_PATH,providers=["CUDAExecutionProvider""CPUExecutionProvider"])
-tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_PATH)
-
-app = FastAPI(title="Advisor ORT")
+app = FastAPI(title="Advisor ORT Server")
 
 
 class PredictRequest(BaseModel):
-    text_a: str = Field(..., description="对话历史或第一段文本")
-    text_b: str = Field(..., description="当前用户消息")
+    text_a: str = Field(..., description="Text input text")
+    text_b: str = Field(..., description="Text input text")
 
 
 class PredictResponse(BaseModel):
@@ -55,37 +51,32 @@ class PredictResponse(BaseModel):
 
 
 @app.post("/predict/advisor", response_model=PredictResponse)
-def predict(request: PredictRequest):
+async def predict(request: PredictRequest):
     try:
-        encoded = tokenizer(
+        encoded = await asyncio.to_thread(
+            lambda a, b: tokenizer(a, b, return_tensors="pt", max_length=512, padding="max_length", truncation=True),
             request.text_a,
             request.text_b,
-            truncation=True,
-            max_length=512,
-            padding="max_length",
-            return_tensors="np"
         )
         input_ids = encoded["input_ids"]
         attention_mask = encoded["attention_mask"]
 
-        logits = session.run(None, {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask
-        })[0][0]
+        onnx_inputs = {"input_ids": input_ids, "attention_mask": attention_mask}
+        outputs = await asyncio.to_thread(session.run, None, onnx_inputs)
 
-        probs = softmax(logits)
-        pred_id = int(np.argmax(probs))
-        probs = float(probs[pred_id])
+        logits = outputs[0]
+        probs = np.exp(logits - np.max(logits, axis=-1, keepdims=True))
+        probs /= probs.sum(axis=-1, keepdims=True)
+        pred_id = int(np.argmax(probs, axis=-1)[0])
         return PredictResponse(
             label=ID2LABEL[pred_id],
             label_id=pred_id,
-            probability=probs,
+            probability=float(probs[pred_id]),
         )
     except Exception as e:
         logger.error(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-def softmax(x):
-    e_x = np.exp(x - np.max(x))
-    return e_x / e_x.sum()
+@app.get("/health")
+def health():
+    return {"status": "ok"}
