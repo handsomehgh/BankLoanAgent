@@ -86,7 +86,7 @@ class RobustEmbeddings:
 
 class RobustLocalEmbeder:
     def __init__(self,
-                 base_url: str = "http://192.168.24.128:8000/v1",
+                 base_url: str = "http://192.168.24.128:8001/v1",
                  model_name: str = "bge-small-loan",
                  backup_base_url: Optional[str] = None,
                  backup_model_name: Optional[str] = None,

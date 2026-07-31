@@ -157,7 +157,7 @@ class Bootstrapper:
         # 定义端口映射：本地 8000-8005 → 远程 localhost:8080-8085
         local_start = 8000
         remote_start = 8080
-        num_tunnels = 7
+        num_tunnels = 1
 
         try:
             remote_bind_addresses = [

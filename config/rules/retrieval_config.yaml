@@ -1,6 +1,6 @@
 # RAG config file
 milvus_uri: "http://192.168.24.128:19530"
-context_complete_uri: "http://localhost:8005"
+context_complete_uri: "http://localhost:8001"
 sqlite_db_path: "./data/work_memory/checkpoints.db"
 retrieval_top_k: 5
 retrieval_fetch_k: 10

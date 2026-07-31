@@ -10,6 +10,6 @@ alibaba_base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
 alibaba_emb_name: "text-embedding-v4"
 alibaba_emb_backup: "text-embedding-v3"
 qwen_llm_name: "qwen3-max"
-loan_embeder_url: "http://localhost:8000/v1"
+loan_embeder_url: "http://localhost:8001/v1"
 loan_embeder_name: "bge-small-loan"
 loan_embeder_dimension: 512
