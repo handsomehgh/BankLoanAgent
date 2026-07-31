@@ -35,9 +35,9 @@ class InteractionLogConsumer(BaseMessageConsumer):
         message_dict = data.payload.get(StateFields.MESSAGES.value,{})
         timestamp = data.timestamp
         if not content:
-            logging.info(f"[InteractionLogConsumer] received no conversation summary")
+            logger.info(f"[InteractionLogConsumer] received no conversation summary")
             return
-        logging.info(f"[InteractionLogConsumer] start processing interaction log extract,user_id={user_id},session_id={session_id},content={content}")
+        logger.info(f"[InteractionLogConsumer] start processing interaction log extract,user_id={user_id},session_id={session_id},content={content}")
 
         logger.info("Generating interaction summary for session_id=%s", session_id)
         summary = self.summary_generator.generate(content, messages_from_dict(message_dict) if not agent_name else None)

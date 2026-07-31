@@ -1,12 +1,13 @@
 # author hgh
 # version 1.0
+import asyncio
 import logging
 import os
 from pathlib import Path
 from typing import Optional, List
 
 import onnxruntime as ort
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from transformers import AutoTokenizer
 
@@ -28,19 +29,26 @@ class EmbeddingRequest(BaseModel):
 
 
 @app.post("/v1/embeddings")
-def embed(req: EmbeddingRequest):
+async def embed(req: EmbeddingRequest):
     if not req.input:
         return {"embeddings": []}
 
-    enc = tokenizer(
-        req.input,
-        truncation=True,
-        max_length=512,
-        padding="max_length",
-        return_tensors="np",
-    )
-    input_ids = enc["input_ids"]
-    attention_mask = enc["attention_mask"]
+    try:
+        enc = await asyncio.to_thread(
+            lambda doc: tokenizer(doc, return_tensors="np", max_length=512, padding="max_length", truncation=True),
+            req.input
+        )
+        input_ids = enc["input_ids"]
+        attention_mask = enc["attention_mask"]
 
-    embedding = session.run(None, {"input_ids": input_ids, "attention_mask": attention_mask})[0]
-    return {"data": embedding.tolist()}
+        embedding = await asyncio.to_thread(session.run, None,
+                                            {"input_ids": input_ids, "attention_mask": attention_mask})
+        print(f"embedding: {embedding}")
+        return {"data": embedding[0].tolist()}
+    except Exception as e:
+        logger.error(f"Prediction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

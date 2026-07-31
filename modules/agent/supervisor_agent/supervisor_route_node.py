@@ -239,32 +239,32 @@ class SupervisorRouteNode:
                 logger.info("Fan-out to agents: %s", agent_name)
                 with ThreadPoolExecutor(max_workers=len(agent_name)) as executor:
                     future_to_agent = {}
-                    for agent_name in retrieve_agent_name:
+                    for agt_name in retrieve_agent_name:
                         future = executor.submit(
                             self._retrieve_knowledge_for_agent,
-                            agent_name, user_query, state,conversation_summary
+                            agt_name, user_query, state,conversation_summary
                         )
-                        future_to_agent[future] = agent_name
+                        future_to_agent[future] = agt_name
                     for future in future_to_agent:
-                        agent_name = future_to_agent[future]
+                        agt_name = future_to_agent[future]
                         try:
                             knowledge = future.result(timeout=15)  # 检索超时
                         except Exception as e:
-                            logger.error("Fan-out 知识检索异常 (%s): %s", agent_name, e)
+                            logger.error("Fan-out 知识检索异常 (%s): %s", agt_name, e)
                             knowledge = ""
 
-                        sub_conversation = sub_conversation_summary.get(agent_name, "")
-                        recent_sub = state.get(StateFields.SUB_MESSAGES.value, {}).get(agent_name, [])
+                        sub_conversation = sub_conversation_summary.get(agt_name, "")
+                        recent_sub = state.get(StateFields.SUB_MESSAGES.value, {}).get(agt_name, [])
                         if recent_sub:
                             recent_str = format_messages(recent_sub)
                             sub_conversation = (recent_str + "\n" + sub_conversation).strip()
                         if not sub_conversation:
                             sub_conversation = "暂无相关信息"
 
-                        agent_contexts[agent_name] = AgentContext.from_state(user_id, session_id, trace_id, user_query,
+                        agent_contexts[agt_name] = AgentContext.from_state(user_id, session_id, trace_id, user_query,
                                                                              user_profile_summary, compliance_warnings,
                                                                              conversation_summary, knowledge,
-                                                                             f"请以 {agent_name} 的身份回答以下用户问题。",
+                                                                             f"请以 {agt_name} 的身份回答以下用户问题。",
                                                                              audit_logger,
                                                                              sub_conversation,
                                                                              recent_conversations)
@@ -292,15 +292,15 @@ class SupervisorRouteNode:
             for agent in agent_name:
                 agent_instruction = f"请以 {agent} 的身份回答以下用户问题。"
 
-                sub_conversation = sub_conversation_summary.get(agent_name, "")
-                recent_sub = state.get(StateFields.SUB_MESSAGES.value, {}).get(agent_name, [])
+                sub_conversation = sub_conversation_summary.get(agent, "")
+                recent_sub = state.get(StateFields.SUB_MESSAGES.value, {}).get(agent, [])
                 if recent_sub:
                     recent_str = format_messages(recent_sub)
                     sub_conversation = (recent_str + "\n" + sub_conversation).strip()
                 if not sub_conversation:
                     sub_conversation = "暂无相关信息"
 
-                agent_contexts[agent_name] = AgentContext.from_state(user_id, session_id, trace_id, user_query,
+                agent_contexts[agent] = AgentContext.from_state(user_id, session_id, trace_id, user_query,
                                                                      user_profile_summary, compliance_warnings,
                                                                      conversation_summary, "", agent_instruction,
                                                                      audit_logger,

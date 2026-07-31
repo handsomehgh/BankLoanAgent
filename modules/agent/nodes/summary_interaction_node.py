@@ -87,7 +87,7 @@ class SummaryInteractionNode:
                         sub_messages.pop(agent, None)
 
         # process main graph messages
-        messages = state.get(StateFields.MESSAGES, [])
+        messages = state.get(StateFields.MESSAGES.value, [])
         if not messages:
             logger.debug("[SummaryInteractionNode] No messages in state, skipping interaction log")
             return {
@@ -98,7 +98,7 @@ class SummaryInteractionNode:
         logger.debug("[SummaryInteractionNode] entering log_interaction_node with messages : %s", messages)
 
         # cursor
-        last_logged_index = state.get(StateFields.LAST_LOGGED_MESSAGE_INDEX)
+        last_logged_index = state.get(StateFields.LAST_LOGGED_MESSAGE_INDEX.value)
 
         # find cursor index
         start_pos = 0
@@ -189,7 +189,7 @@ class SummaryInteractionNode:
             # add to memory
             try:
                 self.memory_store.add_memory(
-                    user_id=state.get(StateFields.USER_ID),
+                    user_id=state.get(StateFields.USER_ID.value),
                     content=summary,
                     memory_type=MemoryType.INTERACTION_LOG,
                     metadata=metadata

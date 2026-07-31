@@ -16,9 +16,9 @@ from modules.agent.multi_agent_state import SupervisorState, AgentResponse
 logger = logging.getLogger(__name__)
 
 AGENT_PRIORITY = [
-    AgentName.LOAN_ADVISOR,
-    AgentName.RISK_ASSESSMENT,
-    AgentName.AFTER_LOAN,
+    AgentName.LOAN_ADVISOR.value,
+    AgentName.RISK_ASSESSMENT.value,
+    AgentName.AFTER_LOAN.value,
 ]
 
 FALLBACK_MESSAGE = "抱歉，我暂时无法处理您的问题。您可以拨打我行客服热线 95333 获取帮助。"

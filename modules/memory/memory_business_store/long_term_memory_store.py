@@ -385,9 +385,9 @@ class LongTermMemoryStore(BaseMemoryStore):
             user_id: str,
             memory_type: Optional[MemoryType] = None
     ) -> bool:
-        logger.info("Deleting memories for user=%s, type=%s", user_id, memory_type.value if memory_type else 'ALL')
         """delete user memory"""
-        types = [memory_type] if memory_type else [MemoryType.USER_PROFILE.value,MemoryType.INTERACTION_LOG.value]
+        logger.info("Deleting memories for user=%s, type=%s", user_id, memory_type.value if memory_type else 'ALL')
+        types = [memory_type] if memory_type else [MemoryType.USER_PROFILE, MemoryType.INTERACTION_LOG]
         for mem_type in types:
             where = Query(conditions=[Condition(field=MemoryFields.USER_ID, op="==", value=user_id)])
             try:
@@ -404,7 +404,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             return 1.0
         try:
             days = (datetime.now() - last).days
-        except:
+        except (ValueError, TypeError):
             days = 0
         return float(np.exp(-self.config.decay_factor * days))
 
@@ -456,7 +456,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             if ts:
                 try:
                     return datetime.fromisoformat(ts)
-                except:
+                except (ValueError, TypeError):
                     pass
             return datetime.min
 
@@ -501,7 +501,7 @@ class LongTermMemoryStore(BaseMemoryStore):
             if ts:
                 try:
                     return datetime.fromisoformat(ts)
-                except:
+                except (ValueError, TypeError):
                     pass
             return datetime.min
 
@@ -623,7 +623,7 @@ class LongTermMemoryStore(BaseMemoryStore):
                 if ts_str:
                     try:
                         return datetime.fromisoformat(ts_str)
-                    except:
+                    except (ValueError, TypeError):
                         pass
                     return datetime.min
 
@@ -693,8 +693,9 @@ class LongTermMemoryStore(BaseMemoryStore):
         for old in existing:
             old_id = old[MemoryFields.ID]
             old_content = old.get(MemoryFields.TEXT, "").strip()
-            old_conf = float(old.get(MemoryFields.CONFIDENCE, 0.0))
-            old_evidence = old.get(MemoryFields.EVIDENCE_TYPE, EvidenceType.EXPLICIT_STATEMENT)
+            old_meta = old.get(MemoryFields.METADATA, {})
+            old_conf = float(old_meta.get(MemoryFields.CONFIDENCE, 0.0))
+            old_evidence = old_meta.get(MemoryFields.EVIDENCE_TYPE, EvidenceType.EXPLICIT_STATEMENT)
             old_weight = evidence_weights.get(old_evidence, 50)
 
             new_conf = new_model.confidence

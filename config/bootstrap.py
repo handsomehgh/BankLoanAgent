@@ -147,10 +147,10 @@ class Bootstrapper:
         ssh_port = int(os.getenv("SSH_PORT", "22"))
         ssh_user = os.getenv("SSH_USER")
         ssh_key = os.getenv("SSH_KEY_PATH")
-        ssh_key_password = "hgh970405"
+        ssh_key_password = os.getenv("SSH_KEY_PASSWORD", "")
 
         # 检查必要配置是否存在
-        if not all([ssh_host, ssh_user, ssh_key]):
+        if not all([ssh_host, ssh_user, ssh_key, ssh_key_password]):
             logger.info("SSH tunnel configuration incomplete, skipping.")
             return
 
@@ -201,15 +201,7 @@ class Bootstrapper:
                 self._ssh_tunnel.stop()
                 logger.info("SSH tunnels stopped.")
             except Exception as e:
-                logger.error("Error while stopping SSH tunnels: %s", e)
-
-    def _stop_ssh_tunnels(self):
-        if self._ssh_tunnel:
-            try:
-                self._ssh_tunnel.stop()
-                logger.info("SSH tunnels stopped.")
-            except Exception as e:
-                logger.warning("Error stopping SSH tunnels: %s", e)
+                logger.warning("Error while stopping SSH tunnels: %s", e)
 
     # ==================================================================
     # 阶段3：注册工具与技能
@@ -272,37 +264,37 @@ class Bootstrapper:
     def _register_configs(self, registry, root):
         registry.register_model(RegistryModules.MEMORY_SYSTEM.value, MemorySystemConfig,
                                 root / "config/rules/memory_system_config.yaml")
-        registry.register_model(RegistryModules.RETRIEVAL, RetrievalConfig,
+        registry.register_model(RegistryModules.RETRIEVAL.value, RetrievalConfig,
                                 root / "config/rules/retrieval_config.yaml")
-        registry.register_model(RegistryModules.LLM, LLMConfig,
+        registry.register_model(RegistryModules.LLM.value, LLMConfig,
                                 root / "config/rules/llm_config.yaml")
-        registry.register_model(RegistryModules.CACHE, CacheConfig,
+        registry.register_model(RegistryModules.CACHE.value, CacheConfig,
                                 root / "config/rules/cache.yaml")
-        registry.register_model(RegistryModules.DATASOURCE, DataSourceConfig,
+        registry.register_model(RegistryModules.DATASOURCE.value, DataSourceConfig,
                                 root / "config/rules/datasource_config.yaml")
-        registry.register_model(RegistryModules.SUPERVISOR, SupervisorConfig,
+        registry.register_model(RegistryModules.SUPERVISOR.value, SupervisorConfig,
                                 root / "config/rules/supervisor.yaml")
-        registry.register_model(RegistryModules.LOAN_ADVISOR, LoanAdvisorConfig,
+        registry.register_model(RegistryModules.LOAN_ADVISOR.value, LoanAdvisorConfig,
                                 root / "config/rules/loan_advisor.yaml")
-        registry.register_model(RegistryModules.RISK_ASSESSMENT, RiskAssessmentConfig,
+        registry.register_model(RegistryModules.RISK_ASSESSMENT.value, RiskAssessmentConfig,
                                 root / "config/rules/risk_assessment.yaml")
-        registry.register_model(RegistryModules.AFTER_LOAN, AfterLoanConfig,
+        registry.register_model(RegistryModules.AFTER_LOAN.value, AfterLoanConfig,
                                 root / "config/rules/after_loan.yaml")
-        registry.register_model(RegistryModules.TOOL_REGISTRY, ToolRegistryConfig,
+        registry.register_model(RegistryModules.TOOL_REGISTRY.value, ToolRegistryConfig,
                                 root / "config/rules/tool_registry.yaml")
-        registry.register_model(RegistryModules.BANK_GLOBAL_CONFIG, BankGlobalConfig,
+        registry.register_model(RegistryModules.BANK_GLOBAL_CONFIG.value, BankGlobalConfig,
                                 root / "config/rules/bank_global_config.yaml")
-        registry.register_model(RegistryModules.DIRECT_REPLY, DirectReplyConfig,
+        registry.register_model(RegistryModules.DIRECT_REPLY.value, DirectReplyConfig,
                                 root / "config/rules/direct_reply.yaml")
-        registry.register_model(RegistryModules.AGENT_EXECUTOR, AgentExecutorConfig,
+        registry.register_model(RegistryModules.AGENT_EXECUTOR.value, AgentExecutorConfig,
                                 root / "config/rules/agent_executor.yaml")
 
     def _inject_sensitive(self, registry, settings):
-        llm_cfg = registry.get_config(RegistryModules.LLM)
+        llm_cfg = registry.get_config(RegistryModules.LLM.value)
         llm_cfg.deepseek_api_key = settings.deepseek_api_key
         llm_cfg.alibaba_api_key = settings.alibaba_api_key
         llm_cfg.log_level = settings.log_level
-        registry.update_config(RegistryModules.LLM, llm_cfg)
+        registry.update_config(RegistryModules.LLM.value, llm_cfg)
 
     # ==================================================================
     # 辅助方法：缓存注册

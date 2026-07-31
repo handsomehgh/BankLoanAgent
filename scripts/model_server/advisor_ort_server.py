@@ -54,7 +54,7 @@ class PredictResponse(BaseModel):
 async def predict(request: PredictRequest):
     try:
         encoded = await asyncio.to_thread(
-            lambda a, b: tokenizer(a, b, return_tensors="pt", max_length=512, padding="max_length", truncation=True),
+            lambda a, b: tokenizer(a, b, return_tensors="np", max_length=512, padding="max_length", truncation=True),
             request.text_a,
             request.text_b,
         )
@@ -71,7 +71,7 @@ async def predict(request: PredictRequest):
         return PredictResponse(
             label=ID2LABEL[pred_id],
             label_id=pred_id,
-            probability=float(probs[pred_id]),
+            probability=float(probs[0,pred_id]),
         )
     except Exception as e:
         logger.error(f"Prediction error: {e}")

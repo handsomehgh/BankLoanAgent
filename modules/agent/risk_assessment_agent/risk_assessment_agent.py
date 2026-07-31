@@ -56,12 +56,3 @@ class RiskAssessmentAgent:
         graph.set_entry_point(AgentNodeName.RISK_ASSESSMENT_RESPONSE.value)
         graph.set_finish_point(AgentNodeName.RISK_ASSESSMENT_RESPONSE.value)
         return graph.compile()
-
-def create_risk_assessment_graph(
-        llm_client: RobustLLM,
-        registry: ConfigRegistry,
-        tool_executor: ToolExecutor,
-        seq_generator: SequenceGenerator
-) -> StateGraph:
-    agent = RiskAssessmentAgent(llm_client,registry,tool_executor,seq_generator)
-    return agent.build_graph()

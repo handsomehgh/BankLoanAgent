@@ -42,9 +42,11 @@ class FanoutDispatcher:
                 subgraph = self.agent_graphs[agent_name]
                 ctx = agent_contexts.get(agent_name)
                 if not ctx:
-                    logger.warning("[FanoutDispatcher] fanout: lack %s AgentContext", agent_name)
-                    ctx = state.get(StateFields.AGENT_CONTEXT.value)
-                sub_state = {StateFields.AGENT_CONTEXT.value: ctx} if ctx else {}
+                    logger.warning("[FanoutDispatcher] fanout: lack %s AgentContext, using fallback", agent_name)
+                    agent_responses[agent_name] = AgentResponse(content="抱歉，该服务暂时不可用，请稍后再试。")
+                    sub_messages[agent_name] = []
+                    continue
+                sub_state = {StateFields.AGENT_CONTEXT.value: ctx}
                 future = executor.submit(subgraph.invoke,sub_state,config)
                 future_to_agent[future] = agent_name
 

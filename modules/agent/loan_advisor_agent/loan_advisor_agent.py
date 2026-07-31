@@ -50,7 +50,7 @@ class LoanAdvisorAgent:
         self.seq_generator = seq_generator
         self.tool_selector = tool_selector
         self.classifier = classifier
-        self.skill_executor = skill_executor,
+        self.skill_executor = skill_executor
         self.skill_selector = skill_selector
 
     def build_graph(self) -> StateGraph:
@@ -72,13 +72,3 @@ class LoanAdvisorAgent:
         graph.set_entry_point(AgentNodeName.LOAN_ADVISOR_RESPONSE.value)
         graph.set_finish_point(AgentNodeName.LOAN_ADVISOR_RESPONSE.value)
         return graph.compile()
-
-
-def create_loan_advisor_graph(
-        llm_client: RobustLLM,
-        registry: ConfigRegistry,
-        tool_executor: ToolExecutor,
-        seq_generator: SequenceGenerator
-) -> StateGraph:
-    agent = LoanAdvisorAgent(llm_client,registry,tool_executor, seq_generator)
-    return agent.build_graph()

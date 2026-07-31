@@ -22,6 +22,7 @@ class CircuitBreaker():
         self._lock = threading.Lock()
 
     def call(self, func: Callable[..., Any], *args, **kwargs) -> Any:
+        # 1. 加锁检查状态（快速拒绝）
         with self._lock:
             if self.state == "OPEN":
                 if time.time() - self.last_failure_time >= self.recovery_timeout:
@@ -31,14 +32,11 @@ class CircuitBreaker():
                     logger.warning(f"[CircuitBreaker] {self.name} circuit breaker triggered,directly rejected")
                     raise CircuitBreakerOpenError(f"断路器 {self.name} 已打开")
 
-            try:
-                result = func(*args, **kwargs)
-                if self.state == "HALF_OPEN":
-                    self.state = "CLOSED"
-                    logger.info(f"[CircuitBreaker] {self.name} detect successfully，has been recovered")
-                self.failure_count = 0
-                return result
-            except ToolExecutionException as e:
+        # 2. 不持锁执行工具调用（避免阻塞其他线程）
+        try:
+            result = func(*args, **kwargs)
+        except ToolExecutionException as e:
+            with self._lock:
                 if e.error_type in (ToolErrorType.TEMPORARY_ERROR, ToolErrorType.EXTERNAL_ERROR):
                     self.failure_count += 1
                     self.last_failure_time = time.time()
@@ -46,12 +44,21 @@ class CircuitBreaker():
                         self.state = "OPEN"
                         logger.error(
                             f"[CircuitBreaker] {self.name} continuous failure {self.failure_count} time，already tripped")
-                raise e
-            except Exception as e:
+            raise e
+        except Exception as e:
+            with self._lock:
                 self.failure_count += 1
                 self.last_failure_time = time.time()
                 if self.failure_count >= self.failure_threshold:
                     self.state = "OPEN"
                     logger.error(
                         f"[CircuitBreaker] {self.name} continuous failure {self.failure_count} time，already tripped")
-                raise e
+            raise e
+
+        # 3. 加锁更新成功状态
+        with self._lock:
+            if self.state == "HALF_OPEN":
+                self.state = "CLOSED"
+                logger.info(f"[CircuitBreaker] {self.name} detect successfully，has been recovered")
+            self.failure_count = 0
+        return result

@@ -68,3 +68,7 @@ async def rerank(req: RerankerRequest):
         return RerankResponse(scores=scores, sorted_indices=sorted_indices)
     except Exception as e:
         raise HTTPException(status_code=500, detail="Reranking service error")
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

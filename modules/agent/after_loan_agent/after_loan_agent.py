@@ -58,12 +58,3 @@ class AfterLoanAgent:
         graph.set_entry_point(AgentNodeName.AFTER_LOAN_RESPONSE.value)
         graph.set_finish_point(AgentNodeName.AFTER_LOAN_RESPONSE.value)
         return graph.compile()
-
-def create_after_loan_graph(
-    llm_client: RobustLLM,
-    registry: ConfigRegistry,
-    tool_executor: ToolExecutor,
-    seq_generator: SequenceGenerator
-) -> StateGraph:
-    agent = AfterLoanAgent(llm_client,registry,tool_executor,seq_generator)
-    return agent.build_graph()

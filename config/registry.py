@@ -1,7 +1,7 @@
 import yaml
 import threading
 from pathlib import Path
-from typing import Type, Optional
+from typing import Type
 from pydantic import BaseModel
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -10,18 +10,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 class ConfigRegistry:
-    _instance: Optional['ConfigRegistry'] = None
-    _lock = threading.Lock()
 
-    def __new__(cls):
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-                    cls._instance._configs = {}
-                    cls._instance._models = {}
-                    cls._instance._file_paths = {}
-        return cls._instance
+    def __init__(self):
+        self._configs = {}
+        self._models = {}
+        self._file_paths = {}
+        self._lock = threading.Lock()
 
     def register_model(self, module: str, model_cls: Type[BaseModel], yaml_path: Path):
         self._models[module] = model_cls
@@ -78,5 +72,4 @@ class ConfigFileEventHandler(FileSystemEventHandler):
             if filepath == path:
                 logger.info(f"检测到配置文件变更: {filepath}，开始热更新模块 [{module}]")
                 self.registry._load_module(module)
-                print(self.registry.get_config(module))
                 break
