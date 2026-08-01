@@ -5,7 +5,7 @@ import json
 import numpy as np
 
 # 服务地址（请根据实际部署修改端口）
-url = "http://127.0.0.1:8080/v1/embeddings"
+url = "http://127.0.0.1:8001/v1/embeddings"
 
 # 构造测试文本（支持批量，可以发送多条）
 texts = [
@@ -20,10 +20,11 @@ data = {"input": texts}
 try:
     # 发送 POST 请求
     response = requests.post(url, json=data, timeout=30)
-    response.raise_for_status()          # 检查HTTP状态码
+    response.raise_for_status()
     result = response.json()
+    print(result)
 
-    embeddings = result.get("data", [])
+    embeddings = result["data"]
     print(f"请求成功！共返回 {len(embeddings)} 条嵌入向量。")
 
     if embeddings:

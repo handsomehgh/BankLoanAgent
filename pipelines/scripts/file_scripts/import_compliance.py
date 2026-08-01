@@ -15,7 +15,7 @@ def import_compliance_rules(json_path: str):
     """导入合规规则到长期记忆"""
     # vector_store = ChromaVectorStore("../chromadb")
     # store = LongTermMemoryStore(vector_store=vector_store)
-    store = create_test_memory_store("http://192.168.24.128:19530")
+    store = create_test_memory_store("http://47.110.142.97:19530")
 
     with open(json_path, "r", encoding="utf-8") as f:
         rules = json.load(f)

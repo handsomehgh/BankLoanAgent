@@ -160,19 +160,18 @@ def _create_local_creative_llm(registry: ConfigRegistry):
 
 def _create_embedder(registry: ConfigRegistry):
     cfg = registry.get_config(RegistryModules.LLM)
-    return RobustEmbeddings(
-        api_key=cfg.alibaba_api_key,
-        model_name=cfg.alibaba_emb_name,
-        backup_model_name=cfg.alibaba_emb_backup,
-        dimensions=cfg.dimension
+    return RobustLocalEmbeder(
+        model_name=cfg.loan_official_embeder_name,
+        base_url=cfg.loan_official_embeder_url,
+        dimensions=cfg.loan_embeder_dimension
     )
 
 
 def _create_local_embeder(registry: ConfigRegistry):
     cfg = registry.get_config(RegistryModules.LLM)
     return RobustLocalEmbeder(
-        base_url=os.getenv("EMBEDDING_API_URL", cfg.loan_embeder_url),
-        model_name=cfg.loan_embeder_name,
+        base_url=cfg.loan_custom_embeder_url,
+        model_name=cfg.loan_custom_embeder_name,
         dimensions=cfg.loan_embeder_dimension
     )
 
@@ -570,14 +569,14 @@ class ApplicationContainer(containers.DeclarativeContainer):
         memory_retriever=memory_retriever,
         seq_generator=seq_generator,
         registry=config_registry,
-        llm_client=creative_llm,
+        llm_client=local_creative_llm,
         memory_config=memory_config,
         knowledge_retrieve=knowledge_retriever
     )
 
     loan_advisor_graph = providers.Singleton(
         _build_loan_advisor_graph,
-        llm_client=creative_llm,
+        llm_client=local_creative_llm,
         registry=config_registry,
         tool_executor=tool_executor,
         seq_generator=seq_generator,
@@ -589,7 +588,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     risk_assessment_graph = providers.Singleton(
         _build_risk_assessment_graph,
-        llm_client=creative_llm,
+        llm_client=local_creative_llm,
         registry=config_registry,
         tool_executor=tool_executor,
         seq_generator=seq_generator,
@@ -601,7 +600,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     after_loan_graph = providers.Singleton(
         _build_after_loan_graph,
-        llm_client=creative_llm,
+        llm_client=local_creative_llm,
         registry=config_registry,
         tool_executor=tool_executor,
         seq_generator=seq_generator,

@@ -11,7 +11,7 @@ from infra.database.redis_manager import RedisManager
 from modules.memory.memory_business_store.long_term_memory_store import LongTermMemoryStore
 from modules.memory.memory_utils.cursor_manager import CursorManager
 from modules.memory.memory_vector_store.milvus_memory_vector_store import MilvusMemoryVectorStore
-from modules.module_services.embeddings import RobustEmbeddings
+from modules.module_services.embeddings import RobustEmbeddings, RobustLocalEmbeder
 from utils.config_utils.get_config import inject_sensitive_fields
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -39,11 +39,9 @@ def create_test_memory_store(uri: str | None = None, config_path: str | None = N
     cfg = registry.get_config("llm")
 
     milvus_client = MilvusClientManager(uri=milvus_uri)
-    embed = RobustEmbeddings(
-        api_key=cfg.alibaba_api_key,
-        model_name=cfg.alibaba_emb_name,
-        backup_model_name=cfg.alibaba_emb_backup,
-        dimensions=cfg.dimension
+    embed = RobustLocalEmbeder(
+        base_url="http://127.0.0.1:8001/v1/bge",
+        model_name="no_need"
     )
 
     vec_store = MilvusMemoryVectorStore(milvus_client=milvus_client,embeder=embed, config=memory_config)

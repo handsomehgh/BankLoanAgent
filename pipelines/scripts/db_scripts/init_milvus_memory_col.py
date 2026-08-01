@@ -36,9 +36,9 @@ COMMON_FIELDS = [
     FieldSchema(name="id", dtype=DataType.VARCHAR, is_primary=True, max_length=100),
     FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535, enable_analyzer=True,
                 analyzer_params={"type": "chinese"}),
-    FieldSchema(name="dense_vector", dtype=DataType.FLOAT_VECTOR, dim=1024),
+    FieldSchema(name="dense_vector", dtype=DataType.FLOAT_VECTOR, dim=768),
     FieldSchema(name="sparse_vector", dtype=DataType.SPARSE_FLOAT_VECTOR),
-    FieldSchema(name="user_id", dtype=DataType.VARCHAR, max_length=64),  # max_len -> max_length
+    FieldSchema(name="user_id", dtype=DataType.VARCHAR, max_length=64),
     FieldSchema(name="status", dtype=DataType.VARCHAR, max_length=20),
     FieldSchema(name="confidence", dtype=DataType.DOUBLE),
     FieldSchema(name="extra", dtype=DataType.JSON),
@@ -53,7 +53,7 @@ USER_PROFILE_EXTRA_FIELDS = [
     FieldSchema(name="effective_date", dtype=DataType.VARCHAR, max_length=30),
     FieldSchema(name="expires_at", dtype=DataType.VARCHAR, max_length=30),
     FieldSchema(name="source", dtype=DataType.VARCHAR, max_length=32),
-    FieldSchema(name="superseded_by", dtype=DataType.VARCHAR, max_length=100),  # 修复：新增字段
+    FieldSchema(name="superseded_by", dtype=DataType.VARCHAR, max_length=100),
 ]
 
 INTERACTION_LOG_EXTRA_FIELDS = [
@@ -100,7 +100,7 @@ BM25_FUNCTION = Function(
     name="bm25_fn",
     function_type=FunctionType.BM25,
     input_field_names=["text"],
-    output_field_names=["sparse_vector"]
+    output_field_names="sparse_vector"
 )
 
 # the scalar fields that need to create dictionary indexes(choose based on query_utils frequency)
@@ -123,7 +123,7 @@ def connect_milvus():
     try:
         connections.connect(
             alias="default",
-            uri="http://192.168.24.128:19530",
+            uri="http://47.110.142.97:19530",
             timeout=30
         )
         logger.info(f"Connected to milvus")
@@ -254,16 +254,7 @@ if __name__ == '__main__':
     except Exception as e:
         logger.exception("Initialization failed")
         sys.exit(1)
-    # connections.connect(
-    #     alias="default",
-    #     uri="http://192.168.24.128:19530",
-    #     timeout=30
-    # )
-    # col = Collection(name=COLLECTION_NAMES[MemoryType.INTERACTION_LOG.value])
-    # col.load()
-    # fields = set(InteractionLogMemory.model_fields.keys())
-    # fields.add(MemoryFields.TEXT)
-    # print(col.query(expr="user_id == 'test_user_33'",output_fields=list(fields)))
-    # # res = col.delete("id in ['1596f346-f309-45d8-9cc7-3612cb963bea','e108494d-c09a-4c66-beec-f119dbe8535']")
-    # # print(res)
+    # connections.connect(uri="http://47.110.142.97:19530")
     # utility.drop_collection("compliance_rules")
+    # utility.drop_collection("user_profile_memories")
+    # utility.drop_collection("interaction_logs")

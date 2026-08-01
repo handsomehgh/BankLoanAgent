@@ -253,10 +253,10 @@ if __name__ == "__main__":
     registry = get_config()
     llm_config = registry.get_config(RegistryModules.LLM)
     embedder = RobustLocalEmbeder(
-        base_url=llm_config.loan_embeder_url,
-        model_name=llm_config.loan_embeder_name,
-        dimensions=llm_config.loan_embeder_dimension
+        base_url="http://127.0.0.1:8001/v1",
+        model_name="no_need"
     )
+
     precise_llm = RobustLLM(
         temperature=llm_config.precise_temperature,
         api_key=llm_config.deepseek_api_key,

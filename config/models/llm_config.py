@@ -9,8 +9,8 @@ class LLMConfig(BaseModel):
     openai_provider: str = "openai"
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
-    local_qwen_url: str = "http://localhost:8006/v1"
-    local_qwen_name: str = "qwen2.5-7b"
+    local_qwen_url: str = "http://localhost:8000/v1"
+    local_qwen_name: str = "qwen2.5-14b"
     deepseek_llm_name: str = "deepseek-chat"
     alibaba_api_key: str = ""
     alibaba_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -18,6 +18,8 @@ class LLMConfig(BaseModel):
     alibaba_emb_backup: str = "text-embedding-v3"
     qwen_llm_name: str = "qwen3-max"
     log_level: str = "DEBUG"
-    loan_embeder_url: str = "http://192.168.24.128:8000/v1"
-    loan_embeder_name: str = "bge-small-loan"
-    loan_embeder_dimension: int = 512
+    loan_custom_embeder_url: str = "http://127.0.0.1:8001/v1"
+    loan_custom_embeder_name: str = "bge-custom-embedder"
+    loan_official_embeder_url: str = "http://127.0.0.1:8001/v1/bge"
+    loan_official_embeder_name: str = "bge-official-embedder"
+    loan_embeder_dimension: int = 768

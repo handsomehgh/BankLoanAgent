@@ -136,7 +136,7 @@ class Bootstrapper:
         setup_logging(log_level=llm_config.log_level)
 
         # 6. Prometheus
-        self._start_prometheus()
+        # self._start_prometheus()
 
         logger.info("[Phase 2/5] Infrastructure initialized successfully")
 

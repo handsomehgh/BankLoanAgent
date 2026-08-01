@@ -5,7 +5,7 @@
 import requests
 import json
 
-url = "http://127.0.0.1:8080/rerank"
+url = "http://127.0.0.1:8001/rerank"
 
 data = {
     "query": "房贷利率现在是多少？",
@@ -22,6 +22,7 @@ try:
     response.raise_for_status()
     result = response.json()
     print("请求成功！")
+    print(result)
     scores = result["scores"]
     sorted_indices = result["sorted_indices"]
 

@@ -34,7 +34,7 @@ BM25_FUNCTION = Function(
     output_field_names=["sparse_vector"]
 )
 
-SCALAR_INDEX_FIELDS = ["source_type", "product_type", "status", "source_file","entity_id", "topics", "regulation_names"]
+SCALAR_INDEX_FIELDS = ["source_type", "product_type", "status", "source_file","entity_id"]
 
 def init_collections():
     COL_FIELDS = [
@@ -61,9 +61,9 @@ def init_collections():
         FieldSchema(name="topics", dtype=DataType.ARRAY, element_type=DataType.VARCHAR, max_capacity=20,max_length=64),
         FieldSchema(name="regulation_names", dtype=DataType.ARRAY, element_type=DataType.VARCHAR, max_capacity=20,max_length=64),
         FieldSchema(name="extra", dtype=DataType.JSON),
-        FieldSchema(name="dense_vector", dtype=DataType.FLOAT_VECTOR, dim=512),
+        FieldSchema(name="dense_vector", dtype=DataType.FLOAT_VECTOR, dim=768),
         FieldSchema(name="sparse_vector", dtype=DataType.SPARSE_FLOAT_VECTOR),
-        FieldSchema(name="term_vector", dtype=DataType.FLOAT_VECTOR, dim=512),
+        FieldSchema(name="term_vector", dtype=DataType.FLOAT_VECTOR, dim=768),
         # FieldSchema(name="summary_vector", dtype=DataType.FLOAT_VECTOR, dim=1024)
         # FieldSchema(name="faq_similar_vector", dtype=DataType.FLOAT_VECTOR, dim=1024),
         # FieldSchema(name="graph_embedding", dtype=DataType.FLOAT_VECTOR, dim=256),
@@ -172,7 +172,7 @@ def create_index(collection: Collection):
                 logger.error(f"Failed to create scalar index {idx_name} : {e}")
 
 if __name__ == '__main__':
-    client = MilvusClientManager("http://192.168.24.128:19530")
+    client = MilvusClientManager("http://47.96.146.37:19530")
     # client.delete_collection(CollectionNames.for_type(MemoryType.BUSINESS_KNOWLEDGE))
     init_collections()
     # utility.drop_collection(CollectionNames.for_type(MemoryType.BUSINESS_KNOWLEDGE))
