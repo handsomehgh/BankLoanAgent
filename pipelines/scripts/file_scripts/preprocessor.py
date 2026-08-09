@@ -3,7 +3,6 @@
 import json
 import logging
 import re
-import uuid
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import List, Dict, Any
@@ -14,7 +13,6 @@ from langchain_core.documents import Document
 from config.global_constant.constants import KnowledgeFileSourceType, RegistryModules
 from config.models.file_process_config import FileProcessConfig, PreprocessingConfig, MetadataExtractionConfig
 from config.registry import ConfigRegistry
-from pipelines.scripts.file_scripts.chunker import PROJECT_ROOT
 from pipelines.constant import FileLodeType, FileMetadata
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -24,6 +22,39 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# FAQ 分块正则：在 Q 编号行前换行处切块
+FAQ_BLOCK_SPLIT_PATTERN = re.compile(r'\n(?=(?:\*\*)?Q\d+[:\.\s：])')
+
+# 术语表表头词（多节表格会重复出现表头，作为噪声跳过）
+GLOSSARY_HEADER_TERMS = {"术语", "英文", "定义", "使用场景", "Term", "English", "Definition"}
+
+# 文档版本号提取：取自 md 文档头（如 v4.0）
+DOC_VERSION_PATTERN = re.compile(r'v(\d+\.\d+)')
+
+# 用于清理 FAQ 块尾部残留的正则（章节标题、分隔线、元数据声明等）
+TAIL_CLEAN_PATTERN = re.compile(
+    r'(\n---\n.*$|'  # Markdown 分隔线及之后所有内容
+    r'\n##\s+.*$|'  # 二级标题及之后内容
+    r'\n#\s+.*$|'  # 一级标题及之后内容
+    r'\n>\s*\*\*说明\*\*.*$|'  # 文档元信息声明
+    r'\n>\s*\*\*维护部门\*\*.*$|'
+    r'\n>\s*\*\*更新日期\*\*.*$)',
+    re.DOTALL
+)
+
+# 用于清理 Markdown 格式标记（**粗体** / *斜体*）
+MARKDOWN_CLEAN_PATTERN = re.compile(r'\*{1,3}([^*]+)\*{1,3}')
+
+
+def extract_doc_version(file_path: Path) -> str:
+    """从文档头部500字符内提取版本号（如 v4.0），未命中返回空串"""
+    try:
+        head = file_path.read_text(encoding="utf-8")[:500]
+    except Exception:
+        return ""
+    m = DOC_VERSION_PATTERN.search(head)
+    return f"v{m.group(1)}" if m else ""
 
 class HTMLTableParser(HTMLParser):
     """将 HTML <table> 转为结构化自然语言"""
@@ -147,7 +178,7 @@ def extract_metadata(text: str, source: KnowledgeFileSourceType, config: Metadat
     #regulation names
     regs = re.findall(r'《(.*?)》', text)
     if regs:
-        metadata[FileMetadata.REGULATION_NAMES] = list(set(regs))
+        metadata[FileMetadata.REGULATION_NAMES] = sorted(set(regs))
     return metadata
 
 
@@ -238,7 +269,7 @@ def load_glossary(file_path: Path, config: PreprocessingConfig, meta_config: Met
         return []
 
     lines = content.strip().split("\n")
-    strat = 0
+    start = 0
     for i, line in enumerate(lines):
         if "|" in line and "---" in line:
             start = i + 1
@@ -253,6 +284,9 @@ def load_glossary(file_path: Path, config: PreprocessingConfig, meta_config: Met
             continue
 
         term = parts[0]
+        # 跳过重复节表头行与分隔行（多节表格既有噪声）
+        if term in GLOSSARY_HEADER_TERMS or re.fullmatch(r'[-—: ]+', term):
+            continue
         if len(parts) == 2:
             definition = parts[1]
             text = f"{term}：{definition}"
@@ -302,28 +336,14 @@ def load_faq(file_path: Path, config: PreprocessingConfig, meta_config: Metadata
         logger.error(f"Failed to load FAQ {file_path}: {e}")
         return []
 
-    qa_blocks = re.split(r'\n(?=(?:\*\*)?Q\d+[:\.\s：])', content)
+    qa_blocks = re.split(FAQ_BLOCK_SPLIT_PATTERN, content)
     docs = []
-
-    # 用于清理块尾部残留的正则（章节标题、分隔线、元数据声明等）
-    TAIL_CLEAN_PATTERN = re.compile(
-        r'(\n---\n.*$|'  # Markdown 分隔线及之后所有内容
-        r'\n##\s+.*$|'  # 二级标题及之后内容
-        r'\n#\s+.*$|'  # 一级标题及之后内容
-        r'\n>\s*\*\*说明\*\*.*$|'  # 文档元信息声明
-        r'\n>\s*\*\*维护部门\*\*.*$|'
-        r'\n>\s*\*\*更新日期\*\*.*$)',
-        re.DOTALL
-    )
-
-    # 用于清理 Markdown 格式标记
-    MARKDOWN_CLEAN_PATTERN = re.compile(r'\*{1,3}([^*]+)\*{1,3}')  # **粗体** / *斜体*
-
 
     for block in qa_blocks:
         if not block.strip():
             continue
 
+        q_no_match = re.match(r'\s*\*{0,2}Q(\d+)[:\.\s：]', block)
         q_match = re.search(r'\*{0,2}Q\d+[:\.\s：]\*{0,2}\s*(.+?)(?=\n\s*A[:：])', block, re.DOTALL)
         a_match = re.search(r'\n\s*A[:：]\s*(.+)', block, re.DOTALL)
 
@@ -331,23 +351,25 @@ def load_faq(file_path: Path, config: PreprocessingConfig, meta_config: Metadata
         answer = a_match.group(1).strip() if a_match else ""
 
         if not question or not answer:
-            # 降级：整个block作为文本
-            text = block.strip()
-        else:
-            # 清洗 answer 尾部的文档残留
-            answer = TAIL_CLEAN_PATTERN.sub('', answer).strip()
-            # 去除 Markdown 粗体/斜体标记，保留文字
-            answer = MARKDOWN_CLEAN_PATTERN.sub(r'\1', answer)
-            question = MARKDOWN_CLEAN_PATTERN.sub(r'\1', question)
-            text = f"Q: {question}\nA: {answer}"
+            # 文档头摘要等非 Q/A 块，直接丢弃不入库
+            logger.debug(f"Discard non-QA block: {block.strip()[:60]}")
+            continue
+
+        # 清洗 answer 尾部的文档残留
+        answer = TAIL_CLEAN_PATTERN.sub('', answer).strip()
+        # 去除 Markdown 粗体/斜体标记，保留文字
+        answer = MARKDOWN_CLEAN_PATTERN.sub(r'\1', answer)
+        question = MARKDOWN_CLEAN_PATTERN.sub(r'\1', question)
+        text = f"Q: {question}\nA: {answer}"
 
         cleaned = clean_text(text, config)
         if len(cleaned) < config.min_content_length:
             continue
 
         meta = extract_metadata(cleaned, KnowledgeFileSourceType.FAQ, meta_config)
-        meta["question"] = question
-        meta["answer"] = answer
+        meta[FileMetadata.QUESTION] = question
+        meta[FileMetadata.ANSWER] = answer
+        meta[FileMetadata.Q_NO] = int(q_no_match.group(1)) if q_no_match else 0
         docs.append(Document(page_content=cleaned, metadata=meta))
     logger.info(f"从 FAQ 加载了 {len(docs)} 个问答对")
     return docs
@@ -380,15 +402,17 @@ class DocumentPreProcessor:
                 if loader_type in (FileLodeType.QA, FileLodeType.WORD_EXPL):
                     loader_func = self.loader_registry[loader_type]
                     docs = loader_func(file_path, prep_conf, meta_conf)
-                    for doc in docs:
-                        doc.metadata[FileMetadata.SOURCE_FILE] = filename
                 elif loader_type == FileLodeType.MARK_DOWN:
                     docs = load_markdown(file_path,source_type, prep_conf, meta_conf)
-                    for doc in docs:
-                        doc.metadata[FileMetadata.SOURCE_FILE] = filename
                 else:
                     logger.error(f"Unknown file type: {source_type}")
                     continue
+
+                # 注入源文件与文档版本号（取自 md 文档头，如 v4.0）
+                doc_version = extract_doc_version(file_path)
+                for doc in docs:
+                    doc.metadata[FileMetadata.SOURCE_FILE] = filename
+                    doc.metadata[FileMetadata.DOC_VERSION] = doc_version
 
                 # add to docs
                 all_docs.extend(docs)
@@ -396,8 +420,19 @@ class DocumentPreProcessor:
             except Exception as e:
                 logger.error(f"An error occurred while processing {filename} : {e}", exc_info=True)
 
+        # 确定性编号：parent_doc_id = {source_file}:{doc_seq}
+        # faq 直接采用文档内显式 Q 号（faq.md:Q012），其余按文件内出现顺序编号
+        seq_counter: Dict[str, int] = {}
         for doc in all_docs:
-            doc.metadata[FileMetadata.CHUNK_ID] = str(uuid.uuid4())
+            filename = doc.metadata[FileMetadata.SOURCE_FILE]
+            q_no = doc.metadata.pop(FileMetadata.Q_NO, None)
+            if q_no:
+                parent_doc_id = f"{filename}:Q{q_no:03d}"
+            else:
+                seq_counter[filename] = seq_counter.get(filename, 0) + 1
+                parent_doc_id = f"{filename}:{seq_counter[filename]:04d}"
+            doc.metadata[FileMetadata.CHUNK_ID] = parent_doc_id
+            doc.metadata[FileMetadata.PARENT_DOC_ID] = parent_doc_id
 
         logger.info(f"Full processing completed，total of {len(all_docs)} documents")
         return all_docs

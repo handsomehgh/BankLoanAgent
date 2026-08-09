@@ -39,7 +39,6 @@ multi_vector:
   term_vector: true
   summary_vector: false
   faq_similar_vector: false
-  graph_embedding_dim: 0
 
   summary_config:
     enable_source_filter: true

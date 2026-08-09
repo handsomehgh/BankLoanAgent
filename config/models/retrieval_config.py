@@ -32,7 +32,6 @@ class MultiVectorCfg(BaseModel):
     term_vector: bool = False
     summary_vector: bool = False
     faq_similar_vector: bool = False
-    graph_embedding_dim: int = 0
     summary_config: SummaryConfig = Field(default_factory=SummaryConfig)
     faq_similar_config: Optional[FaqSimilarConfig] = Field(default_factory=FaqSimilarConfig)
 

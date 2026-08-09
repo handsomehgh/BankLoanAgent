@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any
@@ -22,6 +23,14 @@ from utils.faq_similar_generator import FaqSimilarGenerator
 from utils.summary_know_generator import SummaryKnowledgeGenerator
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+
+# metadata 中已映射到独立列的键，其余键统一兑底收进 extra
+MAPPED_META_KEYS = {
+    FileMetadata.CHUNK_ID, FileMetadata.SOURCE_TYPE, FileMetadata.PRODUCT_TYPE,
+    FileMetadata.SOURCE_FILE, FileMetadata.PARENT_DOC_ID, FileMetadata.CHUNK_INDEX,
+    FileMetadata.CONFIDENCE, FileMetadata.TOPICS, FileMetadata.REGULATION_NAMES,
+    FileMetadata.QUESTION, FileMetadata.DOC_VERSION,
+}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -157,10 +166,23 @@ class RAGIndexer:
             return [item.strip() for item in val.split(",") if item.strip()]
         return []
 
+    @staticmethod
+    def _truncate_utf8(text: str, max_bytes: int) -> str:
+        """按 UTF-8 字节数截断（Milvus VARCHAR max_length 是字节语义）"""
+        encoded = text.encode("utf-8")
+        if len(encoded) <= max_bytes:
+            return text
+        return encoded[:max_bytes].decode("utf-8", errors="ignore")
+
     def index(self):
         chunks = self.load_chunks()
         if not chunks:
             return
+
+        # 导入批次号：全量重建后据此清理旧批次数据，支持回滚与审计
+        doc_version = chunks[0][CommonFields.METADATA].get(FileMetadata.DOC_VERSION, "")
+        batch_id = f"batch-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{doc_version}".rstrip("-")
+        logger.info(f"Ingest batch id：{batch_id}")
 
         retrieval_config = self.registry.get_config(RegistryModules.RETRIEVAL)
         batch_size = retrieval_config.insert_batch_size
@@ -171,17 +193,26 @@ class RAGIndexer:
         for start in range(0, total, batch_size):
             batch = chunks[start : start + batch_size]
             try:
-                entities = self._prepare_batch(batch)
-                self.collection.insert(entities)
-                logger.info(f"Inserted {min(start + batch_size, total)}/{total}")
+                entities = self._prepare_batch(batch, batch_id)
+                self.collection.upsert(entities)
+                logger.info(f"Upserted {min(start + batch_size, total)}/{total}")
             except MilvusException as e:
-                logger.error(f"Inserted failed (batch {start // batch_size}): {e}")
+                logger.error(f"Upsert failed (batch {start // batch_size}): {e}")
                 raise
 
         self.collection.flush()
+
+        # 清理非当前批次的历史数据（仅全量导入语义下安全）
+        try:
+            self.collection.delete(f'ingest_batch_id != "{batch_id}"')
+            self.collection.flush()
+            logger.info(f"Stale batches cleaned，current batch：{batch_id}")
+        except MilvusException as e:
+            logger.error(f"Failed to clean stale batches: {e}")
+
         logger.info(f"import success，total number of entities in the set：{self.collection.num_entities}")
 
-    def _prepare_batch(self, batch: List[Dict[str, Any]]) -> List[Dict]:
+    def _prepare_batch(self, batch: List[Dict[str, Any]], batch_id: str) -> List[Dict]:
         texts = [item[CommonFields.CONTENT] for item in batch]
         metadatas = [item[CommonFields.METADATA] for item in batch]
 
@@ -204,47 +235,43 @@ class RAGIndexer:
                 summary_vectors = self._generate_summary(batch, dense_vectors)
 
         entities = []
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_ts = int(time.time())
         for i in range(len(batch)):
             meta = metadatas[i]
-            source = meta.get(FileMetadata.SOURCE_TYPE, "")
 
-            # 自动推断 entity_type
-            entity_type_map = {
-                "faq": "faq",
-                "product_manual": "product",
-                "regulation": "regulation",
-                "glossary": "term",
-            }
-            entity_type = entity_type_map.get(source, "")
+            # 未映射到独立列的元数据（如 glossary 的 term/english、faq 的 answer）兑底收进 extra
+            extra = {k: v for k, v in meta.items() if k not in MAPPED_META_KEYS}
+            answer = meta.get(FileMetadata.ANSWER)
+            if answer:
+                extra["answer"] = answer
+
+            question = meta.get(FileMetadata.QUESTION) or None
+            if question:
+                question = self._truncate_utf8(question, 512)
 
             entity = {
-                "id": meta.get("chunk_id", ""),
+                "id": meta.get(FileMetadata.CHUNK_ID, ""),
                 "text": texts[i],
-                "source_type": meta.get("source_type", ""),
-                "product_type": meta.get("product_type", ""),
-                "status": meta.get("status", "active"),
-                "source_file": meta.get("source_file", ""),
-                "parent_doc_id": meta.get("parent_doc_id", ""),
-                "chunk_index": meta.get("chunk_index"),
-                "created_at": meta.get("created_at", now_iso),
-                "updated_at": meta.get("updated_at", now_iso),
-                "entity_id": meta.get("entity_id", ""),
-                "entity_type": entity_type,
-                "relation_predicate": meta.get("relation_predicate", ""),
-                "topics": self._ensure_list(meta.get("topics", [])),
-                "regulation_names": self._ensure_list(meta.get("regulation_names", [])),
-                "extra": meta.get("extra", {}),
-                "confidence": meta.get("confidence", 0.7),
+                "source_type": meta.get(FileMetadata.SOURCE_TYPE, ""),
+                "product_type": meta.get(FileMetadata.PRODUCT_TYPE, "通用"),
+                "source_file": meta.get(FileMetadata.SOURCE_FILE, ""),
+                "parent_doc_id": meta.get(FileMetadata.PARENT_DOC_ID, ""),
+                "chunk_index": meta.get(FileMetadata.CHUNK_INDEX, 0),
+                "question": question,
+                "status": "active",
+                "confidence": meta.get(FileMetadata.CONFIDENCE, 0.7),
+                "doc_version": meta.get(FileMetadata.DOC_VERSION, ""),
+                "ingest_batch_id": batch_id,
+                "created_at": now_ts,
+                "updated_at": now_ts,
+                "topics": self._ensure_list(meta.get(FileMetadata.TOPICS, [])),
+                "regulation_names": self._ensure_list(meta.get(FileMetadata.REGULATION_NAMES, [])),
+                "extra": extra,
                 "dense_vector": dense_vectors[i]
             }
 
             if term_vectors is not None:
                 entity["term_vector"] = term_vectors[i]
-            # if summary_vectors is not None:
-            #     entity["summary_vector"] = summary_vectors[i]
-            # if faq_vectors is not None:
-            #     entity["faq_similar_vector"] = faq_vectors[i]
             entities.append(entity)
 
         return entities

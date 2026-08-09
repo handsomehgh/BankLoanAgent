@@ -11,6 +11,9 @@ class FileLodeType(str,Enum):
 class FileMetadata(str,Enum):
     TERM = "term"
     ENGLISH = "english"
+    QUESTION = "question"
+    ANSWER = "answer"
+    Q_NO = "q_no"
     TOPICS = "topics"
     CONFIDENCE = "confidence"
     CHUNK_ID = "chunk_id"
@@ -20,5 +23,6 @@ class FileMetadata(str,Enum):
     SOURCE_FILE = "source_file"
     PRODUCT_TYPE = "product_type"
     REGULATION_NAMES = "regulation_names"
+    DOC_VERSION = "doc_version"
 
 

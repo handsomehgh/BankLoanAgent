@@ -45,7 +45,7 @@ def query_regulation(
     for doc in docs[:5]:
         regulations.append({
             "title": doc.regulation_names or doc.source_file or "未知法规",
-            "content": doc.text[:300] + "..." if len(doc.text) > 300 else doc.page_content,
+            "content": doc.text[:300] + "..." if len(doc.text) > 300 else doc.text,
             "source": doc.source_type or "位置来源"
         })
 

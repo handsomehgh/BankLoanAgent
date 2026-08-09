@@ -3,7 +3,6 @@
 import json
 import logging
 import re
-import uuid
 from collections import defaultdict
 from pathlib import Path
 from typing import List
@@ -70,14 +69,12 @@ class IntelligentChunk:
                     continue
 
                 new_meta = dict(doc.metadata)
-                new_meta[FileMetadata.PARENT_DOC_ID] = doc.metadata.get(FileMetadata.CHUNK_ID, "")
                 new_meta[FileMetadata.CONFIDENCE] = confidence_map.get(source, fallback_conf)
-                new_meta[FileMetadata.CHUNK_ID] = str(uuid.uuid4())
 
                 new_doc = Document(page_content=chunk, metadata=new_meta)
                 final_chunks.append(new_doc)
 
-        # 重新计算 chunk_index（按 parent_id 分组）
+        # 重新计算 chunk_index（按 parent_id 分组），并生成确定性 chunk_id：{parent_doc_id}:{chunk_index}
         groups = defaultdict(list)
         for chunk in final_chunks:
             parent_id = chunk.metadata.get(FileMetadata.PARENT_DOC_ID, "unknown")
@@ -86,6 +83,7 @@ class IntelligentChunk:
         for parent_id, chunks in groups.items():
             for idx, chunk in enumerate(chunks):
                 chunk.metadata[FileMetadata.CHUNK_INDEX] = idx + 1
+                chunk.metadata[FileMetadata.CHUNK_ID] = f"{parent_id}:{idx + 1}"
 
         if discard_samples:
             logger.info(f"丢弃了 {len(discard_samples)} 个短块，前3个样本：")
