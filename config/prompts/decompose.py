@@ -39,5 +39,5 @@ DECOMPOSE_PROMPT = ChatPromptTemplate.from_messages([
 【输出要求】
 - 每行一个查询，不要加序号、前缀、标点或任何说明。
 - 直接输出查询文本，不要输出任何其他内容。"""),
-    ("human", "用户问题：{query}\n文档片段：")
+    ("human", "用户问题：{query}")
 ])

@@ -27,7 +27,12 @@ DETECT_SENTIMENT_PROMPT = ChatPromptTemplate.from_messages([
 对话：\n
 用户: 今天天气真好。\n
 助手: 是的呢。\n
-情绪代码：neutral
+情绪代码：neutral\n\n
+【示例4】\n
+对话：\n
+用户: 都等了半个月了还没处理完，你们效率也太差了吧！\n
+助手: 非常抱歉给您带来不好的体验，我马上为您加急核实进度。\n
+情绪代码：frustrated
 """),
     ("human", """对话内容：
 {text}

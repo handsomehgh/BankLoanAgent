@@ -97,7 +97,7 @@ EXTRACT_PROMPT = ChatPromptTemplate.from_messages([
 用户: 我之前的信用记录不太好，有过一次逾期，不过两年多了，已经还清了。
 
 正确输出：
-[{{"entity_key": "credit_history", "content": "客户两年前有过一次逾期记录，已结清", "confidence": 0.85}}, {{"entity_key": "credit_overdue_detail", "content": "逾期发生时间已超过两年，当前无未结清逾期", "confidence": 0.7}}]
+[{{"entity_key": "credit_history", "content": "客户两年前有过一次逾期记录，已结清", "confidence": 0.8}}, {{"entity_key": "credit_overdue_detail", "content": "逾期发生时间已超过两年，当前无未结清逾期", "confidence": 0.7}}]
 
 ### 示例 4：社保与房产
 对话内容：

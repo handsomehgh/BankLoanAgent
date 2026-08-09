@@ -39,8 +39,8 @@ SUB_SUMMARY_INTERACTION_PROMPT = ChatPromptTemplate.from_messages([
 
 ## 输入格式
 日志由多行组成，每行格式为以下之一：
-- "助手 [调用工具]: {工具调用前的思考或空}"
-- "工具结果({工具名称}): {工具返回的JSON}"
+- "助手 [调用工具]: {{工具调用前的思考或空}}"
+- "工具结果({{工具名称}}): {{工具返回的JSON}}"
 
 ## 提炼规则
 1. 只关注工具调用返回的具体数值和结论，忽略工具调用前的思考文本。
@@ -51,40 +51,40 @@ SUB_SUMMARY_INTERACTION_PROMPT = ChatPromptTemplate.from_messages([
 6. 如果多条日志描述同一主题，合并为一句，不要罗列。
 7. 如果日志中包含错误信息，忽略它，只总结成功的操作。
 8. 如果用户修正了某个值（如“不是10年，是20年”），以最新值为准。
-9. 最终摘要不超过80个汉字。
+9. 最终摘要不超过{max_chars}个汉字。
 10. 输出的摘要中不要包含任何对话角色标识（如“用户”、“助手”），只描述事实。
 
 ## 示例1：单次查询
 输入：
 助手 [调用工具]: 
-工具结果(query_interest_rate): {"lpr": "4.2%", "min_rate": "4.00%", "max_rate": "5.50%"}
+工具结果(query_interest_rate): {{"lpr": "4.2%", "min_rate": "4.00%", "max_rate": "5.50%"}}
 输出：
 已查询5年期LPR为4.2%，住房贷款参考利率4.00%-5.50%。
 
 ## 示例2：查询+计算
 输入：
 助手 [调用工具]: 
-工具结果(query_interest_rate): {"lpr": "4.2%", "min_rate": "4.00%", "max_rate": "5.50%"}
+工具结果(query_interest_rate): {{"lpr": "4.2%", "min_rate": "4.00%", "max_rate": "5.50%"}}
 助手 [调用工具]: 
-工具结果(calculate_monthly_payment): {"monthly_payment": 4890.00, "total_interest": 760000.00}
+工具结果(calculate_monthly_payment): {{"monthly_payment": 4890.00, "total_interest": 760000.00}}
 输出：
 已查询5年期LPR为4.2%，并计算出100万元/30年/等额本息月供4890元，总利息76万元。
 
 ## 示例3：错误后重试成功
 输入：
 助手 [调用工具]: 
-工具结果(query_interest_rate): {"error": "利率数据暂时不可用"}
+工具结果(query_interest_rate): {{"error": "利率数据暂时不可用"}}
 助手 [调用工具]: 
-工具结果(query_interest_rate): {"lpr": "4.2%", "min_rate": "4.00%", "max_rate": "5.50%"}
+工具结果(query_interest_rate): {{"lpr": "4.2%", "min_rate": "4.00%", "max_rate": "5.50%"}}
 输出：
 已查询5年期LPR为4.2%，住房贷款参考利率4.00%-5.50%。
 
 ## 示例4：用户修正后重新计算
 输入：
 助手 [调用工具]: 
-工具结果(calculate_monthly_payment): {"monthly_payment": 3200.00, "total_interest": 450000.00}
+工具结果(calculate_monthly_payment): {{"monthly_payment": 3200.00, "total_interest": 450000.00}}
 助手 [调用工具]: 
-工具结果(calculate_monthly_payment): {"monthly_payment": 4890.00, "total_interest": 760000.00}
+工具结果(calculate_monthly_payment): {{"monthly_payment": 4890.00, "total_interest": 760000.00}}
 输出：
 已计算出等额本息月供4890元，总利息76万元（以最新结果为准）。
 

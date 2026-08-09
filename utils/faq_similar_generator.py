@@ -34,7 +34,7 @@ class FaqSimilarGenerator:
             logger.debug("FAQ similar question hit cache")
             return self._cache[key]
 
-        prompt = FAQ_SIMILAR_PROMPT_TEMPLATE.format(num_variants=self.num_variants, quesiton=question)
+        prompt = FAQ_SIMILAR_PROMPT_TEMPLATE.format(num_variants=self.num_variants, question=question)
 
         try:
             response = self.llm_client.invoke(prompt)

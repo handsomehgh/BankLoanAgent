@@ -6,7 +6,7 @@ from typing import List, Dict
 from pydantic import BaseModel, Field
 
 from config.models.retrieval_config import CompressorConfig
-from config.prompts.context_compress import CONTEXT_COMPRESS_PROMPT
+from config.prompts.llm_rerank_prompt import LLM_RERANK_PROMPT
 from modules.module_services.chat_models import RobustLLM
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class ContextCompressor:
                 text = doc['text']
                 formatted_docs.append(f"[id:{doc['id']}] {text}")
             docs_str = "\n".join(formatted_docs)
-            messages = CONTEXT_COMPRESS_PROMPT.invoke({"query": query, "docs": docs_str}).to_messages()
+            messages = LLM_RERANK_PROMPT.invoke({"query": query, "docs": docs_str}).to_messages()
             res = self.llm_client.invoke(messages, schema=RerankResult)
             sorted_ids = res.sorted_ids if hasattr(res, 'sorted_ids') else []
             if not sorted_ids:

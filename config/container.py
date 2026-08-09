@@ -38,7 +38,7 @@ from dependency_injector import containers, providers
 
 from config.global_constant.constants import RegistryModules, CacheNamespace
 from config.prompts.detect_evidence_prompt import EVIDENCE_PROMPT
-from config.prompts.detect_setiment_prompt import DETECT_SENTIMENT_PROMPT
+from config.prompts.detect_sentiment_prompt import DETECT_SENTIMENT_PROMPT
 from config.prompts.extract_prompt import EXTRACT_PROMPT
 from config.prompts.summary_interaction_prompt import SUMMARY_INTERACTION_PROMPT, SUB_SUMMARY_INTERACTION_PROMPT
 from config.registry import ConfigRegistry
