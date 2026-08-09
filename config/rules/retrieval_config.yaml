@@ -1,5 +1,5 @@
 # RAG config file
-milvus_uri: "http://47.110.142.97:19530"
+milvus_uri: "http://47.111.108.243:19530"
 context_complete_uri: "http://localhost:8001"
 sqlite_db_path: "./data/work_memory/checkpoints.db"
 retrieval_top_k: 5
@@ -83,7 +83,7 @@ filter:
 
 # ------------- query rewrite --------------
 rewriter:
-  enabled: true
+  enabled: false
   enable_dynamic: true
   override_strategy: null
   num_variants: 3

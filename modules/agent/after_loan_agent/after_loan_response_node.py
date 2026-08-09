@@ -21,7 +21,7 @@ from utils.serialize_utils.seq_generator import SequenceGenerator
 logger = logging.getLogger(__name__)
 
 
-def after_loan_response_node(
+async def after_loan_response_node(
         state: AfterLoanState,
         config: RunnableConfig,
         registry: ConfigRegistry,
@@ -46,4 +46,4 @@ def after_loan_response_node(
         skill_executor=skill_executor,
         skill_selector=skill_selector
     )
-    return executor.execute(state, config)
+    return await executor.execute(state, config)

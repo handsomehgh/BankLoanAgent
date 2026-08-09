@@ -6,13 +6,13 @@ import logging
 from functools import partial
 
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.constants import END
 from langgraph.graph import StateGraph
 
 from config.container import ApplicationContainer
 from config.global_constant.constants import RegistryModules
-from modules.agent.checkpointer import get_checkpointer
-from modules.agent.constants import AgentNodeName, AgentName, StateFields, RouteTarget
+from modules.agent.constants import AgentNodeName, AgentName, StateFields
 from modules.agent.multi_agent_state import SupervisorState, AgentResponse
 from modules.agent.nodes.ensure_message_index_node import ensure_message_indexes_node
 from modules.agent.nodes.fanout_dispatcher import FanoutDispatcher
@@ -45,17 +45,13 @@ class MultiAgentGraphBuilder:
         self.direct_reply_node = container.direct_reply_node()
         self.memory_retrieve_node = container.memory_retrieve_node()
 
-    def build(self) -> StateGraph:
-        """build and compile the final stategraph"""
+    def build(self, checkpointer: BaseCheckpointSaver) -> StateGraph:
         workflow = StateGraph(SupervisorState)
-
         self._register_nodes(workflow)
-        # entry node
         workflow.set_entry_point(AgentNodeName.COMPLIANCE_PREFILTER.value)
         self._define_edges(workflow)
 
-        checkpointer = get_checkpointer(self.retrieval_config)
-        return workflow.compile(checkpointer)
+        return workflow.compile(checkpointer=checkpointer)
 
     def _register_nodes(self, workflow: StateGraph) -> None:
         """register node to workflow"""
@@ -220,9 +216,9 @@ class MultiAgentGraphBuilder:
         workflow.add_edge(AgentNodeName.LOG_INTERACTION.value, END)
 
     # ================================================================
-    # 子Subgraph Scheduling Wrapping Method (Manual State Mapping)
+    # Subgraph Scheduling — 改为 async + ainvoke
     # ================================================================
-    def _dispatch_loan_advisor(self, state: SupervisorState, config: RunnableConfig) -> dict:
+    async def _dispatch_loan_advisor(self, state: SupervisorState, config: RunnableConfig) -> dict:
         ctx = state.get(StateFields.AGENT_CONTEXT.value, {}).get(AgentName.LOAN_ADVISOR.value)
         if not ctx:
             logger.warning(f"[LoanAdvisor] miss agent context")
@@ -236,7 +232,7 @@ class MultiAgentGraphBuilder:
             }
         try:
             sub_state = {StateFields.AGENT_CONTEXT.value: ctx}
-            result = self.loan_advisor_graph.invoke(sub_state, config=config)
+            result = await self.loan_advisor_graph.ainvoke(sub_state, config=config)
             return {
                 StateFields.AGENT_RESPONSES.value: {
                     AgentName.LOAN_ADVISOR.value: result.get(StateFields.FINAL_RESPONSE.value)
@@ -256,7 +252,7 @@ class MultiAgentGraphBuilder:
                 },
             }
 
-    def _dispatch_risk_assessment(self, state: SupervisorState, config: RunnableConfig) -> dict:
+    async def _dispatch_risk_assessment(self, state: SupervisorState, config: RunnableConfig) -> dict:
         ctx = state.get(StateFields.AGENT_CONTEXT.value, {}).get(AgentName.RISK_ASSESSMENT.value)
         if not ctx:
             logger.warning(f"[RiskAssessment] miss agent context")
@@ -271,7 +267,7 @@ class MultiAgentGraphBuilder:
             }
         try:
             sub_state = {StateFields.AGENT_CONTEXT.value: ctx}
-            result = self.risk_assessment_graph.invoke(sub_state, config=config)
+            result = await self.risk_assessment_graph.ainvoke(sub_state, config=config)
             return {
                 StateFields.AGENT_RESPONSES.value: {
                     AgentName.RISK_ASSESSMENT.value: result.get(StateFields.FINAL_RESPONSE.value)
@@ -293,7 +289,7 @@ class MultiAgentGraphBuilder:
                 StateFields.TRIGGER_HUMAN_HANDOFF.value: False
             }
 
-    def _dispatch_after_loan(self, state: SupervisorState, config: RunnableConfig) -> dict:
+    async def _dispatch_after_loan(self, state: SupervisorState, config: RunnableConfig) -> dict:
         ctx = state.get(StateFields.AGENT_CONTEXT.value, {}).get(AgentName.AFTER_LOAN.value)
         if not ctx:
             logger.warning(f"[AfterLoan] miss agent context")
@@ -307,7 +303,7 @@ class MultiAgentGraphBuilder:
             }
         try:
             sub_state = {StateFields.AGENT_CONTEXT.value: ctx}
-            result = self.after_loan_graph.invoke(sub_state, config=config)
+            result = await self.after_loan_graph.ainvoke(sub_state, config=config)
             return {
                 StateFields.AGENT_RESPONSES.value: {
                     AgentName.AFTER_LOAN.value: result.get(StateFields.FINAL_RESPONSE.value)

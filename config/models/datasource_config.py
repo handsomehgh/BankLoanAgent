@@ -35,7 +35,16 @@ class MySQLConfig(BaseModel):
     pool_recycle: int = 3600
     echo: bool = False
 
+class PostgreSqlConfig(BaseModel):
+    postgres_dsn: str = "postgresql://user:password@localhost:5432/bank_agent"
+    postgres_pool_min_size: int = 2
+    postgres_pool_max_size: int = 10
+    postgres_pool_timeout: float = 5.0
+    postgres_command_timeout: int = 30
+
+
 class DataSourceConfig(BaseModel):
     redis: RedisConfig = Field(default_factory=RedisConfig)
     neo4j: GraphConfig = Field(default_factory=GraphConfig)
     mysql: MySQLConfig = Field(default_factory=MySQLConfig)
+    postgresql: PostgreSqlConfig = Field(default_factory=PostgreSqlConfig)

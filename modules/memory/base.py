@@ -1,5 +1,6 @@
 # author hgh
 # version 1.0
+import asyncio
 from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any
 
@@ -31,4 +32,20 @@ class BaseRetriever(ABC):
             such as:{"user_profile": [...], "business_knowledge": [...]}
         """
         pass
+
+    async def aretrieve(
+            self,
+            query: str,
+            user_id: str,
+            top_k: int = 5,
+            memory_types: Optional[List[MemoryType]] = None,
+            **kwargs
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Async version of retrieve(). Default: offload sync retrieve() to thread pool.
+        Subclasses can override for true async parallel retrieval.
+        """
+        return await asyncio.to_thread(
+            self.retrieve, query, user_id, top_k, memory_types, **kwargs
+        )
 

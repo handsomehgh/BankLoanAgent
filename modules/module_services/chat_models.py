@@ -77,3 +77,34 @@ class RobustLLM:
                 raise LLMRateLimitError(f"LLM rate limited: {e}") from e
             else:
                 raise LLMError(f"LLM call failed: {e}") from e
+
+    # ======================== 新增：async 方法 ========================
+
+    async def ainvoke(self, messages, tools: Optional[List[BaseTool]] = None, schema: Optional[T] = None, **kwargs):
+        """异步调用入口"""
+        return await self._ainvoke_with_retry(messages, tools=tools, schema=schema, **kwargs)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((LLMTimeoutError, LLMRateLimitError)),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True
+    )
+    async def _ainvoke_with_retry(self, messages, tools, schema, **kwargs):
+        """异步调用，自动重试"""
+        try:
+            final_llm = self.llm
+            if schema:
+                final_llm = self.llm.with_structured_output(schema)
+            if tools:
+                final_llm = final_llm.bind_tools(tools)
+            return await final_llm.ainvoke(messages, **kwargs)
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "timeout" in error_msg or "timed out" in error_msg:
+                raise LLMTimeoutError(f"LLM timeout: {e}") from e
+            elif "rate limit" in error_msg or "429" in error_msg:
+                raise LLMRateLimitError(f"LLM rate limited: {e}") from e
+            else:
+                raise LLMError(f"LLM call failed: {e}") from e

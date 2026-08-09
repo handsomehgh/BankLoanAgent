@@ -403,13 +403,15 @@ def _build_human_handoff_interrupt_node(redis_manager):
 
 
 def _build_extract_profile_node(memory_store, profile_gate, memory_config, evidence_infer, profile_extractor,
-                                message_producer):
+                                message_producer, cursor_manager):
     return ExtractProfileNode(memory_store, profile_gate, memory_config, evidence_infer, profile_extractor,
-                              message_producer)
+                              message_producer, cursor_manager)
 
 
-def _build_interaction_node(memory_store, memory_config, summary_generator, sentiment_analyzer, message_producer):
-    return SummaryInteractionNode(memory_store, memory_config, summary_generator, sentiment_analyzer, message_producer)
+def _build_interaction_node(memory_store, memory_config, summary_generator, sentiment_analyzer, message_producer,
+                            cursor_manager):
+    return SummaryInteractionNode(memory_store, memory_config, summary_generator, sentiment_analyzer,
+                                  message_producer, cursor_manager)
 
 
 def _create_database_manager(datasource_config):
@@ -465,7 +467,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     creative_llm = providers.Singleton(_create_creative_llm, config_registry)
     precise_llm = providers.Singleton(_create_precise_llm, config_registry)
     local_llm = providers.Singleton(_create_local_llm, config_registry)
-    local_creative_llm = providers.Singleton(_create_local_llm, config_registry)
+    local_creative_llm = providers.Singleton(_create_local_creative_llm, config_registry)
 
     # ---------- Embedding Services ----------
     embedder = providers.Singleton(_create_embedder, config_registry)
@@ -622,7 +624,8 @@ class ApplicationContainer(containers.DeclarativeContainer):
         memory_config=memory_config,
         evidence_infer=evidence_infer,
         profile_extractor=profile_extractor,
-        message_producer=message_producer
+        message_producer=message_producer,
+        cursor_manager=cursor_manager
     )
 
     summary_interaction_node = providers.Singleton(
@@ -631,5 +634,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         memory_config,
         summary_generator,
         sentiment_analyzer,
-        message_producer
+        message_producer,
+        cursor_manager
     )

@@ -21,7 +21,7 @@ from utils.serialize_utils.seq_generator import SequenceGenerator
 logger = logging.getLogger(__name__)
 
 
-def risk_assessment_response_node(
+async def risk_assessment_response_node(
         state: RiskAssessmentState,
         config: RunnableConfig,
         registry: ConfigRegistry,
@@ -46,7 +46,7 @@ def risk_assessment_response_node(
         skill_executor=skill_executor,
         skill_selector=skill_selector
     )
-    return executor.execute(state, config)
+    return await executor.execute(state, config)
 
 
 def _detect_severe_risk(query: str, profile: str) -> bool:

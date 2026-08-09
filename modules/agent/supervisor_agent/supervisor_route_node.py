@@ -1,8 +1,8 @@
 # author hgh
-# version 1.0
+# version 1.1
+import asyncio
 import logging
 import time
-from concurrent.futures.thread import ThreadPoolExecutor
 from typing import Dict, Any, Optional, List
 
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -46,7 +46,7 @@ class SupervisorRouteNode:
         self.knowledge_retriever = knowledge_retriever
         self.seq_generator = seq_generator
 
-    def __call__(self, state: SupervisorState, config: RunnableConfig):
+    async def __call__(self, state: SupervisorState, config: RunnableConfig):
         logger.debug("Enter Supervisor route node")
 
         # 1. obtain user memory
@@ -59,15 +59,15 @@ class SupervisorRouteNode:
         # 3. LLM dynamic route
         start = time.monotonic()
         recent_conversations = self._extract_recent_conversation(state)
-        decision = self._llm_route(user_query, recent_conversations, formatted.get(MemoryType.USER_PROFILE.value, ""),
-                                   formatted.get(MemoryType.INTERACTION_LOG.value, ""))
+        decision = await self._llm_route(user_query, recent_conversations, formatted.get(MemoryType.USER_PROFILE.value, ""),
+                                         formatted.get(MemoryType.INTERACTION_LOG.value, ""))
         logger.info("Llm dynamic routing result: %s", decision)
         supervisor_routing_duration_seconds.labels("llm").observe(time.monotonic() - start)
         for agent in decision.target_agents:
             supervisor_routing_total.labels(target_agent=agent, route_method="llm").inc()
 
         # 4. Processing routing results
-        response = self._handle_llm_decision(decision, state, config, formatted, user_query)
+        response = await self._handle_llm_decision(decision, state, config, formatted, user_query)
         logger.info("Supervisor agent process completed,result: %s", response)
         return response
 
@@ -77,7 +77,7 @@ class SupervisorRouteNode:
                 return msg.content.strip()
         return ""
 
-    def _llm_route(
+    async def _llm_route(
             self,
             user_query: str,
             recent_conversations: str,
@@ -106,7 +106,7 @@ class SupervisorRouteNode:
 
         try:
             total_start = time.monotonic()
-            response = self.llm_client.invoke(messages)
+            response = await self.llm_client.ainvoke(messages)
             decision = response.content.strip()
             logger.info("LLM routing decision: %s", decision)
             if hasattr(response, "usage_metadata") and response.usage_metadata:
@@ -138,7 +138,7 @@ class SupervisorRouteNode:
 
         return RouteDecision(target_agents=targets)
 
-    def _handle_llm_decision(
+    async def _handle_llm_decision(
             self,
             decision: RouteDecision,
             state: SupervisorState,
@@ -149,26 +149,26 @@ class SupervisorRouteNode:
         # handle with special route
         if decision.special:
             if decision.special == RouteTarget.HUMAN_HANDOFF_NOTIFY.value:
-                ctx = self._build_agent_context(state, config, formatted, user_query,
+                ctx = await self._build_agent_context(state, config, formatted, user_query,
                                                 [RouteTarget.HUMAN_HANDOFF_NOTIFY.value])
                 return self._make_response(next_agents=[RouteTarget.HUMAN_HANDOFF_NOTIFY.value], agent_context=ctx)
             elif decision.special == RouteTarget.LLM_ERROR.value:
                 return self._make_response(next_agents=[], messages=[AIMessage(content=ERROR_MESSAGE)])
             elif decision.special == RouteTarget.UNKNOWN.value:
-                return self._handle_ambiguous(state, config, formatted, user_query)
+                return await self._handle_ambiguous(state, config, formatted, user_query)
             else:
-                return self._handle_ambiguous(state, config, formatted, user_query)
+                return await self._handle_ambiguous(state, config, formatted, user_query)
 
         # handle with business route
         targets = decision.target_agents
         if len(targets) > 1:
-            ctx = self._build_agent_context(state, config, formatted, user_query, targets)
+            ctx = await self._build_agent_context(state, config, formatted, user_query, targets)
             return self._make_response(next_agents=targets, agent_context=ctx)
         else:
-            ctx = self._build_agent_context(state, config, formatted, user_query, targets)
+            ctx = await self._build_agent_context(state, config, formatted, user_query, targets)
             return self._make_response(next_agents=targets, agent_context=ctx)
 
-    def _handle_ambiguous(
+    async def _handle_ambiguous(
             self,
             state: SupervisorState,
             config: RunnableConfig,
@@ -181,7 +181,7 @@ class SupervisorRouteNode:
         if count >= 2:
             negative_feedback_total.labels(reason="ambiguous").inc()
             logger.warning("Unclear intent for 2 consecutive times, transferring to a official custom worker")
-            ctx = self._build_agent_context(state, config, formatted, user_query,
+            ctx = await self._build_agent_context(state, config, formatted, user_query,
                                             RouteTarget.HUMAN_HANDOFF_NOTIFY.value)
             return self._make_response(
                 next_agents=[AgentNodeName.HUMAN_HANDOFF_NOTIFY.value],
@@ -199,7 +199,7 @@ class SupervisorRouteNode:
                 clarification_count=count,
             )
 
-    def _build_agent_context(
+    async def _build_agent_context(
             self,
             state: SupervisorState,
             config: RunnableConfig,
@@ -225,53 +225,48 @@ class SupervisorRouteNode:
         if self.knowledge_retriever and supervisor_cfg and getattr(supervisor_cfg, 'enable_directed_retrieval', False):
             human_handoff = [n for n in agent_name if n == AgentNodeName.HUMAN_HANDOFF_NOTIFY.value]
             if human_handoff:
-                agent_contexts[AgentNodeName.HUMAN_HANDOFF_NOTIFY.value] = AgentContext.from_state(user_id, session_id,
-                                                                                                   trace_id,
-                                                                                                   user_query,
-                                                                                                   user_profile_summary,
-                                                                                                   compliance_warnings,
-                                                                                                   conversation_summary,
-                                                                                                   "",
-                                                                                                   f"请以 {AgentNodeName.HUMAN_HANDOFF_NOTIFY.value} 的身份回答以下用户问题。",
-                                                                                                   audit_logger, "",
-                                                                                                   recent_conversations)
+                agent_contexts[AgentNodeName.HUMAN_HANDOFF_NOTIFY.value] = AgentContext.from_state(
+                    user_id, session_id, trace_id, user_query,
+                    user_profile_summary, compliance_warnings,
+                    conversation_summary, "",
+                    f"请以 {AgentNodeName.HUMAN_HANDOFF_NOTIFY.value} 的身份回答以下用户问题。",
+                    audit_logger, "", recent_conversations)
+
             if len(agent_name) > 1:
                 logger.info("Fan-out to agents: %s", agent_name)
-                with ThreadPoolExecutor(max_workers=len(agent_name)) as executor:
-                    future_to_agent = {}
-                    for agt_name in retrieve_agent_name:
-                        future = executor.submit(
-                            self._retrieve_knowledge_for_agent,
-                            agt_name, user_query, state,conversation_summary
-                        )
-                        future_to_agent[future] = agt_name
-                    for future in future_to_agent:
-                        agt_name = future_to_agent[future]
-                        try:
-                            knowledge = future.result(timeout=15)  # 检索超时
-                        except Exception as e:
-                            logger.error("Fan-out 知识检索异常 (%s): %s", agt_name, e)
-                            knowledge = ""
+                # aretrieve() 是 async 方法，直接用 asyncio.gather 并行调用
+                knowledge_results = await asyncio.gather(*[
+                    self._retrieve_knowledge_for_agent(
+                        agt_name, user_query, state, conversation_summary
+                    )
+                    for agt_name in retrieve_agent_name
+                ], return_exceptions=True)
 
-                        sub_conversation = sub_conversation_summary.get(agt_name, "")
-                        recent_sub = state.get(StateFields.SUB_MESSAGES.value, {}).get(agt_name, [])
-                        if recent_sub:
-                            recent_str = format_messages(recent_sub)
-                            sub_conversation = (recent_str + "\n" + sub_conversation).strip()
-                        if not sub_conversation:
-                            sub_conversation = "暂无相关信息"
+                for agt_name, knowledge in zip(retrieve_agent_name, knowledge_results):
+                    if isinstance(knowledge, Exception):
+                        logger.error("Fan-out 知识检索异常 (%s): %s", agt_name, knowledge)
+                        knowledge = ""
 
-                        agent_contexts[agt_name] = AgentContext.from_state(user_id, session_id, trace_id, user_query,
-                                                                             user_profile_summary, compliance_warnings,
-                                                                             conversation_summary, knowledge,
-                                                                             f"请以 {agt_name} 的身份回答以下用户问题。",
-                                                                             audit_logger,
-                                                                             sub_conversation,
-                                                                             recent_conversations)
+                    sub_conversation = sub_conversation_summary.get(agt_name, "")
+                    recent_sub = state.get(StateFields.SUB_MESSAGES.value, {}).get(agt_name, [])
+                    if recent_sub:
+                        recent_str = format_messages(recent_sub)
+                        sub_conversation = (recent_str + "\n" + sub_conversation).strip()
+                    if not sub_conversation:
+                        sub_conversation = "暂无相关信息"
+
+                    agent_contexts[agt_name] = AgentContext.from_state(
+                        user_id, session_id, trace_id, user_query,
+                        user_profile_summary, compliance_warnings,
+                        conversation_summary, knowledge,
+                        f"请以 {agt_name} 的身份回答以下用户问题。",
+                        audit_logger, sub_conversation, recent_conversations)
 
             else:
                 if retrieve_agent_name:
-                    knowledge = self._retrieve_knowledge_for_agent(retrieve_agent_name[0], user_query, state,conversation_summary)
+                    knowledge = await self._retrieve_knowledge_for_agent(
+                        retrieve_agent_name[0], user_query, state, conversation_summary
+                    )
 
                     sub_conversation = sub_conversation_summary.get(retrieve_agent_name[0], "")
                     recent_sub = state.get(StateFields.SUB_MESSAGES.value, {}).get(retrieve_agent_name[0], [])
@@ -281,13 +276,12 @@ class SupervisorRouteNode:
                     if not sub_conversation:
                         sub_conversation = "暂无相关信息"
 
-                    agent_contexts[agent_name[0]] = AgentContext.from_state(user_id, session_id, trace_id, user_query,
-                                                                            user_profile_summary, compliance_warnings,
-                                                                            conversation_summary, knowledge,
-                                                                            f"请以 {retrieve_agent_name[0]} 的身份回答以下用户问题。",
-                                                                            audit_logger,
-                                                                            sub_conversation,
-                                                                            recent_conversations)
+                    agent_contexts[agent_name[0]] = AgentContext.from_state(
+                        user_id, session_id, trace_id, user_query,
+                        user_profile_summary, compliance_warnings,
+                        conversation_summary, knowledge,
+                        f"请以 {retrieve_agent_name[0]} 的身份回答以下用户问题。",
+                        audit_logger, sub_conversation, recent_conversations)
         else:
             for agent in agent_name:
                 agent_instruction = f"请以 {agent} 的身份回答以下用户问题。"
@@ -300,12 +294,11 @@ class SupervisorRouteNode:
                 if not sub_conversation:
                     sub_conversation = "暂无相关信息"
 
-                agent_contexts[agent] = AgentContext.from_state(user_id, session_id, trace_id, user_query,
-                                                                     user_profile_summary, compliance_warnings,
-                                                                     conversation_summary, "", agent_instruction,
-                                                                     audit_logger,
-                                                                     sub_conversation,
-                                                                     recent_conversations)
+                agent_contexts[agent] = AgentContext.from_state(
+                    user_id, session_id, trace_id, user_query,
+                    user_profile_summary, compliance_warnings,
+                    conversation_summary, "", agent_instruction,
+                    audit_logger, sub_conversation, recent_conversations)
 
         return agent_contexts
 
@@ -327,14 +320,14 @@ class SupervisorRouteNode:
             result[StateFields.CLARIFICATION_COUNT.value] = clarification_count
         return result
 
-    def _retrieve_knowledge_for_agent(
+    async def _retrieve_knowledge_for_agent(
             self,
             agent_name: str,
             user_query: str,
             state: SupervisorState,
             conversation_summary: Optional[str]
     ) -> str:
-        """根据目标 Agent 执行定向知识检索并精炼为短文本"""
+        """根据目标 Agent 执行定向知识检索并精炼为短文本（async，直接 await aretrieve）"""
         # 根据 Agent 类型确定过滤条件
         parts = []
         if agent_name == AgentName.LOAN_ADVISOR.value:
@@ -358,7 +351,7 @@ class SupervisorRouteNode:
 
         try:
             logger.info(f"Supervisor directly retrieving knowledge for agent {agent_name}")
-            docs = self.knowledge_retriever.retrieve(
+            docs = await self.knowledge_retriever.aretrieve(
                 query=user_query,
                 context=context,
                 filter_expr=filter,

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, get_origin, Annotated, get_args
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from prometheus_client import start_http_server
 from sshtunnel import SSHTunnelForwarder
 
@@ -44,6 +45,7 @@ class AppRuntime:
     graph: StateGraph
     memory_store: BaseMemoryStore
     redis_manager: RedisManager
+    checkpointer: Optional[BaseCheckpointSaver] = None
 
 
 class Bootstrapper:
@@ -60,24 +62,51 @@ class Bootstrapper:
     # ==================================================================
     # 公共入口
     # ==================================================================
-    def start(self) -> AppRuntime:
-        """启动应用，返回 AppRuntime"""
+    def start_sync(self, loop=None) -> None:
+        """执行所有不需要异步的初始化（配置、基础设施、工具注册）"""
         if self._started:
-            return self._runtime
-
+            return
+        self._loop = loop
         logger.info("=" * 50)
-        logger.info("Application starting...")
+        logger.info("Application starting (sync phase)...")
         logger.info("=" * 50)
 
-        # 创建容器和配置注册中心
         self._container = ApplicationContainer()
         self._registry = self._container.config_registry()
 
-        self._phase_load_config()                 # 阶段1：配置
-        self._phase_init_infrastructure()         # 阶段2：基础设施（含SSH隧道）
-        self._phase_register_tools_and_skills()   # 阶段3：工具与技能
-        self._phase_build_graph()                 # 阶段4：构建图
-        self._phase_start_background_services()   # 阶段5：后台服务
+        self._phase_load_config()
+        self._phase_init_infrastructure()
+        self._phase_register_tools_and_skills()
+
+    async def finish_build_async(self, checkpointer: BaseCheckpointSaver) -> AppRuntime:
+        """异步构建图，启动后台服务，返回 AppRuntime"""
+        if self._started:
+            return self._runtime
+
+        # 阶段4：构建图
+        logger.info("[Phase 4/5] Building Agent graph (async)...")
+        self._bind_tool_injections()
+
+        builder = MultiAgentGraphBuilder(self._container)
+        self._graph = builder.build(checkpointer=checkpointer)
+
+        # 阶段5：启动后台服务
+        logger.info("[Phase 5/5] Starting background services...")
+        self._start_consumers()
+
+        timeout_monitor = HandoffTimeoutMonitor(
+            self._graph, self._container.redis_manager(), loop=self._loop
+        )
+        timeout_monitor.start()
+
+        set_cache_container(self._container)
+
+        self._runtime = AppRuntime(
+            graph=self._graph,
+            memory_store=self._container.memory_store(),
+            redis_manager=self._container.redis_manager(),
+            checkpointer=checkpointer,
+        )
 
         self._started = True
         logger.info("=" * 50)
@@ -157,7 +186,7 @@ class Bootstrapper:
         # 定义端口映射：本地 8000-8005 → 远程 localhost:8080-8085
         local_start = 8000
         remote_start = 8080
-        num_tunnels = 1
+        num_tunnels = 2
 
         try:
             remote_bind_addresses = [
@@ -242,7 +271,7 @@ class Bootstrapper:
 
         # 超时监控
         timeout_monitor = HandoffTimeoutMonitor(
-            self._graph, self._container.redis_manager()
+            self._graph, self._container.redis_manager(), loop=self._loop
         )
         timeout_monitor.start()
 

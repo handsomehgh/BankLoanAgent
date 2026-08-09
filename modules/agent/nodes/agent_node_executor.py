@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -73,7 +74,7 @@ class AgentNodeExecutor:
 
         self._circuit_breakers: Dict[str, CircuitBreaker] = {}
 
-    def execute(self, state: Dict[str, Any], config: RunnableConfig) -> Dict[str, Any]:
+    async def execute(self, state: Dict[str, Any], config: RunnableConfig) -> Dict[str, Any]:
         context: AgentContext = state.get(StateFields.AGENT_CONTEXT.value)
         user_query = context.current_query
         trace_id = context.trace_id
@@ -110,12 +111,17 @@ class AgentNodeExecutor:
 
                 # build judge messages
                 judge_role = agent_cfg.judge_prompt.format(tools_metadata=metadata_str)
-                judge_prompt = SYSTEM_PROMPT.format(agent_role=judge_role, **context_vars)
+                format_kwargs = {
+                    **context_vars,
+                    "tool_facts": "暂无",
+                    "agent_role": judge_role
+                }
+                judge_prompt = SYSTEM_PROMPT.format(**format_kwargs)
                 judge_messages = [SystemMessage(content=judge_prompt), HumanMessage(content=user_query)]
 
                 # call llm to judge
                 total_start = time.monotonic()
-                first_response = self.llm_client.invoke(judge_messages)
+                first_response = await self.llm_client.ainvoke(judge_messages)
                 tool_name = first_response.content.strip()
                 if hasattr(first_response, "usage_metadata") and first_response.usage_metadata:
                     record_llm_metrics(provider=self.llm_client.provider,
@@ -149,11 +155,16 @@ class AgentNodeExecutor:
             stage = "clarify"
             try:
                 # build clarify messages
-                clarify_prompt = SYSTEM_PROMPT.format(agent_role=agent_cfg.clarify_prompt, **context_vars)
+                format_kwargs = {
+                    **context_vars,
+                    "tool_facts": "暂无",
+                    "agent_role": agent_cfg.clarify_prompt
+                }
+                clarify_prompt = SYSTEM_PROMPT.format(**format_kwargs)
                 clarify_messages = [SystemMessage(content=clarify_prompt), HumanMessage(content=user_query)]
 
                 # call llm
-                clarify_response = self.llm_client.invoke(clarify_messages, tool_choice="none")
+                clarify_response = await self.llm_client.ainvoke(clarify_messages, tool_choice="none")
 
                 # assign message index
                 assign_message_index(clarify_response, user_id, session_id, self.seq_generator)
@@ -174,12 +185,17 @@ class AgentNodeExecutor:
             stage = "direct"
             try:
                 # build direct messages
-                direct_prompt = SYSTEM_PROMPT.format(agent_role=agent_cfg.direct_prompt, **context_vars)
+                format_kwargs = {
+                    **context_vars,
+                    "tool_facts": "暂无",
+                    "agent_role": agent_cfg.agent_cfg.direct_prompt
+                }
+                direct_prompt = SYSTEM_PROMPT.format(**format_kwargs)
                 direct_messages = [SystemMessage(content=direct_prompt), HumanMessage(content=user_query)]
 
                 # call llm
                 total_start = time.monotonic()
-                direct_res = self.llm_client.invoke(direct_messages, tool_choice="none")
+                direct_res = await self.llm_client.ainvoke(direct_messages, tool_choice="none")
                 if hasattr(direct_res, "usage_metadata") and direct_res.usage_metadata:
                     record_llm_metrics(provider=self.llm_client.provider,
                                        total_tokens=direct_res.usage_metadata.get("total_tokens", 0),
@@ -213,13 +229,18 @@ class AgentNodeExecutor:
 
             # build messages
             tool_role = agent_cfg.execute_prompt.format(tool_name=tool_name)
-            tool_prompt = SYSTEM_PROMPT.format(agent_role=tool_role, **context_vars)
+            format_kwargs = {
+                **context_vars,
+                "tool_facts": "暂无",
+                "agent_role": tool_role
+            }
+            tool_prompt = SYSTEM_PROMPT.format(**format_kwargs)
             tool_messages = [SystemMessage(content=tool_prompt), HumanMessage(content=user_query)]
             tool_messages.extend(messages)
 
             # cal llm
             total_start = time.monotonic()
-            sec_response = self.llm_client.invoke(tool_messages, tools=selected_tools)
+            sec_response = await self.llm_client.ainvoke(tool_messages, tools=selected_tools)
             logger.info("[%s] LLM call tool: %s", self.agent_name, sec_response.tool_calls)
             if hasattr(sec_response, "usage_metadata") and sec_response.usage_metadata:
                 record_llm_metrics(provider=self.llm_client.provider,
@@ -241,7 +262,7 @@ class AgentNodeExecutor:
                 if self.cb_config.enabled:
                     if self.skill_selector and self.skill_selector.get(tool_call["name"]):
                         logger.info(f"[%s] Start execute skill %s", self.agent_name, tool_call["name"])
-                        tool_result = self._execute_skill_safe(
+                        tool_result = await self._execute_skill_safe(
                             skill_name=tool_call["name"],
                             input_data=tool_call["args"],
                             trace_id=trace_id,
@@ -249,9 +270,10 @@ class AgentNodeExecutor:
                         )
                     else:
                         logger.info(f"[%s] Start execute tool %s", self.agent_name, tool_call["name"])
-                        tool_result = self._execute_tool_safe(tool_call, trace_id, context)
+                        tool_result = await self._execute_tool_safe(tool_call, trace_id, context)
                 else:
-                    tool_result = self.tool_executor.execute(
+                    tool_result = await asyncio.to_thread(
+                        self.tool_executor.execute,
                         tool_name=tool_call["name"],
                         args=tool_call["args"],
                         caller_agent=self.agent_name,
@@ -262,7 +284,7 @@ class AgentNodeExecutor:
                     )
 
                 if not tool_result.success:
-                    error_response = self._handle_tool_error(user_query, tool_call["name"], tool_result, user_id,
+                    error_response = await self._handle_tool_error(user_query, tool_call["name"], tool_result, user_id,
                                                              session_id, context_vars, messages)
                     messages = [m for m in messages if m != sec_response]
                     if error_response:
@@ -285,12 +307,17 @@ class AgentNodeExecutor:
             try:
                 # build messages
                 current_tool_content = format_messages(messages)
-                res_prompt = SYSTEM_PROMPT.format({**context_vars,"tool_facts":current_tool_content},agent_role=agent_cfg.res_prompt)
+                format_kwargs = {
+                    **context_vars,
+                    "tool_facts": current_tool_content,
+                    "agent_role": agent_cfg.res_prompt
+                }
+                res_prompt = SYSTEM_PROMPT.format(**format_kwargs)
                 res_messages = [SystemMessage(content=res_prompt), HumanMessage(content=user_query)]
 
                 # call llm
                 total_start = time.monotonic()
-                final_response = self.llm_client.invoke(res_messages, tool_choice="none")
+                final_response = await self.llm_client.ainvoke(res_messages, tool_choice="none")
                 if hasattr(final_response, "usage_metadata") and final_response.usage_metadata:
                     record_llm_metrics(provider=self.llm_client.provider,
                                        total_tokens=final_response.usage_metadata.get("total_tokens", 0),
@@ -340,7 +367,7 @@ class AgentNodeExecutor:
                 result.update(extra)
         return result
 
-    def _handle_tool_error(self, user_query: str, tool_name: str, tool_result: ToolResult, user_id: str,
+    async def _handle_tool_error(self, user_query: str, tool_name: str, tool_result: ToolResult, user_id: str,
                            session_id: str, context_vars: Dict[str, Any], all_messages: list) -> Optional[AIMessage]:
         """根据工具错误类型生成差异化用户引导"""
         error_type = tool_result.error_type
@@ -356,7 +383,7 @@ class AgentNodeExecutor:
                         HumanMessage(content=user_query)]
 
             try:
-                response = self.llm_client.invoke(messages, tool_choice="none")
+                response = await self.llm_client.ainvoke(messages, tool_choice="none")
                 reply = AIMessage(content=response.content.strip())
             except Exception:
                 reply = AIMessage(content=f"抱歉，参数似乎有误：{error_msg}，请您重新提供正确的信息。")
@@ -378,7 +405,7 @@ class AgentNodeExecutor:
                 )
         return self._circuit_breakers[tool_name]
 
-    def _execute_tool_safe(self, tool_call: dict, trace_id: str, context: AgentContext) -> ToolResult:
+    async def _execute_tool_safe(self, tool_call: dict, trace_id: str, context: AgentContext) -> ToolResult:
         tool_name = tool_call["name"]
         cb = self._get_cb(tool_name)
 
@@ -394,7 +421,7 @@ class AgentNodeExecutor:
             )
 
         try:
-            result = cb.call(do_execute)
+            result = await asyncio.to_thread(cb.call, do_execute)
             circuit_breaker_state.labels(tool_name=tool_name).set(0)
             return result
         except CircuitBreakerOpenError:
@@ -412,7 +439,7 @@ class AgentNodeExecutor:
             logger.error(f"[{self.agent_name}] 工具 {tool_name} 执行异常: {e}")
             return ToolResult(success=False, error=str(e), error_type=ToolErrorType.EXTERNAL_ERROR)
 
-    def _execute_skill_safe(self, skill_name: str, input_data: Dict[str, Any], trace_id: str,
+    async def _execute_skill_safe(self, skill_name: str, input_data: Dict[str, Any], trace_id: str,
                             context: AgentContext) -> ToolResult:
         cb = self._get_cb(skill_name)
         skill_config = self.skill_selector.get(skill_name)
@@ -439,7 +466,7 @@ class AgentNodeExecutor:
             return result
 
         try:
-            result = cb.call(do_execute)
+            result = await asyncio.to_thread(cb.call, do_execute)
             circuit_breaker_state.labels(tool_name=skill_name).set(0)
             data = result.get("data", str(result))
             return ToolResult(success=True, data=data, summary=data[:100] if isinstance(data, str) else "")

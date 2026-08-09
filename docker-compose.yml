@@ -93,7 +93,7 @@ services:
       - ./volumes/checkpoints:/app/checkpoints
       - ./volumes/logs:/app/logs
     ports:
-      - "8501:8501"
+      - "8000:8000"
     depends_on:
       - standalone
       - redis

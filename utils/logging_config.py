@@ -1,29 +1,25 @@
 """
 Unified Logging Configuration Module
 Provides setup_logging() to initialize the root logger, supporting context injection (user_id/thread_id)
+Uses contextvars.ContextVar for async-safe context propagation across tasks.
 """
+import contextvars
 import logging
-import threading
 from typing import Optional
+
+# Async-safe context variables (replaces threading.local)
+_user_id_var: contextvars.ContextVar[str] = contextvars.ContextVar('user_id', default='-')
+_thread_id_var: contextvars.ContextVar[str] = contextvars.ContextVar('thread_id', default='-')
+_trace_id_var: contextvars.ContextVar[str] = contextvars.ContextVar('trace_id', default='-')
 
 
 class ContextFilter(logging.Filter):
-    """Inject user_id and thread_id into LogRecord (thread-safe)"""
-
-    def __init__(self):
-        super().__init__()
-        self._local = threading.local()
-
-    def set_context(self, user_id: Optional[str] = None, thread_id: Optional[str] = None, trace_id: Optional[str] = None, ):
-        """Set the context identifier in the current thread"""
-        self._local.user_id = user_id or "-"
-        self._local.thread_id = thread_id or "-"
-        self._local.trace_id = trace_id or "-"
+    """Inject user_id, thread_id, trace_id into LogRecord (async-safe via ContextVar)"""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.user_id = getattr(self._local, "user_id", "-")
-        record.thread_id = getattr(self._local, "thread_id", "-")
-        record.trace_id = getattr(self._local, "trace_id", "-")
+        record.user_id = _user_id_var.get()
+        record.thread_id = _thread_id_var.get()
+        record.trace_id = _trace_id_var.get()
         return True
 
 
@@ -66,5 +62,11 @@ def setup_logging(log_level: str = "INFO") -> None:
         logging.getLogger(lib).setLevel(logging.WARNING)
 
 
-def set_log_context(user_id: Optional[str] = None, thread_id: Optional[str] = None,trace_id: Optional[str] = None) -> None:
-    _context_filter.set_context(user_id=user_id, thread_id=thread_id,trace_id=trace_id)
+def set_log_context(user_id: Optional[str] = None, thread_id: Optional[str] = None, trace_id: Optional[str] = None) -> None:
+    """Set logging context for the current task/thread (async-safe via ContextVar)"""
+    if user_id is not None:
+        _user_id_var.set(user_id)
+    if thread_id is not None:
+        _thread_id_var.set(thread_id)
+    if trace_id is not None:
+        _trace_id_var.set(trace_id)

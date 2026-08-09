@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BankLoanAgent — 银行信贷智能助手</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="chat-container">
+
+    <!-- 顶部栏 -->
+    <header class="chat-header">
+        <div class="header-left">
+            <span class="app-title">BankLoanAgent</span>
+            <span class="session-info">
+                Session: <span id="session-id">—</span>
+            </span>
+        </div>
+        <div class="header-right">
+            <input type="text" id="user-id-input" placeholder="User ID (可选)" class="user-id-input">
+            <button id="new-session-btn" class="btn-secondary" onclick="createSession()">新建会话</button>
+        </div>
+    </header>
+
+    <!-- 消息列表 -->
+    <main class="chat-messages" id="chat-messages">
+        <div class="welcome-message">
+            <p>👋 您好！我是银行信贷智能助手，可以为您解答贷款相关问题。</p>
+            <p class="hint">支持：贷款咨询 · 风险评估 · 贷后管理 · 提前还款 · 逾期处理</p>
+        </div>
+    </main>
+
+    <!-- 工具状态面板 -->
+    <div class="tool-panel" id="tool-panel" style="display:none;">
+        <div class="tool-panel-header" onclick="toggleToolPanel()">
+            <span>🔧 工具调用</span>
+            <span class="toggle-icon" id="tool-toggle">▼</span>
+        </div>
+        <div class="tool-panel-body" id="tool-panel-body"></div>
+    </div>
+
+    <!-- 输入区 -->
+    <footer class="input-area">
+        <input type="text" id="message-input" placeholder="输入您的问题..." autocomplete="off"
+               onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendMessage();}">
+        <button id="send-btn" onclick="sendMessage()">发送</button>
+    </footer>
+
+</div>
+
+<!-- 转人工弹窗 -->
+<div class="handoff-modal" id="handoff-modal" style="display:none;">
+    <div class="handoff-dialog">
+        <div class="handoff-header">
+            <span>🔔 转接人工客服</span>
+            <button class="close-btn" onclick="closeHandoffModal()">×</button>
+        </div>
+        <div class="handoff-body">
+            <p class="handoff-message" id="handoff-message"></p>
+            <p class="handoff-thread">Thread ID: <span id="handoff-thread-id"></span></p>
+
+            <div class="handoff-actions">
+                <div class="action-group" id="reply-group">
+                    <label>回复内容：</label>
+                    <textarea id="handoff-reply-content" rows="3" placeholder="输入回复内容..."></textarea>
+                    <button class="btn-primary" onclick="resolveHandoff('reply')">提交回复</button>
+                </div>
+                <div class="action-buttons">
+                    <button class="btn-secondary" onclick="resolveHandoff('escalate')">升级处理</button>
+                    <button class="btn-secondary" onclick="resolveHandoff('close')">关闭工单</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

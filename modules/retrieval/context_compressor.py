@@ -4,9 +4,7 @@ import logging
 from typing import List, Dict
 
 from pydantic import BaseModel, Field
-from transformers import AutoTokenizer
 
-from config.global_constant.fields import CommonFields
 from config.models.retrieval_config import CompressorConfig
 from config.prompts.context_compress import CONTEXT_COMPRESS_PROMPT
 from modules.module_services.chat_models import RobustLLM
@@ -28,7 +26,6 @@ class ContextCompressor:
     def __init__(self, config: CompressorConfig, llm_client: RobustLLM):
         self.config = config
         self.llm_client = llm_client
-        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct")
 
     def compress(self, query: str, documents: List[Dict]) -> List[Dict]:
         """

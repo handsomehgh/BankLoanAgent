@@ -1,12 +1,11 @@
 # author hgh
 # version 1.0
-# author hgh
-# version 1.0
 """
 public memory retrieval layer
 responsibilities: called uniformly by the supervisor to obtain user profile,compliance rules,interaction log and assemble them into a formatted context,
 it also completes the global message sequence number assignment
 """
+import asyncio
 import logging
 import time
 from typing import Dict, List
@@ -33,7 +32,7 @@ class MemoryRetrieveNode:
         self.seq_generator = seq_generator
         self.memory_config = memory_config
 
-    def __call__(self, state: SupervisorState, config: RunnableConfig):
+    async def __call__(self, state: SupervisorState, config: RunnableConfig):
         logger.info("[MemoryRetrieveNode] starting retrieving with state, state=%s", state)
 
         user_id = state.get(StateFields.USER_ID.value, "unknown")
@@ -62,7 +61,9 @@ class MemoryRetrieveNode:
         ]
         try:
             start_time = time.monotonic()
-            retrieved = self.retriever.retrieve(query=user_query, user_id=user_id, memory_types=memory_types)
+            retrieved = await self.retriever.aretrieve(
+                query=user_query, user_id=user_id, memory_types=memory_types
+            )
             memory_read_duration_seconds.labels(user=user_id).observe(time.monotonic() - start_time)
 
             profile_count = len(retrieved.get(MemoryType.USER_PROFILE, []))

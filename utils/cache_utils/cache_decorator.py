@@ -15,8 +15,13 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+# Sync locks (for sync_wrapper, threading.Lock is correct in thread context)
 _locks: Dict[str, threading.Lock] = {}
 _locks_lock = threading.Lock()
+
+# Async locks (for async_wrapper, asyncio.Lock avoids blocking the event loop)
+_async_locks: Dict[str, asyncio.Lock] = {}
+_async_locks_lock = threading.Lock()  # protects dict access only
 
 _CONTAINER = None
 def set_cache_container(container):
@@ -28,6 +33,14 @@ def _get_lock(key: str) -> threading.Lock:
         if key not in _locks:
             _locks[key] = threading.Lock()
         return _locks[key]
+
+
+def _get_async_lock(key: str) -> asyncio.Lock:
+    """Get or create an asyncio.Lock for the given cache key (async-safe)."""
+    with _async_locks_lock:
+        if key not in _async_locks:
+            _async_locks[key] = asyncio.Lock()
+        return _async_locks[key]
 
 
 def _build_cache_key(args: Tuple,kwargs: Dict,ignore_args: Optional[List[int]] = None) -> str:
@@ -91,6 +104,20 @@ def custom_cached(
                     logger.warning(f"[Cache] read failed: {e}")
                     return (False, None)
 
+            def _execute_and_cache():
+                """run the wrapped func and write its result back to cache,used by both the
+                lock-acquired path and the lock-contended (waited) path,so a caller that had
+                to wait for the lock still populates the cache instead of computing for nothing"""
+                result = func(*args, **kwargs)
+                try:
+                    if result:
+                        mgr.set(full_key,result,ttl=ttl)
+                    else:
+                        mgr.set_null(full_key, ttl=null_ttl)
+                except Exception as e:
+                    logger.warning(f"[Cache] write failed: {e}")
+                return result
+
             hit,result = _read_cache()
             if hit:
                 return result
@@ -103,24 +130,16 @@ def custom_cached(
                 hit,result = _read_cache()
                 if hit:
                     return result
-                return func(*args, **kwargs)
+                return _execute_and_cache()
 
             try:
-                result = func(*args, **kwargs)
-                try:
-                    if result:
-                        mgr.set(full_key,result,ttl=ttl)
-                    else:
-                        mgr.set_null(full_key, ttl=null_ttl)
-                except Exception as e:
-                    logger.warning(f"[Cache] write failed: {e}")
-                return result
+                return _execute_and_cache()
             finally:
                 lock.release()
 
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
-            mgr = _resolve_manager(args)
+            mgr = _resolve_manager(namespace)
             if not mgr:
                 return await func(*args, **kwargs)
 
@@ -146,17 +165,13 @@ def custom_cached(
             if hit:
                 return result
 
-            lock = _get_lock(full_key)
-            acquired = lock.acquire(blocking=False)
-            if not acquired:
-                with lock:
-                    pass
+            # Use asyncio.Lock — awaits without blocking the event loop
+            lock = _get_async_lock(full_key)
+            async with lock:
+                # Double-check after acquiring lock (another coroutine may have populated cache)
                 hit, result = _read_cache()
                 if hit:
                     return result
-                return await func(*args, **kwargs)
-
-            try:
                 result = await func(*args, **kwargs)
                 try:
                     if result:
@@ -166,8 +181,7 @@ def custom_cached(
                 except Exception as e:
                     logger.warning(f"[Cache] write failed: {e}")
                 return result
-            finally:
-                lock.release()
+
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
     return decorator
@@ -178,5 +192,5 @@ def _safe_convert(converter,data):
     try:
         return converter(data)
     except Exception as e:
-        logger.warning(f"[Cache] Converter failed, returning None. Data: {str(data)[:200]}, Error: {e}")
+        logger.warning(f"Cache converter failed, returning None. Data: {str(data)[:200]}, Error: {e}")
         return None

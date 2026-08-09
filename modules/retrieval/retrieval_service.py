@@ -47,14 +47,6 @@ class RetrievalService:
         self._executor = ThreadPoolExecutor(max_workers=9)
         logger.info("RetrievalService initialized successfully")
 
-    @custom_cached(
-        namespace=CacheNamespace.RAG.value,
-        ttl=1800,
-        null_ttl=60,
-        converter=lambda data: [BusinessKnowledge(**item) for item in data] if data else [],
-        empty_result_factory=list,
-        ignore_args=[0]
-    )
     def retrieve(self, query: str, context: Optional[str] = None, filter_expr: Optional[str] = None) -> List[BusinessKnowledge]:
         logger.info("Incoming retrieve request: query='%s...', context=%s", query[:80],
                     "available" if context else "absent")
@@ -63,9 +55,45 @@ class RetrievalService:
             logger.info("Query complete by context complete: %s", query[:80])
             query = self.context_complete.complete(query, context)
 
+        return self._cached_retrieve(query, filter_expr)
+
+    async def aretrieve(self, query: str, context: Optional[str] = None, filter_expr: Optional[str] = None) -> List[BusinessKnowledge]:
+        """Async version of retrieve() — call directly from async context (no asyncio.run overhead)."""
+        logger.info("Incoming retrieve request (async): query='%s...', context=%s", query[:80],
+                    "available" if context else "absent")
+
+        if context:
+            logger.info("Query complete by context complete: %s", query[:80])
+            query = self.context_complete.complete(query, context)
+
+        return await self._cached_aretrieve(query, filter_expr)
+
+    @custom_cached(
+        namespace=CacheNamespace.RAG.value,
+        ttl=1800,
+        null_ttl=60,
+        converter=lambda data: [BusinessKnowledge(**item) for item in data] if data else [],
+        empty_result_factory=list,
+        ignore_args=[0]
+    )
+    def _cached_retrieve(self, query: str, filter_expr: Optional[str] = None) -> List[BusinessKnowledge]:
         logger.info("Start retrieval for query: %s", query[:80])
         results = asyncio.run(self._retrieve_async(query, filter_expr))
         logger.info("Retrieval completed: %d results returned", len(results))
+        return results
+
+    @custom_cached(
+        namespace=CacheNamespace.RAG.value,
+        ttl=1800,
+        null_ttl=60,
+        converter=lambda data: [BusinessKnowledge(**item) for item in data] if data else [],
+        empty_result_factory=list,
+        ignore_args=[0]
+    )
+    async def _cached_aretrieve(self, query: str, filter_expr: Optional[str] = None) -> List[BusinessKnowledge]:
+        logger.info("Start retrieval for query (async): %s", query[:80])
+        results = await self._retrieve_async(query, filter_expr)
+        logger.info("Retrieval completed (async): %d results returned", len(results))
         return results
 
     async def _retrieve_async(self, query: str, filter_expr: Optional[str] = None) -> List[BusinessKnowledge]:
@@ -86,7 +114,7 @@ class RetrievalService:
             logger.debug("Filter extraction disabled")
 
         # three-way parallel recall
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         all_dense, all_sparse, all_term = [], [], []
 
         async def recall_for_single_query(q: str):

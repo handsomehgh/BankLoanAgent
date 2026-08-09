@@ -6,6 +6,7 @@ function: performers compliance scanning before user input enters any business a
 policy: regex matching takes priority,LLM secondary review as a fallback,request_level deduplication cache
 return: BLOCK/WARNING/PASS
 """
+import asyncio
 import logging
 import re
 import threading
@@ -66,7 +67,7 @@ class CompliancePrefilter:
         with self._cache_lock:
             self._cache[key] = result
 
-    def __call__(self, state: SupervisorState, config: RunnableConfig, ) -> Dict[str, Any]:
+    async def __call__(self, state: SupervisorState, config: RunnableConfig, ) -> Dict[str, Any]:
         # 1. get user input
         messages = state.get(StateFields.MESSAGES.value, [])
         user_query = ""
@@ -82,14 +83,14 @@ class CompliancePrefilter:
         # 2. deduplication check
         user_id = state.get(StateFields.USER_ID.value, "unknown")
         session_id = config.get(ConfigFields.CONFIGURABLE.value, {}).get(ConfigFields.THREAD_ID.value)
-        cached_result = self._dedup_lookup(user_id, user_query)
+        cached_result = await asyncio.to_thread(self._dedup_lookup, user_id, user_query)
         if cached_result is not None:
             logger.debug("Use cached compliance scan result")
             return cached_result
 
         # 3. obtain compliance rules
         try:
-            rules = self.memory_store.get_active_compliance_rules(20)
+            rules = await asyncio.to_thread(self.memory_store.get_active_compliance_rules, 20)
             logger.debug("Retrieved d% active compliance rules", len(rules))
         except Exception as e:
             logger.error("Failed to retrieval compliance rules: %s，downgrade release", e, exc_info=True)
@@ -99,7 +100,7 @@ class CompliancePrefilter:
                 StateFields.SHOULD_SKIP_SUPERVISOR.value: False,
                 StateFields.MANDATORY_APPENDS.value: [],
             }
-            self._dedup_store(user_id, user_query, fallback_result)
+            await asyncio.to_thread(self._dedup_store, user_id, user_query, fallback_result)
             return fallback_result
 
         # 4. regex matching
@@ -116,7 +117,7 @@ class CompliancePrefilter:
                 logger.warning("Invalid regular expression rule_id=%s: %s", meta.get(CommonFields.RULE_ID), e)
 
         # 5. compliance check
-        check_result = self._compliance_check(user_query, hit_rules, self.memory_config, self.supervisor_config,
+        check_result = await self._compliance_check(user_query, hit_rules, self.memory_config, self.supervisor_config,
                                               self.llm_client)
         blocked = check_result[StateFields.COMPLIANCE_BLOCKED.value]
         block_reason = check_result[StateFields.BLOCK_REASON.value]
@@ -150,10 +151,10 @@ class CompliancePrefilter:
             }
 
         # 8. write to cache
-        self._dedup_store(user_id, user_query, result)
+        await asyncio.to_thread(self._dedup_store, user_id, user_query, result)
         return result
 
-    def _compliance_check(
+    async def _compliance_check(
             self,
             user_query: str,
             hit_rules: List[Dict[str, Any]],
@@ -199,7 +200,7 @@ class CompliancePrefilter:
             logger.debug("No match in regex, triggering LLM compliance secondary review")
             try:
                 messages = COMPLIANCE_FALLBACK_PROMPT.invoke({"user_query": user_query[:800]}).to_messages()
-                response = llm_client.invoke(messages)
+                response = await llm_client.ainvoke(messages)
                 decision = response.content.strip().upper()
                 logger.info("LLM compliance secondary result: %s", decision)
                 if decision == "BLOCK":

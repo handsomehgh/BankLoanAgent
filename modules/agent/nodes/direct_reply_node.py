@@ -25,7 +25,7 @@ class DirectReplyNode:
         self.registry = registry
         self.seq_generator = seq_generator
 
-    def __call__(self, state: SupervisorState, config: RunnableConfig):
+    async def __call__(self, state: SupervisorState, config: RunnableConfig):
         user_id = state.get(StateFields.USER_ID.value)
         session_id = config.get(ConfigFields.CONFIGURABLE.value,{}).get(ConfigFields.THREAD_ID.value)
         if self.llm_client is None:
@@ -51,8 +51,8 @@ class DirectReplyNode:
         recent_conversation = self._extract_recent_conversation(state)
 
         # 3. organize prompt
-        config = self.registry.get_config(RegistryModules.DIRECT_REPLY.value)
-        sys_prompt = config.system_prompt
+        reply_config = self.registry.get_config(RegistryModules.DIRECT_REPLY.value)
+        sys_prompt = reply_config.system_prompt
         prompt = sys_prompt.format(
             user_query=user_query,
             user_profile=user_profile or "暂无相关信息",
@@ -63,7 +63,7 @@ class DirectReplyNode:
         # 3. call llm
         try:
             total_start = time.monotonic()
-            response = self.llm_client.invoke([
+            response = await self.llm_client.ainvoke([
                 SystemMessage(content="你是一个有帮助的银行客服助手。"),
                 HumanMessage(content=prompt)
             ])
@@ -85,7 +85,7 @@ class DirectReplyNode:
             res_message = AIMessage(content=llm_output)
             assign_message_index(res_message,user_id,session_id,self.seq_generator)
             return {
-                StateFields.MESSAGES.value: res_message,
+                StateFields.MESSAGES.value: [res_message],
                 StateFields.SHOULD_SKIP_SUPERVISOR.value: True,
             }
 

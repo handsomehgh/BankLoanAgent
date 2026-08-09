@@ -4,6 +4,7 @@
 humanHandoff timeout degradation monitor,
 regular scans pending work order,automatically invoking graph to recover and inject degradation messages when time out
 """
+import asyncio
 import logging
 import threading
 from datetime import datetime, timezone
@@ -23,10 +24,12 @@ DEFAULT_TIMEOUT_SECONDS = 90
 DEGRADE_MESSAGE = "当前人工坐席繁忙，请稍后重试或拨打我行客服热线 95333。"
 
 class HandoffTimeoutMonitor:
-    def __init__(self,graph,redis_manager: RedisManager,timeout_seconds=DEFAULT_TIMEOUT_SECONDS):
+    def __init__(self, graph, redis_manager: RedisManager, timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+                 loop: asyncio.AbstractEventLoop = None):
         self.graph = graph
         self.redis_manager = redis_manager
         self.timeout_seconds = timeout_seconds
+        self._loop = loop  # main event loop, for scheduling async graph invocations from daemon thread
 
     def start(self):
         def _loop():
@@ -62,9 +65,18 @@ class HandoffTimeoutMonitor:
             finally:
                 client.zrem(HANDOFF_PENDING_KEY,thread_id)
 
-    def _degrade(self,thread_id):
-        resume_value = {"action": "reply","content": DEGRADE_MESSAGE}
-        self.graph.invoke(Command(resume=resume_value),config={ConfigFields.CONFIGURABLE.value: {ConfigFields.THREAD_ID.value:thread_id}})
+    def _degrade(self, thread_id):
+        """Schedule async graph resume on the main event loop (called from daemon thread)."""
+        if not self._loop or self._loop.is_closed():
+            logger.error("[HandoffTimeoutMonitor] no main event loop available, cannot degrade")
+            return
+        resume_value = {"action": "reply", "content": DEGRADE_MESSAGE}
+        config = {ConfigFields.CONFIGURABLE.value: {ConfigFields.THREAD_ID.value: thread_id}}
+        future = asyncio.run_coroutine_threadsafe(
+            self.graph.ainvoke(Command(resume=resume_value), config=config),
+            self._loop,
+        )
+        future.result(timeout=30)  # block daemon thread until resume completes
         handoff_task_timeout_total.inc()
         logger.info("[HandoffTimeoutMonitor] timeout degrade complete: thread_id=%s", thread_id)
 

@@ -61,16 +61,3 @@ class SupervisorAgent:
         return graph.compile()
 
 
-def create_supervisor_graph(
-        memory_retriever: BaseRetriever,
-        seq_generator: SequenceGenerator,
-        registry: ConfigRegistry,
-        llm_client: RobustLLM
-) -> StateGraph:
-    supervisor_agent = SupervisorAgent(
-        memory_retriever=memory_retriever,
-        seq_generator=seq_generator,
-        registry=registry,
-        llm_client=llm_client
-    )
-    return supervisor_agent.build_graph()

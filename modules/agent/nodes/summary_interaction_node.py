@@ -1,13 +1,15 @@
 # author hgh
 # version 1.0
+import asyncio
 import logging
 from datetime import datetime
+from typing import List, Optional
 
 from langchain_core.messages import HumanMessage, messages_to_dict
 from langchain_core.runnables import RunnableConfig
 
 from config.global_constant.fields import CommonFields
-from config.global_constant.constants import ConfigFields, MemoryType
+from config.global_constant.constants import ConfigFields, MemoryType, CursorType
 from config.models.memory_config import MemorySystemConfig
 from infra.message_queue import MessageProducer
 from modules.agent.constants import StateFields, StreamName, AgentContextFields, AgentName
@@ -16,6 +18,7 @@ from modules.memory.memory_business_store.base_memory_store import BaseMemorySto
 from modules.memory.memory_constant.constants import InteractionEventType, MemorySource, MemoryStatus, \
     InteractionSentiment
 from modules.memory.memory_utils.base_memory_utils import get_message_index, format_messages
+from modules.memory.memory_utils.cursor_manager import CursorManager
 from modules.module_services.SummaryGenerator import SummaryGenerator
 from modules.module_services.sentiment_analyser import SentimentAnalyzer
 from utils.serialize_utils.write_to_dlq import write_to_local_dlq
@@ -32,15 +35,17 @@ class SummaryInteractionNode:
             memory_config: MemorySystemConfig,
             summary_generator: SummaryGenerator,
             sentiment_analyzer: SentimentAnalyzer,
-            message_producer: MessageProducer
+            message_producer: MessageProducer,
+            cursor_manager: CursorManager
     ):
         self.memory_store = memory_store
         self.memory_config = memory_config
         self.summary_generator = summary_generator
         self.sentiment_analyzer = sentiment_analyzer
         self.message_producer = message_producer
+        self.cursor_manager = cursor_manager
 
-    def __call__(self, state: SupervisorState, config: RunnableConfig):
+    async def __call__(self, state: SupervisorState, config: RunnableConfig):
         user_id = state.get(StateFields.USER_ID.value)
         configurable = config.get(ConfigFields.CONFIGURABLE, {})
         session_id = configurable.get(ConfigFields.THREAD_ID.value, "unknown")
@@ -70,7 +75,8 @@ class SummaryInteractionNode:
                             CommonFields.AGENT_NAME: agent,
                             StateFields.MESSAGES.value: messages_to_dict(msgs)
                         }
-                        msg_id = self.message_producer.publish(
+                        msg_id = await asyncio.to_thread(
+                            self.message_producer.publish,
                             stream_name=StreamName.SUB_INTERACTION.value,
                             event_type=StreamName.SUB_INTERACTION.value,
                             payload=payload,
@@ -121,6 +127,13 @@ class SummaryInteractionNode:
             logger.debug("[SummaryInteractionNode] no new messages to log")
             return {StateFields.INTERACTION_LOGGED.value: False, StateFields.SUB_MESSAGES.value: sub_messages}
 
+        # idempotency guard: drop messages already marked processed in cursor_manager,
+        # this protects against the numeric cursor failing to advance on a previous failed/retried run
+        new_context = self._filter_unprocessed(new_context, user_id)
+        if not new_context:
+            logger.debug("[SummaryInteractionNode] all candidate messages already marked processed, skipping log")
+            return {StateFields.INTERACTION_LOGGED.value: False, StateFields.SUB_MESSAGES.value: sub_messages}
+
         # Returning false if the new user message is less than the minimum withdrawable amount
         new_user_count = sum(1 for m in new_context if isinstance(m, HumanMessage))
         if new_user_count < self.memory_config.interaction_log_min_new_msgs:
@@ -152,7 +165,8 @@ class SummaryInteractionNode:
                     CommonFields.CONTENT: conversation,
                     StateFields.MESSAGES.value: messages_to_dict(messages)
                 }
-                msg_id = self.message_producer.publish(
+                msg_id = await asyncio.to_thread(
+                    self.message_producer.publish,
                     stream_name=StreamName.INTERACTION_LOG.value,
                     event_type=StreamName.INTERACTION_LOG.value,
                     payload=payload,
@@ -162,16 +176,18 @@ class SummaryInteractionNode:
             except Exception as e:
                 logger.error("[SummaryInteractionNode] interaction log failed send to redis: %s, write to local DLQ", e)
                 write_to_local_dlq(payload, StreamName.INTERACTION_LOG.value)
+                # not committed anywhere,keep cursor and processed set untouched so it retries next turn
+                return {StateFields.INTERACTION_LOGGED.value: False, StateFields.SUB_MESSAGES.value: sub_messages}
         else:
             logger.info("[SummaryInteractionNode] start synchronous write of interaction log")
 
             logger.info("[SummaryInteractionNode] generating interaction summary for session_id=%s", session_id)
-            summary = self.summary_generator.generate(conversation, new_context)
+            summary = await asyncio.to_thread(self.summary_generator.generate, conversation, new_context)
             logger.info("[SummaryInteractionNode] interaction summary generated: '%.60s...'", summary)
 
             # detect sentiment
             logger.info("[SummaryInteractionNode] analyzing sentiment for summary")
-            sentiment = self.sentiment_analyzer.analyze(summary)
+            sentiment = await asyncio.to_thread(self.sentiment_analyzer.analyze, summary)
             logger.info("[SummaryInteractionNode] detected sentiment: %s", sentiment)
 
             # build log memory data
@@ -188,7 +204,8 @@ class SummaryInteractionNode:
 
             # add to memory
             try:
-                self.memory_store.add_memory(
+                await asyncio.to_thread(
+                    self.memory_store.add_memory,
                     user_id=state.get(StateFields.USER_ID.value),
                     content=summary,
                     memory_type=MemoryType.INTERACTION_LOG,
@@ -200,12 +217,49 @@ class SummaryInteractionNode:
                     "[SummaryInteractionNode] failed to write interaction log for session %s: %s",
                     session_id, e, exc_info=True
                 )
+                # write failed,keep cursor and processed set untouched so it retries next turn
+                return {StateFields.INTERACTION_LOGGED.value: False, StateFields.SUB_MESSAGES.value: sub_messages}
 
-        # update last_logged_message_index
+        # commit succeeded: mark processed first,then advance the cursor
+        self._mark_processed(new_context, user_id, CursorType.LOGGING)
         last_index = get_message_index(new_context[-1])
+        if last_index is None:
+            logger.warning(
+                "[SummaryInteractionNode] cannot update last_logged_message_index: no message_index for last message")
+            return {StateFields.INTERACTION_LOGGED.value: True, StateFields.SUB_MESSAGES.value: sub_messages}
         logger.debug("[SummaryInteractionNode] updated last_logged_message_index to %d", last_index)
         return {
             StateFields.LAST_LOGGED_MESSAGE_INDEX.value: last_index,
             StateFields.HANDOFF_SUMMARY.value: "",
             StateFields.SUB_MESSAGES.value: sub_messages
         }
+
+    def _filter_unprocessed(self, context: List, user_id: Optional[str]) -> List:
+        """
+        idempotency guard based on CursorManager's processed set:
+        drop messages whose global index has already been marked processed,
+        this covers the case where the numeric cursor failed to advance on a previous run
+        """
+        if not user_id:
+            return context
+        try:
+            processed = self.cursor_manager.get_process_at(user_id, CursorType.LOGGING.value)
+        except Exception as e:
+            logger.warning("[SummaryInteractionNode] failed to read processed set for user=%s: %s", user_id, e)
+            return context
+        if not processed:
+            return context
+        return [m for m in context if get_message_index(m) not in processed]
+
+    def _mark_processed(self, context: List, user_id: Optional[str], cursor_type: CursorType) -> None:
+        """mark the given messages' global indexes as processed,and trim the processed set"""
+        if not user_id:
+            return
+        seqs = {get_message_index(m) for m in context if get_message_index(m) is not None}
+        if not seqs:
+            return
+        try:
+            self.cursor_manager.add_batch_to_processed_set(user_id, cursor_type.value, seqs)
+            self.cursor_manager.remove_old_entries(user_id, cursor_type.value, keep_last_n=2000)
+        except Exception as e:
+            logger.warning("[SummaryInteractionNode] failed to mark processed set for user=%s: %s", user_id, e)

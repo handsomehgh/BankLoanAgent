@@ -1,18 +1,20 @@
 # author hgh
 # version 1.0
+import asyncio
 import logging
 from typing import List, Optional, Dict, Any
 
 from langchain_core.messages import HumanMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
 from config.global_constant.fields import CommonFields
-from config.global_constant.constants import MemoryType, ConfigFields
+from config.global_constant.constants import MemoryType, ConfigFields, CursorType
 from config.models.memory_config import MemorySystemConfig
 from infra.message_queue import MessageProducer
 from modules.agent.constants import MessageCommonFields, StateFields, StreamName, AgentContextFields
 from modules.agent.multi_agent_state import SupervisorState
 from modules.memory.memory_business_store.base_memory_store import BaseMemoryStore
 from modules.memory.memory_utils.base_memory_utils import get_message_index, format_messages
+from modules.memory.memory_utils.cursor_manager import CursorManager
 from modules.memory.memory_utils.profile_gate_util import ProfileGate
 from modules.module_services.evidence_infer import EvidenceTypeInfer
 from modules.module_services.profile_extractor import ProfileExtractor
@@ -31,7 +33,8 @@ class ExtractProfileNode:
             memory_config: MemorySystemConfig,
             evidence_infer: EvidenceTypeInfer,
             profile_extractor: ProfileExtractor,
-            message_producer: MessageProducer
+            message_producer: MessageProducer,
+            cursor_manager: CursorManager
     ):
         self.memory_store = memory_store
         self.profile_gate = profile_gate
@@ -39,8 +42,9 @@ class ExtractProfileNode:
         self.evidence_infer = evidence_infer
         self.profile_extractor = profile_extractor
         self.message_producer = message_producer
+        self.cursor_manager = cursor_manager
 
-    def __call__(self, state: SupervisorState, config: RunnableConfig) -> Dict[str, Any]:
+    async def __call__(self, state: SupervisorState, config: RunnableConfig) -> Dict[str, Any]:
         logger.info("[ExtractProfileNode] entering extract_profile_node")
 
         # 1. no messages,return false
@@ -63,12 +67,22 @@ class ExtractProfileNode:
         if not new_user_messages:
             logger.info("[ExtractProfileNode] no new user messages, skipping profile extraction")
             return {StateFields.PROFILE_UPDATED.value: False}
+
+        # 3.1 idempotency guard: filter out messages already marked processed in cursor_manager,
+        # this protects against the cursor field failing to advance on a previous failed/retried run
+        new_user_messages = self._filter_unprocessed(new_user_messages, user_id)
+        if not new_user_messages:
+            logger.info("[ExtractProfileNode] all candidate messages already marked processed, skipping")
+            return {StateFields.PROFILE_UPDATED.value: False}
         logger.info("[ExtractProfileNode] found %d new user messages", len(new_user_messages))
 
         # 4. lightweight filtering
         if not self.profile_gate.should_extract(new_user_messages):
             logger.info("[ExtractProfileNode] profile gate filtered out all messages for user_id=%s (msg_count=%d)",
                         user_id, len(new_user_messages))
+            # no extraction needed,but the decision itself is a successful outcome for this batch:
+            # mark it processed so it will not be re-evaluated on the next turn
+            self._mark_processed(new_user_messages, user_id, CursorType.EXTRACTION)
             last_msg = messages[-1]
             last_index = get_message_index(last_msg)
             if last_index is None:
@@ -93,7 +107,8 @@ class ExtractProfileNode:
                 CommonFields.CONTENT: conversations,
                 CommonFields.TEXT: " ".join([m.content for m in new_user_messages])
             }
-            msg_id = self.message_producer.publish(
+            msg_id = await asyncio.to_thread(
+                self.message_producer.publish,
                 stream_name=StreamName.USER_PROFILE.value,
                 event_type=StreamName.USER_PROFILE.value,
                 payload=payload,
@@ -105,8 +120,12 @@ class ExtractProfileNode:
                 "[ExtractProfileNode] user profile failed send to redis: %s, write to local DLQ",
                 e)
             write_to_local_dlq(payload, StreamName.USER_PROFILE.value)
+            # 10. the batch was NOT committed anywhere,do not mark it processed and do not advance
+            # the cursor,so it will be retried again on the next turn
+            return {StateFields.PROFILE_UPDATED.value: False}
 
-            # 10. update cursor
+        # 10. commit succeeded: mark processed first,then advance the cursor
+        self._mark_processed(new_user_messages, user_id, CursorType.EXTRACTION)
         last_msg = messages[-1]
         last_index = get_message_index(last_msg)
         if last_index is None:
@@ -118,6 +137,36 @@ class ExtractProfileNode:
             StateFields.PROFILE_UPDATED.value: True,
             StateFields.LAST_EXTRACTED_MESSAGE_INDEX.value: last_index
         }
+
+    def _filter_unprocessed(self, messages: List[BaseMessage], user_id: Optional[str]) -> List[BaseMessage]:
+        """
+        idempotency guard based on CursorManager's processed set:
+        drop messages whose global index has already been marked processed,
+        this covers the case where the numeric cursor failed to advance on a previous run
+        """
+        if not user_id:
+            return messages
+        try:
+            processed = self.cursor_manager.get_process_at(user_id, CursorType.EXTRACTION.value)
+        except Exception as e:
+            logger.warning("[ExtractProfileNode] failed to read processed set for user=%s: %s", user_id, e)
+            return messages
+        if not processed:
+            return messages
+        return [m for m in messages if get_message_index(m) not in processed]
+
+    def _mark_processed(self, messages: List[BaseMessage], user_id: Optional[str], cursor_type: CursorType) -> None:
+        """mark the given messages' global indexes as processed,and trim the processed set"""
+        if not user_id:
+            return
+        seqs = {get_message_index(m) for m in messages if get_message_index(m) is not None}
+        if not seqs:
+            return
+        try:
+            self.cursor_manager.add_batch_to_processed_set(user_id, cursor_type.value, seqs)
+            self.cursor_manager.remove_old_entries(user_id, cursor_type.value, keep_last_n=2000)
+        except Exception as e:
+            logger.warning("[ExtractProfileNode] failed to mark processed set for user=%s: %s", user_id, e)
 
     def _get_new_user_messages(
             self,

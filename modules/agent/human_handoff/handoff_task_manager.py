@@ -43,10 +43,10 @@ class HandoffTaskManager:
                 })
         return tasks
 
-    def recover_task(self, thread_id: str, action: str, content: str = ""):
+    async def recover_task(self, thread_id: str, action: str, content: str = ""):
         """recover the specified work order"""
         resume = {"action": action, "content": content} if action == "reply" else {"action": action}
-        self.graph.invoke(
+        await self.graph.ainvoke(
             Command(resume=resume),
             config={ConfigFields.CONFIGURABLE.value: {ConfigFields.THREAD_ID.value: thread_id}}
         )

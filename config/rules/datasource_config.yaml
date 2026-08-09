@@ -1,8 +1,8 @@
 redis:
-  host: "47.110.142.97"
+  host: "47.111.108.243"
   port: 6379
   db: 0
-  password: "hgh970228"
+  password: "hgh970405"
   max_connections: 50
   socket_timeout: 0.5
   socket_connect_timeout: 1.0
@@ -18,6 +18,13 @@ neo4j:
   query_timeout_ms: 500
   max_connection_lifetime: 3600
   max_retry_attempts: 3
+
+postgresql:
+  postgres_dsn: "postgresql://postgres:hgh970405@47.111.108.243:5432/bank_agent?keepalives_idle=60&keepalives_interval=10&keepalives_count=3"
+  postgres_pool_min_size: 2
+  postgres_pool_max_size: 10
+  postgres_pool_timeout: 5.0
+  postgres_command_timeout: 30
 
 
 mysql:

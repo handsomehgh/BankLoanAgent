@@ -3,6 +3,7 @@
 """
 HumanHandoff Node: Generate human handoff summary and immediately downgrade
 """
+import asyncio
 import logging
 from datetime import datetime, timezone
 from langchain_core.messages import AIMessage
@@ -26,15 +27,15 @@ class HumanHandoffInterruptNode:
     def __init__(self, redis_manager: RedisManager):
         self.redis_manager = redis_manager
 
-    def __call__(self, state: SupervisorState, config: RunnableConfig):
+    async def __call__(self, state: SupervisorState, config: RunnableConfig):
         logger.info("[HumanHandoffInterruptNone] starting process interrupt by human with state %s",
                     state)
 
         # 1. obtain context
         ctx = state.get(StateFields.AGENT_CONTEXT.value, {}).get(AgentNodeName.HUMAN_HANDOFF_NOTIFY.value)
         user_id = state.get(StateFields.USER_ID.value, "")
-        trace_id = ctx.trace_id
         thread_id = config.get(ConfigFields.CONFIGURABLE.value, {}).get(ConfigFields.THREAD_ID.value, "")
+        trace_id = ctx.trace_id if ctx else ""
         user_query = ctx.current_query if ctx else ""
         user_profile = ctx.user_profile_summary if ctx else ""
         conversation_summary = ctx.conversation_summary if ctx else ""
@@ -54,7 +55,9 @@ class HumanHandoffInterruptNode:
         client = self.redis_manager.get_client()
         if client:
             # add to pending ordered set(for timeout monitoring)
-            HandoffTimeoutMonitor.add_pending_task(self.redis_manager, thread_id, timestamp.timestamp())
+            await asyncio.to_thread(
+                HandoffTimeoutMonitor.add_pending_task, self.redis_manager, thread_id, timestamp.timestamp()
+            )
 
             # store work order to set
             task_info = {
@@ -63,8 +66,8 @@ class HumanHandoffInterruptNode:
                 StateFields.HANDOFF_SUMMARY.value: handoff_summary,
                 CommonFields.TIMESTAMP: timestamp.isoformat()
             }
-            client.hset(f"{HANDOFF_TASK_KEY}:{thread_id}", mapping=task_info)
-            client.expire(f"{HANDOFF_TASK_KEY}:{thread_id}", 3600)
+            await asyncio.to_thread(client.hset, f"{HANDOFF_TASK_KEY}:{thread_id}", mapping=task_info)
+            await asyncio.to_thread(client.expire, f"{HANDOFF_TASK_KEY}:{thread_id}", 3600)
             logger.info("[HumanHandoffInterruptNone] work order has been stored: thread_id=%s", thread_id)
 
         # 4. execute interrupt
@@ -81,8 +84,10 @@ class HumanHandoffInterruptNode:
 
         # 6. clean work order
         if client:
-            HandoffTimeoutMonitor.remove_pending_task(self.redis_manager, thread_id)
-            client.delete(f"{HANDOFF_TASK_KEY}:{thread_id}")
+            await asyncio.to_thread(
+                HandoffTimeoutMonitor.remove_pending_task, self.redis_manager, thread_id
+            )
+            await asyncio.to_thread(client.delete, f"{HANDOFF_TASK_KEY}:{thread_id}")
             logger.info("[HumanHandoffInterruptNone] work order has been clean: thread_id=%s", thread_id)
 
         return {
