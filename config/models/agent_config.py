@@ -60,6 +60,10 @@ class AgentConfig(BaseModel):
 class LoanAdvisorConfig(AgentConfig):
     """贷款咨询 Agent 配置"""
     tool_exposure: str = Field(default="skills", description="工具选择策略")
+    suggestion_gate_prompt: str = Field(
+        default="",
+        description="主动邀请登记意向的时机判断提示词（proactive_suggestion_gate 专用）"
+    )
 
 
 class RiskAssessmentConfig(AgentConfig):

@@ -54,6 +54,7 @@ from modules.module_services.embeddings import RobustEmbeddings, RobustLocalEmbe
 from modules.module_services.evidence_infer import EvidenceTypeInfer
 from modules.module_services.profile_extractor import ProfileExtractor
 from modules.module_services.sentiment_analyser import SentimentAnalyzer
+from modules.module_services.suggestion_timing_classifier import SuggestionTimingClassifier
 from modules.retrieval.context_compressor import ContextCompressor
 from modules.retrieval.knowledge_vector_store.knowledge_search_engine import KnowledgeSearchEngine
 from modules.retrieval.query_filter import QueryFilter
@@ -293,6 +294,12 @@ def _create_sentiment_analyzer(precise_llm, registry):
     )
 
 
+def _create_suggestion_timing_classifier(local_llm, registry):
+    """主动邀请时机分类器:prompt来自loan_advisor.yaml,复用local_llm不占主链路额度"""
+    cfg = registry.get_config(RegistryModules.LOAN_ADVISOR)
+    return SuggestionTimingClassifier(llm_client=local_llm, prompt_template=cfg.suggestion_gate_prompt)
+
+
 def _create_evidence_infer(precise_llm, registry):
     mem_cfg = registry.get_config(RegistryModules.MEMORY_SYSTEM)
     return EvidenceTypeInfer(
@@ -370,7 +377,7 @@ def _build_supervisor_graph(memory_retriever, seq_generator, registry, llm_clien
 
 
 def _build_loan_advisor_graph(llm_client, registry, tool_executor, seq_generator, tool_selector, classifier,
-                              skill_executor, skill_selector):
+                              skill_executor, skill_selector, suggestion_classifier, suggestion_cache, db_manager):
     agent = LoanAdvisorAgent(
         llm_client=llm_client,
         registry=registry,
@@ -379,7 +386,10 @@ def _build_loan_advisor_graph(llm_client, registry, tool_executor, seq_generator
         tool_selector=tool_selector,
         classifier=classifier,
         skill_executor=skill_executor,
-        skill_selector=skill_selector
+        skill_selector=skill_selector,
+        suggestion_classifier=suggestion_classifier,
+        suggestion_cache=suggestion_cache,
+        db_manager=db_manager
     )
     return agent.build_graph()
 
@@ -458,6 +468,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
     )
     lpr_cache = providers.Singleton(
         cache_factory.provided.create.call(namespace=CacheNamespace.LPR.value)
+    )
+    suggestion_cooldown_cache = providers.Singleton(
+        cache_factory.provided.create.call(namespace=CacheNamespace.SUGGESTION_COOLDOWN.value)
     )
 
     # ---------- Sequence Generator ----------
@@ -540,6 +553,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
     loan_advisor_classifier = _create_loan_advisor_classifier()
     after_loan_classifier = _create_after_loan_classifier()
     risk_assessment_classifier = _create_risk_assessment_classifier()
+    suggestion_timing_classifier = providers.Singleton(
+        _create_suggestion_timing_classifier, local_llm, config_registry
+    )
 
     # ---------- Agent Nodes ----------
     compliance_prefilter_node = providers.Singleton(
@@ -586,6 +602,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
         classifier=loan_advisor_classifier,
         skill_executor=skill_executor,
         skill_selector=skill_registry,
+        suggestion_classifier=suggestion_timing_classifier,
+        suggestion_cache=suggestion_cooldown_cache,
+        db_manager=db_manager,
     )
 
     risk_assessment_graph = providers.Singleton(

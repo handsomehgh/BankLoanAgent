@@ -20,6 +20,10 @@ class LoanInterestRepository:
             loan_type=loan_type
         ).first()
 
+    def find_by_user(self, user_id: str) -> list:
+        """查询用户名下全部意向记录（供主动邀请gate做重复登记检查）"""
+        return self._session.query(LoanInterest).filter_by(user_id=user_id).all()
+
     def find_by_application_no(self, application_no: str) -> Optional[LoanInterest]:
         """根据意向编号查询"""
         return self._session.query(LoanInterest).filter_by(

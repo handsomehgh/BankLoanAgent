@@ -110,6 +110,8 @@ class LoanAdvisorState(TypedDict):
     # handoff from decision node to reply node,see modules.agent.constants.ReplyStage
     reply_stage: Optional[str]
     reply_payload: Optional[Dict[str, Any]]
+    # written by proactive_suggestion_gate,consumed by reply node as a SYSTEM_PROMPT slot
+    proactive_hint: Optional[str]
 
 class RiskAssessmentState(TypedDict):
     agent_context: AgentContext

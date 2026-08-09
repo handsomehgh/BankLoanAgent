@@ -31,6 +31,8 @@ class AgentNodeName(str, Enum):
     RESULT_AGGREGATOR = "result_aggregator"
     FANOUT_DISPATCHER = "fanout_dispatcher"
     ENSURE_MESSAGE_INDEX = "ensure_message_index"
+    # loan_advisor only:decides whether to inject a proactive loan-intent registration hint before reply
+    PROACTIVE_SUGGESTION_GATE = "proactive_suggestion_gate"
 
 class AgentName(str, Enum):
     SUPERVISOR = "supervisor"
@@ -82,6 +84,7 @@ class StateFields(str, Enum):
     SHOULD_SKIP_SUPERVISOR = "should_skip_supervisor"
     REPLY_STAGE = "reply_stage"
     REPLY_PAYLOAD = "reply_payload"
+    PROACTIVE_HINT = "proactive_hint"
 
 class AgentContextFields(str, Enum):
     TRACE_ID = "trace_id"

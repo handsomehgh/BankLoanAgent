@@ -6,10 +6,14 @@ from typing import Dict, Any
 from langchain_core.runnables import RunnableConfig
 
 from config.registry import ConfigRegistry
+from infra.cache.cache_manager import CacheManager
+from infra.database.mysql_manager import DatabaseManager
 from modules.agent.nodes.agent_decision_node import AgentDecisionNode
 from modules.agent.nodes.agent_reply_node import AgentReplyNode
+from modules.agent.nodes.proactive_suggestion_gate import ProactiveSuggestionGate
 from modules.module_services.chat_models import RobustLLM
 from modules.module_services.classifier.loan_advisor_classifier import LoanAdvisorClassifier
+from modules.module_services.suggestion_timing_classifier import SuggestionTimingClassifier
 from modules.skills.skill_executor import SkillExecutor
 from modules.skills.skill_registry import SkillRegistry
 from modules.tools import ToolExecutor
@@ -83,3 +87,19 @@ async def loan_advisor_response_node(
 ) -> Dict[str, Any]:
     reply_node = _build_reply_node(registry, llm_client, seq_generator)
     return await reply_node.reply(state, config)
+
+
+async def loan_advisor_proactive_gate_node(
+        state: LoanAdvisorState,
+        config: RunnableConfig,
+        suggestion_classifier: SuggestionTimingClassifier,
+        suggestion_cache: CacheManager,
+        db_manager: DatabaseManager
+) -> Dict[str, Any]:
+    """gate节点：只写 proactive_hint，永不生成用户可见文本，内部任何异常都降级为不邀请"""
+    gate = ProactiveSuggestionGate(
+        classifier=suggestion_classifier,
+        cache_manager=suggestion_cache,
+        db_manager=db_manager
+    )
+    return await gate.check(state, config)

@@ -92,6 +92,7 @@ class CacheNamespace(str,Enum):
     PROFILE_SUMMARY = "profile_summary"
     RECENT_INTERACTION = "recent_interaction"
     LPR = "lpr"
+    SUGGESTION_COOLDOWN = "suggestion_cooldown"
 
 class CursorType(str,Enum):
     EXTRACTION = "extraction"
