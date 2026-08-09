@@ -11,10 +11,7 @@ import logging
 from typing import Optional, List
 
 from config.models.retrieval_config import RewriterConfig
-from config.prompts.decompose import DECOMPOSE_PROMPT
-from config.prompts.hyde_query_prompt import HYDE_QUERY_PROMPT
-from config.prompts.multi_query_prompt import MULTI_QUERY_PROMPT
-from config.prompts.stepback_query_prompt import STEPBACK_QUERY_PROMPT
+from config.prompt_hub import PromptHub
 from modules.module_services.chat_models import RobustLLM
 from modules.retrieval.knowledge_constant import RewritingStrategy
 
@@ -77,10 +74,11 @@ class DynamicStrategySelector:
 
 
 class QueryRewriter:
-    def __init__(self, config: RewriterConfig, llm_client: RobustLLM):
+    def __init__(self, config: RewriterConfig, llm_client: RobustLLM, prompt_hub: PromptHub = None):
         self.config = config
         self.selector = DynamicStrategySelector()
         self.llm = llm_client
+        self.prompt_hub = prompt_hub
         logger.info("QueryRewriter initialized with strategy=%s",
                     "dynamic" if config.enable_dynamic else config.override_strategy)
 
@@ -120,10 +118,11 @@ class QueryRewriter:
     def _multi_query(self, query: str) -> List[str]:
         logger.debug("Executing Multi-Query rewrite")
         # prompt
-        messages = MULTI_QUERY_PROMPT.invoke({
-            "num_variants": self.config.num_variants,
-            "query": query
-        }).to_messages()
+        messages = self.prompt_hub.render_messages(
+            "multi_query",
+            num_variants=self.config.num_variants,
+            query=query
+        )
 
         # invoke llm
         response = self.llm.invoke(messages)
@@ -159,7 +158,7 @@ class QueryRewriter:
 
     def _hyde(self, query: str) -> List[str]:
         logger.debug("Executing HyDE rewrite")
-        messages = HYDE_QUERY_PROMPT.invoke({"query": query}).to_messages()
+        messages = self.prompt_hub.render_messages("hyde_query", query=query)
 
         response = self.llm.invoke(messages)
 
@@ -172,7 +171,7 @@ class QueryRewriter:
 
     def _stepback(self, query: str) -> List[str]:
         logger.debug("Executing Step-back rewrite")
-        messages = STEPBACK_QUERY_PROMPT.invoke({"query": query}).to_messages()
+        messages = self.prompt_hub.render_messages("stepback_query", query=query)
 
         response = self.llm.invoke(messages)
 
@@ -185,7 +184,7 @@ class QueryRewriter:
 
     def _decompose(self, query: str) -> List[str]:
         logger.debug("Executing query decompose")
-        messages = DECOMPOSE_PROMPT.invoke({"query": query}).to_messages()
+        messages = self.prompt_hub.render_messages("decompose", query=query)
         response = self.llm.invoke(messages)
 
         # parse result

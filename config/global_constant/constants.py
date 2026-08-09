@@ -10,13 +10,13 @@ class RegistryModules(str, Enum):
     CACHE = "cache"
     DATASOURCE = "datasource"
     SUPERVISOR = "supervisor"
-    LOAN_ADVISOR = "loan_advisor"
-    RISK_ASSESSMENT = "risk_assessment"
-    AFTER_LOAN = "after_loan"
+    AGENTS = "agents"
     TOOL_REGISTRY = "tool_registry"
     BANK_GLOBAL_CONFIG = "bank_global_config"
-    DIRECT_REPLY = "direct_reply"
     AGENT_EXECUTOR = "agent_executor"
+    PROMPTS_RETRIEVAL = "prompts_retrieval"
+    PROMPTS_MEMORY = "prompts_memory"
+    PROMPTS_AGENT = "prompts_agent"
 
 class SpecialUserID(str, Enum):
     GLOBAL = "global"

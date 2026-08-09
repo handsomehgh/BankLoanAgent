@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 
 from config.global_constant.constants import MemoryType, RegistryModules, ConfigFields
+from config.prompt_hub import PromptHub
 from config.registry import ConfigRegistry
 from modules.agent.constants import StateFields
 from modules.agent.multi_agent_state import SupervisorState
@@ -23,6 +24,7 @@ class DirectReplyNode:
     def __init__(self, llm_client: RobustLLM, registry: ConfigRegistry,seq_generator: SequenceGenerator):
         self.llm_client = llm_client
         self.registry = registry
+        self.prompt_hub = PromptHub(registry)
         self.seq_generator = seq_generator
 
     async def __call__(self, state: SupervisorState, config: RunnableConfig):
@@ -51,9 +53,8 @@ class DirectReplyNode:
         recent_conversation = self._extract_recent_conversation(state)
 
         # 3. organize prompt
-        reply_config = self.registry.get_config(RegistryModules.DIRECT_REPLY.value)
-        sys_prompt = reply_config.system_prompt
-        prompt = sys_prompt.format(
+        prompt = self.prompt_hub.render_text(
+            "direct_reply_judge",
             user_query=user_query,
             user_profile=user_profile or "暂无相关信息",
             recent_conversation=recent_conversation or "暂无相关信息",

@@ -13,11 +13,9 @@ from sshtunnel import SSHTunnelForwarder
 from config.container import ApplicationContainer
 from config.settings import GlobalSettings
 from config.models.bank_global_config import BankGlobalConfig
-from config.models.agent_config import (
-    SupervisorConfig, LoanAdvisorConfig, RiskAssessmentConfig,
-    AfterLoanConfig, DirectReplyConfig, AgentExecutorConfig
-)
+from config.models.agent_config import SupervisorConfig, AgentsConfig, AgentExecutorConfig
 from config.models.memory_config import MemorySystemConfig
+from config.models.prompt_library import PromptLibrary
 from config.models.retrieval_config import RetrievalConfig
 from config.models.llm_config import LLMConfig
 from config.models.cache_config import CacheConfig
@@ -303,20 +301,20 @@ class Bootstrapper:
                                 root / "config/rules/datasource_config.yaml")
         registry.register_model(RegistryModules.SUPERVISOR.value, SupervisorConfig,
                                 root / "config/rules/supervisor.yaml")
-        registry.register_model(RegistryModules.LOAN_ADVISOR.value, LoanAdvisorConfig,
-                                root / "config/rules/loan_advisor.yaml")
-        registry.register_model(RegistryModules.RISK_ASSESSMENT.value, RiskAssessmentConfig,
-                                root / "config/rules/risk_assessment.yaml")
-        registry.register_model(RegistryModules.AFTER_LOAN.value, AfterLoanConfig,
-                                root / "config/rules/after_loan.yaml")
+        registry.register_model(RegistryModules.AGENTS.value, AgentsConfig,
+                                root / "config/rules/agents.yaml")
         registry.register_model(RegistryModules.TOOL_REGISTRY.value, ToolRegistryConfig,
                                 root / "config/rules/tool_registry.yaml")
         registry.register_model(RegistryModules.BANK_GLOBAL_CONFIG.value, BankGlobalConfig,
                                 root / "config/rules/bank_global_config.yaml")
-        registry.register_model(RegistryModules.DIRECT_REPLY.value, DirectReplyConfig,
-                                root / "config/rules/direct_reply.yaml")
         registry.register_model(RegistryModules.AGENT_EXECUTOR.value, AgentExecutorConfig,
                                 root / "config/rules/agent_executor.yaml")
+        registry.register_model(RegistryModules.PROMPTS_RETRIEVAL.value, PromptLibrary,
+                                root / "config/rules/prompts_retrieval.yaml")
+        registry.register_model(RegistryModules.PROMPTS_MEMORY.value, PromptLibrary,
+                                root / "config/rules/prompts_memory.yaml")
+        registry.register_model(RegistryModules.PROMPTS_AGENT.value, PromptLibrary,
+                                root / "config/rules/prompts_agent.yaml")
 
     def _inject_sensitive(self, registry, settings):
         llm_cfg = registry.get_config(RegistryModules.LLM.value)

@@ -9,7 +9,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, Tool
 from langchain_core.runnables import RunnableConfig
 
 from config.global_constant.constants import RegistryModules
-from config.prompts.system_prompt import SYSTEM_PROMPT
+from config.prompt_hub import PromptHub
 from config.registry import ConfigRegistry
 from exceptions.exception import ToolExecutionError, CircuitBreakerOpenError, \
     ToolExecutionException
@@ -59,11 +59,14 @@ class AgentDecisionNode:
             tool_selector: ToolSelector,
             classifier: Optional[Any] = None,
             skill_executor: Optional[SkillExecutor] = None,
-            skill_selector: Optional[SkillRegistry] = None
+            skill_selector: Optional[SkillRegistry] = None,
+            prompt_hub: Optional[PromptHub] = None
     ):
         self.agent_module = agent_module
+        self.agent_module_key = getattr(agent_module, "value", agent_module)
         self.agent_name = agent_name
         self.registry = registry
+        self.prompt_hub = prompt_hub or PromptHub(registry)
         self.llm_client = llm_client
         self.tool_executor = tool_executor
         self.tool_selector = tool_selector
@@ -84,8 +87,9 @@ class AgentDecisionNode:
         user_query = context.current_query
         trace_id = context.trace_id
 
-        # 1. read agent config
-        agent_cfg = self.registry.get_config(self.agent_module)
+        # 1. read agent config（统一 agents 配置，按 agent 键解析 override）
+        agents_cfg = self.registry.get_config(RegistryModules.AGENTS.value)
+        agent_cfg = agents_cfg.resolve(self.agent_module_key)
         context_vars = build_context_vars(context)
         messages = []
 
@@ -104,14 +108,15 @@ class AgentDecisionNode:
                 metadata_str = "\n".join([f"- {m['name']}: {m['description']}" for m in tools_metadata])
 
                 # build judge messages
-                judge_role = agent_cfg.judge_prompt.format(tools_metadata=metadata_str)
+                judge_role = self.prompt_hub.render_text(
+                    f"{self.agent_module_key}_judge", tools_metadata=metadata_str)
                 format_kwargs = {
                     **context_vars,
                     "tool_facts": "暂无",
                     "proactive_hint": "无",
                     "agent_role": judge_role
                 }
-                judge_prompt = SYSTEM_PROMPT.format(**format_kwargs)
+                judge_prompt = self.prompt_hub.render_text("system_prompt", **format_kwargs)
                 judge_messages = [SystemMessage(content=judge_prompt), HumanMessage(content=user_query)]
 
                 # call llm to judge
@@ -161,14 +166,15 @@ class AgentDecisionNode:
             selected_tools = [selected_tool] if selected_tool else full_tools
 
             # build messages
-            tool_role = agent_cfg.execute_prompt.format(tool_name=tool_name)
+            tool_role = self.prompt_hub.render_text(
+                f"{self.agent_module_key}_execute", tool_name=tool_name)
             format_kwargs = {
                 **context_vars,
                 "tool_facts": "暂无",
                 "proactive_hint": "无",
                 "agent_role": tool_role
             }
-            tool_prompt = SYSTEM_PROMPT.format(**format_kwargs)
+            tool_prompt = self.prompt_hub.render_text("system_prompt", **format_kwargs)
             tool_messages = [SystemMessage(content=tool_prompt), HumanMessage(content=user_query)]
             tool_messages.extend(messages)
 

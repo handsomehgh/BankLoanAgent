@@ -37,10 +37,7 @@ from modules.tools import ToolRegistry, ToolExecutor
 from dependency_injector import containers, providers
 
 from config.global_constant.constants import RegistryModules, CacheNamespace
-from config.prompts.detect_evidence_prompt import EVIDENCE_PROMPT
-from config.prompts.detect_sentiment_prompt import DETECT_SENTIMENT_PROMPT
-from config.prompts.extract_prompt import EXTRACT_PROMPT
-from config.prompts.summary_interaction_prompt import SUMMARY_INTERACTION_PROMPT, SUB_SUMMARY_INTERACTION_PROMPT
+from config.prompt_hub import PromptHub
 from config.registry import ConfigRegistry
 from infra.cache.cache_factory import CacheFactory
 from infra.database.milvus_client import MilvusClientManager
@@ -214,14 +211,14 @@ def _create_knowledge_engine(milvus_client, embedder, registry):
     return KnowledgeSearchEngine(milvus_client=milvus_client, embedder=embedder, config=cfg)
 
 
-def _create_query_rewriter(registry, creative_llm):
+def _create_query_rewriter(registry, creative_llm, prompt_hub):
     cfg = registry.get_config(RegistryModules.RETRIEVAL)
-    return QueryRewriter(config=cfg.rewriter, llm_client=creative_llm)
+    return QueryRewriter(config=cfg.rewriter, llm_client=creative_llm, prompt_hub=prompt_hub)
 
 
-def _create_query_filter(registry, precise_llm):
+def _create_query_filter(registry, precise_llm, prompt_hub):
     cfg = registry.get_config(RegistryModules.RETRIEVAL)
-    return QueryFilter(config=cfg.filter, llm_client=precise_llm)
+    return QueryFilter(config=cfg.filter, llm_client=precise_llm, prompt_hub=prompt_hub)
 
 
 def _create_reranker(registry):
@@ -229,14 +226,14 @@ def _create_reranker(registry):
     return Reranker(config=cfg.reranker)
 
 
-def _create_compressor(registry,llm_client):
+def _create_compressor(registry,llm_client, prompt_hub):
     cfg = registry.get_config(RegistryModules.RETRIEVAL)
-    return ContextCompressor(config=cfg.compressor,llm_client=llm_client)
+    return ContextCompressor(config=cfg.compressor,llm_client=llm_client, prompt_hub=prompt_hub)
 
 
-def _create_retrieval_complete(registry, llm_client):
+def _create_retrieval_complete(registry, llm_client, prompt_hub):
     cfg = registry.get_config(RegistryModules.RETRIEVAL)
-    return ContextComplete(cfg, llm_client)
+    return ContextComplete(cfg, llm_client, prompt_hub)
 
 
 def _create_loan_advisor_classifier():
@@ -265,54 +262,58 @@ def _create_knowledge_retriever(knowledge_engine, query_rewriter, query_filter, 
     )
 
 
-def _create_summary_generator(creative_llm, registry):
+def _create_summary_generator(creative_llm, registry, prompt_hub):
     mem_cfg = registry.get_config(RegistryModules.MEMORY_SYSTEM)
     return SummaryGenerator(
         llm_client=creative_llm,
-        prompt=SUMMARY_INTERACTION_PROMPT,
+        prompt_hub=prompt_hub,
+        prompt_name="summary_interaction",
         max_summary_length=mem_cfg.max_summary_length,
         max_interaction_length=mem_cfg.interaction_log_max_length
     )
 
 
-def _create_sub_summary_generator(creative_llm, registry):
+def _create_sub_summary_generator(creative_llm, registry, prompt_hub):
     mem_cfg = registry.get_config(RegistryModules.MEMORY_SYSTEM)
     return SummaryGenerator(
         llm_client=creative_llm,
-        prompt=SUB_SUMMARY_INTERACTION_PROMPT,
+        prompt_hub=prompt_hub,
+        prompt_name="sub_summary_interaction",
         max_summary_length=mem_cfg.max_summary_length,
         max_interaction_length=mem_cfg.interaction_log_max_length
     )
 
 
-def _create_sentiment_analyzer(precise_llm, registry):
+def _create_sentiment_analyzer(precise_llm, registry, prompt_hub):
     mem_cfg = registry.get_config(RegistryModules.MEMORY_SYSTEM)
     return SentimentAnalyzer(
         llm_client=precise_llm,
         strong_keywords=mem_cfg.sentiment_rules.strong_keywords,
-        prompt=DETECT_SENTIMENT_PROMPT
+        prompt_hub=prompt_hub,
+        prompt_name="detect_sentiment"
     )
 
 
-def _create_suggestion_timing_classifier(local_llm, registry):
-    """主动邀请时机分类器:prompt来自loan_advisor.yaml,复用local_llm不占主链路额度"""
-    cfg = registry.get_config(RegistryModules.LOAN_ADVISOR)
-    return SuggestionTimingClassifier(llm_client=local_llm, prompt_template=cfg.suggestion_gate_prompt)
+def _create_suggestion_timing_classifier(local_llm, registry, prompt_hub):
+    """主动邀请时机分类器:prompt来自提示词库,复用local_llm不占主链路额度"""
+    return SuggestionTimingClassifier(llm_client=local_llm, prompt_hub=prompt_hub)
 
 
-def _create_evidence_infer(precise_llm, registry):
+def _create_evidence_infer(precise_llm, registry, prompt_hub):
     mem_cfg = registry.get_config(RegistryModules.MEMORY_SYSTEM)
     return EvidenceTypeInfer(
         llm_client=precise_llm,
         strong_keywords=mem_cfg.evidence_rules.strong_keywords,
-        prompt=EVIDENCE_PROMPT
+        prompt_hub=prompt_hub,
+        prompt_name="detect_evidence"
     )
 
 
-def _create_profile_extractor(precise_llm, registry):
+def _create_profile_extractor(precise_llm, registry, prompt_hub):
     return ProfileExtractor(
         llm_client=precise_llm,
-        extract_prompt=EXTRACT_PROMPT
+        prompt_hub=prompt_hub,
+        prompt_name="profile_extract"
     )
 
 
@@ -438,6 +439,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
     # ---------- Config Register Center ----------
     config_registry = providers.Singleton(ConfigRegistry)
 
+    # ---------- Prompt Hub（提示词唯一访问入口） ----------
+    prompt_hub = providers.Singleton(PromptHub, config_registry)
+
     # ---------- Configuration ----------
     llm_config = providers.Callable(_get_llm_config, config_registry)
     memory_config = providers.Callable(_get_memory_config, config_registry)
@@ -501,11 +505,11 @@ class ApplicationContainer(containers.DeclarativeContainer):
     knowledge_engine = providers.Singleton(
         _create_knowledge_engine, milvus_client, local_embedder, config_registry
     )
-    query_rewriter = providers.Singleton(_create_query_rewriter, config_registry, local_creative_llm)
-    query_filter = providers.Singleton(_create_query_filter, config_registry, precise_llm)
+    query_rewriter = providers.Singleton(_create_query_rewriter, config_registry, local_creative_llm, prompt_hub)
+    query_filter = providers.Singleton(_create_query_filter, config_registry, precise_llm, prompt_hub)
     reranker = providers.Singleton(_create_reranker, config_registry)
-    compressor = providers.Singleton(_create_compressor, config_registry,local_llm)
-    context_complete = providers.Singleton(_create_retrieval_complete, config_registry, local_llm)
+    compressor = providers.Singleton(_create_compressor, config_registry,local_llm, prompt_hub)
+    context_complete = providers.Singleton(_create_retrieval_complete, config_registry, local_llm, prompt_hub)
     knowledge_retriever = providers.Singleton(
         _create_knowledge_retriever,
         knowledge_engine, query_rewriter, query_filter, reranker, compressor,
@@ -513,11 +517,11 @@ class ApplicationContainer(containers.DeclarativeContainer):
     )
 
     # ---------- Domain Services ----------
-    summary_generator = providers.Singleton(_create_summary_generator, local_llm, config_registry)
-    sub_summary_generator = providers.Singleton(_create_sub_summary_generator, local_llm, config_registry)
-    sentiment_analyzer = providers.Singleton(_create_sentiment_analyzer, local_llm, config_registry)
-    evidence_infer = providers.Singleton(_create_evidence_infer, local_llm, config_registry)
-    profile_extractor = providers.Singleton(_create_profile_extractor, precise_llm, config_registry)
+    summary_generator = providers.Singleton(_create_summary_generator, local_llm, config_registry, prompt_hub)
+    sub_summary_generator = providers.Singleton(_create_sub_summary_generator, local_llm, config_registry, prompt_hub)
+    sentiment_analyzer = providers.Singleton(_create_sentiment_analyzer, local_llm, config_registry, prompt_hub)
+    evidence_infer = providers.Singleton(_create_evidence_infer, local_llm, config_registry, prompt_hub)
+    profile_extractor = providers.Singleton(_create_profile_extractor, precise_llm, config_registry, prompt_hub)
     profile_gate = providers.Singleton(_create_profile_gate, config_registry)
     message_producer = providers.Singleton(_create_message_producer, redis_manager)
     interaction_log_consumer = providers.Singleton(
@@ -554,7 +558,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     after_loan_classifier = _create_after_loan_classifier()
     risk_assessment_classifier = _create_risk_assessment_classifier()
     suggestion_timing_classifier = providers.Singleton(
-        _create_suggestion_timing_classifier, local_llm, config_registry
+        _create_suggestion_timing_classifier, local_llm, config_registry, prompt_hub
     )
 
     # ---------- Agent Nodes ----------

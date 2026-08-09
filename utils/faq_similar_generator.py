@@ -5,14 +5,14 @@ import logging
 from typing import Dict, Optional
 
 from config.models.retrieval_config import RetrievalConfig
-from config.prompts.faq_similar_prompt import FAQ_SIMILAR_PROMPT_TEMPLATE
+from config.prompt_hub import PromptHub
 from modules.module_services.chat_models import RobustLLM
 
 logger = logging.getLogger(__name__)
 
 
 class FaqSimilarGenerator:
-    def __init__(self, config: RetrievalConfig,llm_client: RobustLLM):
+    def __init__(self, config: RetrievalConfig,llm_client: RobustLLM, prompt_hub: PromptHub = None):
         self.config = config
         multi_vector_cfg = self.config.multi_vector
         self.num_variants = multi_vector_cfg.faq_similar_config.num_variants or 3
@@ -21,6 +21,7 @@ class FaqSimilarGenerator:
         self.fallback_to_original = multi_vector_cfg.faq_similar_config.fallback_to_original or True
 
         self.llm_client = llm_client
+        self.prompt_hub = prompt_hub
 
         self._cache: Dict[str, str] = {}
 
@@ -34,7 +35,7 @@ class FaqSimilarGenerator:
             logger.debug("FAQ similar question hit cache")
             return self._cache[key]
 
-        prompt = FAQ_SIMILAR_PROMPT_TEMPLATE.format(num_variants=self.num_variants, question=question)
+        prompt = self.prompt_hub.render_text("faq_similar", num_variants=self.num_variants, question=question)
 
         try:
             response = self.llm_client.invoke(prompt)

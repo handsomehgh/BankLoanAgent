@@ -78,7 +78,7 @@ class RerankerConfig(BaseModel):
 class CompressorConfig(BaseModel):
     enabled: bool = True
     max_context_tokens: int = 1500
-    compress_top_key: int = 5
+    compress_top_k: int = 5
 
 class WeakSignalItem(BaseModel):
     words: List[str] = Field(...)

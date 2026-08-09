@@ -10,6 +10,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.constants import END
 
 from config.global_constant.constants import RegistryModules, MemoryType, ConfigFields, KnowledgeFileSourceType
+from config.prompt_hub import PromptHub
 from config.registry import ConfigRegistry
 from modules.agent.constants import StateFields, RouteTarget, AgentContextFields, AgentName, RouteDecision, \
     AgentNodeName
@@ -42,6 +43,7 @@ class SupervisorRouteNode:
     def __init__(self, registry: ConfigRegistry, llm_client: RobustLLM, knowledge_retriever: RetrievalService,
                  seq_generator: SequenceGenerator):
         self.registry = registry
+        self.prompt_hub = PromptHub(registry)
         self.llm_client = llm_client
         self.knowledge_retriever = knowledge_retriever
         self.seq_generator = seq_generator
@@ -84,8 +86,7 @@ class SupervisorRouteNode:
             user_profile: Optional[str],
             interaction_log: Optional[str]
     ) -> RouteDecision:
-        supervisor_cfg = self.registry.get_config(RegistryModules.SUPERVISOR)
-        system_prompt = supervisor_cfg.system_prompt
+        system_prompt = self.prompt_hub.get_text("supervisor_router")
 
         # build human message
         human_msg_parts = []

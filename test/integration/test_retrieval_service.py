@@ -11,6 +11,7 @@ from modules.module_services.embeddings import RobustEmbeddings
 
 import pytest
 from config.global_constant.constants import RegistryModules, MemoryType
+from config.prompt_hub import PromptHub
 from modules.retrieval.knowledge_vector_store.knowledge_search_engine import KnowledgeSearchEngine
 from modules.retrieval.query_rewriter import QueryRewriter
 from modules.retrieval.query_filter import QueryFilter
@@ -58,11 +59,12 @@ def retrieval_service():
         model=llm_config.deepseek_llm_name,
         provider=llm_config.openai_provider
     )
-    # 业务组件
-    rewriter = QueryRewriter(retrieval_config.rewriter,creative_llm)
-    query_filter = QueryFilter(retrieval_config.filter,precise_llm)
+    # 业务组件（提示词已迁入提示词库，需注入 PromptHub）
+    prompt_hub = PromptHub(registry)
+    rewriter = QueryRewriter(retrieval_config.rewriter, creative_llm, prompt_hub)
+    query_filter = QueryFilter(retrieval_config.filter, precise_llm, prompt_hub)
     reranker = Reranker(retrieval_config.reranker)
-    compressor = ContextCompressor(retrieval_config.compressor)
+    compressor = ContextCompressor(retrieval_config.compressor, precise_llm, prompt_hub)
     router = RuleBaseRetrievalRouter(retrieval_config.retrieval_routing.rule_based)
 
     service = RetrievalService(

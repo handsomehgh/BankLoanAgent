@@ -6,7 +6,7 @@ from typing import List, Dict
 from pydantic import BaseModel, Field
 
 from config.models.retrieval_config import CompressorConfig
-from config.prompts.llm_rerank_prompt import LLM_RERANK_PROMPT
+from config.prompt_hub import PromptHub
 from modules.module_services.chat_models import RobustLLM
 
 logger = logging.getLogger(__name__)
@@ -23,9 +23,10 @@ and user a cross encoder to rank and select the most appropriate content
 
 
 class ContextCompressor:
-    def __init__(self, config: CompressorConfig, llm_client: RobustLLM):
+    def __init__(self, config: CompressorConfig, llm_client: RobustLLM = None, prompt_hub: PromptHub = None):
         self.config = config
         self.llm_client = llm_client
+        self.prompt_hub = prompt_hub
 
     def compress(self, query: str, documents: List[Dict]) -> List[Dict]:
         """
@@ -47,7 +48,7 @@ class ContextCompressor:
                 text = doc['text']
                 formatted_docs.append(f"[id:{doc['id']}] {text}")
             docs_str = "\n".join(formatted_docs)
-            messages = LLM_RERANK_PROMPT.invoke({"query": query, "docs": docs_str}).to_messages()
+            messages = self.prompt_hub.render_messages("llm_rerank", query=query, docs=docs_str)
             res = self.llm_client.invoke(messages, schema=RerankResult)
             sorted_ids = res.sorted_ids if hasattr(res, 'sorted_ids') else []
             if not sorted_ids:

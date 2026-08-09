@@ -4,7 +4,7 @@
 multi_agent configuration model
 define the config structure of each specialized agent
 """
-from typing import List, Dict, Any
+from typing import Dict, Any
 
 from pydantic import BaseModel, Field
 
@@ -21,10 +21,6 @@ class RoutingRule(BaseModel):
 
 
 class SupervisorConfig(BaseModel):
-    system_prompt: str = Field(
-        default="",
-        description="Supervisor 系统提示词，包含路由规则和各Agent能力描述"
-    )
     enable_compliance_llm_fallback: bool = Field(
         default=True,
         description="是否启用合规 LLM 二审（当正则无命中时）"
@@ -37,43 +33,29 @@ class SupervisorConfig(BaseModel):
     directed_retrieval_max_length: int = Field(800, description="定向检索结果的最大字符数")
 
 
-class DirectReplyConfig(BaseModel):
-    fall_back_res: str = Field(..., description="降级回复")
-    system_prompt: str = Field(
-        default="",
-        description="Direct reply 系统提示词"
-    )
-
-
 class AgentConfig(BaseModel):
-    system_prompt: str = Field(default="", description="Agent 系统提示词")
-    judge_prompt: str = Field(default="", description="工具选择提示词")
-    execute_prompt: str
-    res_prompt: str
-    direct_prompt: str
-    clarify_prompt: str
-    param_error_prompt: str
-
-    use_bert_classifier: bool
-
-
-class LoanAdvisorConfig(AgentConfig):
-    """贷款咨询 Agent 配置"""
+    """worker agent 行为配置；所有提示词已迁移至 prompts_agent.yaml 提示词库"""
+    use_bert_classifier: bool = Field(default=False, description="工具选择是否走 BERT 分类器")
     tool_exposure: str = Field(default="skills", description="工具选择策略")
-    suggestion_gate_prompt: str = Field(
-        default="",
-        description="主动邀请登记意向的时机判断提示词（proactive_suggestion_gate 专用）"
+
+
+class AgentsConfig(BaseModel):
+    """全部 worker agent 的统一配置：default 全局默认 + overrides 按 agent 名差异化覆盖"""
+    default: AgentConfig = Field(default_factory=AgentConfig)
+    overrides: Dict[str, AgentConfig] = Field(
+        default_factory=dict,
+        description="按 agent 模块键（loan_advisor/risk_assessment/after_loan）覆盖默认值"
     )
 
+    def resolve(self, agent_key: str) -> AgentConfig:
+        """override 优先，缺省回落 default；override 只覆盖其显式声明的字段"""
+        override = self.overrides.get(agent_key)
+        if not override:
+            return self.default
+        merged = self.default.model_dump()
+        merged.update(override.model_dump(exclude_unset=True))
+        return AgentConfig(**merged)
 
-class RiskAssessmentConfig(AgentConfig):
-    """风险评估 Agent 配置"""
-    tool_exposure: str = Field(default="skills", description="工具选择策略")
-
-
-class AfterLoanConfig(AgentConfig):
-    """贷后管理 Agent 配置"""
-    tool_exposure: str = Field(default="skills", description="工具选择策略")
 
 class CircuitBreakerConfig(BaseModel):
     enabled: bool = True

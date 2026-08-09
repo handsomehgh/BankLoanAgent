@@ -10,6 +10,7 @@ from pymilvus import (
 
 from config.global_constant.constants import RegistryModules, MemoryType, KnowledgeFileSourceType
 from config.global_constant.fields import CommonFields
+from config.prompt_hub import PromptHub
 from config.registry import ConfigRegistry
 from infra.database.collections_type import CollectionNames
 from infra.database.milvus_client import MilvusClientManager
@@ -48,7 +49,7 @@ class RAGIndexer:
         self.faq_similar_generator = None
         if multi_cfg.enable and multi_cfg.faq_similar_vector:
             faq_config = getattr(multi_cfg.faq_similar_config, 'faq_similar_config', {})
-            self.faq_similar_generator = FaqSimilarGenerator(faq_config,llm_client)
+            self.faq_similar_generator = FaqSimilarGenerator(faq_config,llm_client, PromptHub(registry))
             logger.info("FAQ Similar Question Generator is enabled")
 
     def load_chunks(self) -> List[Dict[str, Any]]:

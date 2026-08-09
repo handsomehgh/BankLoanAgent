@@ -1,0 +1,11 @@
+{"query": "帮我全面评估一下我的贷款风险", "expected": "risk_assessment_skill"}
+{"query": "我月入2万，每月还贷6000，负债率高吗？", "expected": "calculate_dti"}
+{"query": "房子值300万，我想贷240万，抵押率会不会超标？", "expected": "calculate_ltv"}
+{"query": "我的商铺年租金收入20万，贷款150万，偿债覆盖率够吗？", "expected": "calculate_dscr"}
+{"query": "帮我估一下我的信用评分大概在什么水平", "expected": "estimate_credit_score"}
+{"query": "监管对二套房首付比例有什么最新规定？", "expected": "query_regulation"}
+{"query": "什么是贷款拨备覆盖率？", "expected": "general_search_knowledge"}
+{"query": "我好担心贷款批不下来", "expected": "DIRECT_REPLY"}
+{"query": "嗯，明白了", "expected": "DIRECT_REPLY"}
+{"query": "这个……我也不太清楚我想问什么", "expected": "CLARIFY"}
+{"query": "1万5", "expected": "calculate_dti", "recent_conversation": "助手: 好的，我来帮您测算负债率，请问您的月收入大概是多少？\n用户: 我想看下我的DTI达不达标\n助手: 请问您的月收入是多少呢？"}

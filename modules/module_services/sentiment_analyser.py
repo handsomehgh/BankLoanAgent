@@ -4,9 +4,8 @@ import hashlib
 import logging
 from typing import Dict, List
 
-from langchain_core.prompts import ChatPromptTemplate
-
 from config.global_constant.fields import CommonFields
+from config.prompt_hub import PromptHub
 from modules.memory.memory_constant.constants import InteractionSentiment
 from modules.module_services.chat_models import RobustLLM
 
@@ -19,17 +18,20 @@ class SentimentAnalyzer:
             self,
             llm_client: RobustLLM,
             strong_keywords: Dict[str, List[str]],
-            prompt: ChatPromptTemplate
+            prompt_hub: PromptHub,
+            prompt_name: str = "detect_sentiment"
     ):
         """
         Args:
             llm_client: Low-temperature LLM client (precise inference)
             strong_keywords: Emotional keyword configuration (from memory_config.sentiment_rules.strong_keywords)
-            prompt: prompt
+            prompt_hub: 提示词统一入口
+            prompt_name: 提示词库条目名
         """
         self.llm_client = llm_client
         self.strong_keywords = strong_keywords
-        self.prompt = prompt
+        self.prompt_hub = prompt_hub
+        self.prompt_name = prompt_name
         self._cache: Dict[str, str] = {}
 
     def analyze(self, text: str) -> str:
@@ -57,7 +59,7 @@ class SentimentAnalyzer:
                     return sentiment
 
             # invoke llm
-            messages = self.prompt.invoke({CommonFields.TEXT: text_lower[:500]}).to_messages()
+            messages = self.prompt_hub.render_messages(self.prompt_name, **{CommonFields.TEXT: text_lower[:500]})
             response = self.llm_client.invoke(messages).content.strip().lower()
             logger.info(f"LLM classified sentiment: {response}")
 

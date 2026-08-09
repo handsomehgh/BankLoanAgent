@@ -12,6 +12,7 @@ from typing import Dict, Any, Set
 
 from langchain_core.messages import SystemMessage, HumanMessage
 
+from config.prompt_hub import PromptHub
 from modules.module_services.chat_models import RobustLLM
 
 logger = logging.getLogger(__name__)
@@ -24,14 +25,17 @@ _JSON_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
 class SuggestionTimingClassifier:
     """loan-intent suggestion timing classifier,backed by a low-temperature local LLM"""
 
-    def __init__(self, llm_client: RobustLLM, prompt_template: str):
+    def __init__(self, llm_client: RobustLLM, prompt_hub: PromptHub,
+                 prompt_name: str = "loan_advisor_suggestion_gate"):
         """
         Args:
             llm_client: local LLM client (precise inference,does not consume the main-link quota)
-            prompt_template: suggestion_gate_prompt from loan_advisor.yaml
+            prompt_hub: 提示词统一入口
+            prompt_name: 提示词库条目名（原 loan_advisor.yaml 的 suggestion_gate_prompt）
         """
         self.llm_client = llm_client
-        self.prompt_template = prompt_template
+        self.prompt_hub = prompt_hub
+        self.prompt_name = prompt_name
 
     async def judge(
             self,
@@ -47,7 +51,8 @@ class SuggestionTimingClassifier:
             any failure degrades to a conservative negative result
         """
         try:
-            prompt = self.prompt_template.format(
+            prompt = self.prompt_hub.render_text(
+                self.prompt_name,
                 recent_conversation=recent_conversation or "无",
                 conversation_summary=conversation_summary or "无",
                 user_profile=user_profile or "无",

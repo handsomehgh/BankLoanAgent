@@ -9,7 +9,7 @@ import logging
 from typing import Optional
 
 from config.models.retrieval_config import FilterConfig
-from config.prompts.extract_filter_prompt import EXTRACT_FILTER_PROMPT
+from config.prompt_hub import PromptHub
 from modules.module_services.chat_models import RobustLLM
 from utils.query_utils.milvus_query_builder import MilvusQueryBuilder
 from utils.query_utils.query_model import Condition, Query
@@ -18,9 +18,10 @@ logger = logging.getLogger(__name__)
 
 
 class QueryFilter:
-    def __init__(self, config: FilterConfig,llm_client: RobustLLM):
+    def __init__(self, config: FilterConfig,llm_client: RobustLLM, prompt_hub: PromptHub = None):
         self.config = config
         self.llm = llm_client
+        self.prompt_hub = prompt_hub
         logger.info("QueryFilter initialized, enabled=%s", self.config.enabled)
 
     def extract(self,query: str) -> Optional[str]:
@@ -30,7 +31,7 @@ class QueryFilter:
 
         logger.debug("Extracting filter expression for query: '%s...'", query[:60])
         try:
-            messages = EXTRACT_FILTER_PROMPT.invoke({"query": query}).to_messages()
+            messages = self.prompt_hub.render_messages("query_filter", query=query)
             response = self.llm.invoke(messages)
             logger.debug("LLM filter extraction response: %s", response.content[:100])
             raw = response.content.strip()

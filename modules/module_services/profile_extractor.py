@@ -4,9 +4,9 @@ import logging
 import time
 
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 
+from config.prompt_hub import PromptHub
 from modules.module_services.chat_models import RobustLLM
 from utils.monitor_utils.metrics import record_llm_metrics
 
@@ -18,17 +18,19 @@ class ProfileExtractor:
     def __init__(
         self,
         llm_client: RobustLLM,
-        extract_prompt: ChatPromptTemplate
+        prompt_hub: PromptHub,
+        prompt_name: str = "profile_extract"
     ):
         """
         Args:
             llm_client: Low-temperature LLM client (precise extraction)
-            extract_prompt: Prompt Template for Image Extraction
+            prompt_hub: 提示词统一入口，渲染时实时取库（支持热更新）
+            prompt_name: 提示词库条目名（画像抽取模板）
         """
         self.llm_client = llm_client
-        self.extract_prompt = extract_prompt
+        self.prompt_hub = prompt_hub
+        self.prompt_name = prompt_name
         self._latest_token_usage = 0
-        self.chain = extract_prompt | llm_client.llm | RunnableLambda(self._capture_token_usage) | StrOutputParser()
 
     def extract(
         self,
@@ -50,7 +52,12 @@ class ProfileExtractor:
 
         try:
             total_start = time.monotonic()
-            extract_str = self.chain.invoke({
+            # 每次调用实时从提示词库取模板重建chain，保证热更新生效
+            chain = (self.prompt_hub.as_chat_template(self.prompt_name)
+                     | self.llm_client.llm
+                     | RunnableLambda(self._capture_token_usage)
+                     | StrOutputParser())
+            extract_str = chain.invoke({
                 "conversation": conversation,
                 "known_profile": known_profile
             })

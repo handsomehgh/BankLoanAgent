@@ -8,7 +8,7 @@ from pathlib import Path
 import requests
 
 from config.models.retrieval_config import RetrievalConfig
-from config.prompts.context_rewrite_prompt import CONTEXT_REWRITE_PROMPT
+from config.prompt_hub import PromptHub
 from modules.module_services.chat_models import RobustLLM
 
 logger = logging.getLogger(__name__)
@@ -16,9 +16,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class ContextComplete:
-    def __init__(self, config: RetrievalConfig, llm_client: RobustLLM):
+    def __init__(self, config: RetrievalConfig, llm_client: RobustLLM, prompt_hub: PromptHub = None):
         self.api_url = config.context_complete_uri
         self.llm = llm_client
+        self.prompt_hub = prompt_hub
 
     def complete(self, query: str, context: str) -> str:
         try:
@@ -45,7 +46,8 @@ class ContextComplete:
                 return query
 
             logger.debug("Context-aware completion with summary: %.50s...", context)
-            messages = CONTEXT_REWRITE_PROMPT.invoke({"last_summary": context, "query": query}).to_messages()
+            messages = self.prompt_hub.render_messages(
+                "context_rewrite", last_summary=context, query=query)
             rewritten = self.llm.invoke(messages).content.strip()
             logger.info(f"RAG Context-aware complete: '{query}' -> '{rewritten[:50]}'")
             if rewritten and len(rewritten) > 0:

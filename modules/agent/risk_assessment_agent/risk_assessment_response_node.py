@@ -5,7 +5,6 @@ from typing import Dict, Any
 
 from langchain_core.runnables import RunnableConfig
 
-from config.global_constant.constants import RegistryModules
 from config.registry import ConfigRegistry
 from modules.agent.constants import StateFields, AgentName
 from modules.agent.multi_agent_state import RiskAssessmentState
@@ -32,7 +31,7 @@ def _build_decision_node(
         skill_selector: SkillRegistry
 ) -> AgentDecisionNode:
     return AgentDecisionNode(
-        agent_module=RegistryModules.RISK_ASSESSMENT,
+        agent_module="risk_assessment",
         agent_name=AgentName.RISK_ASSESSMENT.value,
         registry=registry,
         llm_client=llm_client,
@@ -50,7 +49,7 @@ def _build_reply_node(
         seq_generator: SequenceGenerator
 ) -> AgentReplyNode:
     return AgentReplyNode(
-        agent_module=RegistryModules.RISK_ASSESSMENT,
+        agent_module="risk_assessment",
         agent_name=AgentName.RISK_ASSESSMENT.value,
         registry=registry,
         llm_client=llm_client,

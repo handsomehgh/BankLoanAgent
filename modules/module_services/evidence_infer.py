@@ -5,8 +5,7 @@ import logging
 import time
 from typing import List, Dict
 
-from langchain_core.prompts import ChatPromptTemplate
-
+from config.prompt_hub import PromptHub
 from modules.memory.memory_constant.constants import EvidenceType
 from modules.module_services.chat_models import RobustLLM
 from utils.monitor_utils.metrics import record_llm_metrics
@@ -21,16 +20,20 @@ class EvidenceTypeInfer:
             self,
             llm_client: RobustLLM,
             strong_keywords: Dict[str, List[str]],
-            prompt: ChatPromptTemplate
+            prompt_hub: PromptHub,
+            prompt_name: str = "detect_evidence"
     ):
         """
         Args:
             llm_client: Low-temperature LLM client (for precise classification)
             strong_keywords: Evidence Type Keyword Mapping (from memory_config.evidence_rules.strong_keywords)
+            prompt_hub: 提示词统一入口
+            prompt_name: 提示词库条目名
         """
         self.llm_client = llm_client
         self.strong_keywords = strong_keywords
-        self.prompt = prompt
+        self.prompt_hub = prompt_hub
+        self.prompt_name = prompt_name
         self._cache: Dict[str, str] = {}
 
     def infer(self, content: str, user_messages: List[str]) -> str:
@@ -52,7 +55,7 @@ class EvidenceTypeInfer:
         # 3. LLM judge
         conversation = "\n".join(user_messages[-3:])
         valid_types = [e.value for e in EvidenceType]
-        messages = self.prompt.invoke({"conversation": conversation}).to_messages()
+        messages = self.prompt_hub.render_messages(self.prompt_name, conversation=conversation)
 
         try:
             total_start = time.monotonic()

@@ -20,7 +20,7 @@ from config.global_constant.constants import ComplianceAction, ComplianceSeverit
 from config.global_constant.fields import CommonFields
 from config.models.agent_config import SupervisorConfig
 from config.models.memory_config import MemorySystemConfig
-from config.prompts.compliance_fallback_prompt import COMPLIANCE_FALLBACK_PROMPT
+from config.prompt_hub import PromptHub
 from config.registry import ConfigRegistry
 from modules.agent.constants import StateFields
 from modules.agent.multi_agent_state import SupervisorState
@@ -47,6 +47,7 @@ class CompliancePrefilter:
         self.memory_store = memory_store
         self.memory_config = memory_config
         self.supervisor_config = registry.get_config(RegistryModules.SUPERVISOR.value)
+        self.prompt_hub = PromptHub(registry) if registry is not None else None
         self.llm_client = llm_client
         self.seq_generator = seq_generator
 
@@ -199,7 +200,7 @@ class CompliancePrefilter:
         if not hit_rules and enable_fallback and llm_client is not None:
             logger.debug("No match in regex, triggering LLM compliance secondary review")
             try:
-                messages = COMPLIANCE_FALLBACK_PROMPT.invoke({"user_query": user_query[:800]}).to_messages()
+                messages = self.prompt_hub.render_messages("compliance_fallback", user_query=user_query[:800])
                 response = await llm_client.ainvoke(messages)
                 decision = response.content.strip().upper()
                 logger.info("LLM compliance secondary result: %s", decision)

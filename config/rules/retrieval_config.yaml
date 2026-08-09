@@ -73,7 +73,7 @@ reranker:
 compressor:
   enabled: true
   max_context_tokens: 1000
-  compress_top_key: 5
+  compress_top_k: 5
 
 # -------------- structure query ------------
 filter:

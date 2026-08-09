@@ -1,0 +1,9 @@
+# 全部 worker agent（贷款咨询/风险评估/贷后管理）的统一行为配置
+# 提示词已迁移至 prompts_agent.yaml，本文件只保留行为开关
+default:
+  tool_exposure: hybrid
+  use_bert_classifier: false
+
+# 按 agent 模块键差异化覆盖（loan_advisor / risk_assessment / after_loan），
+# 只需写要覆盖的字段，其余继承 default。当前三者行为一致，无需覆盖
+overrides: {}

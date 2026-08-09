@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 
-from config.prompts.system_prompt import SYSTEM_PROMPT
+from config.prompt_hub import PromptHub
 from config.registry import ConfigRegistry
 from modules.agent.constants import StateFields, ReplyStage
 from modules.agent.multi_agent_state import AgentContext, AgentResponse
@@ -31,11 +31,14 @@ class AgentReplyNode:
             registry: ConfigRegistry,
             llm_client: RobustLLM,
             seq_generator: SequenceGenerator,
-            post_process: Optional[callable] = None
+            post_process: Optional[callable] = None,
+            prompt_hub: Optional[PromptHub] = None
     ):
         self.agent_module = agent_module
+        self.agent_module_key = getattr(agent_module, "value", agent_module)
         self.agent_name = agent_name
         self.registry = registry
+        self.prompt_hub = prompt_hub or PromptHub(registry)
         self.llm_client = llm_client
         self.seq_generator = seq_generator
         self.post_process = post_process
@@ -44,7 +47,7 @@ class AgentReplyNode:
                                fallback: str, stage: str, tool_choice: str = "none") -> str:
         """reply()专用：拼prompt→调LLM→异常兜底,把原来clarify/direct/param_error/final四处重复逻辑抽成一处"""
         format_kwargs = {"tool_facts": "暂无", "proactive_hint": "无", **extra_vars, "agent_role": agent_role}
-        prompt = SYSTEM_PROMPT.format(**format_kwargs)
+        prompt = self.prompt_hub.render_text("system_prompt", **format_kwargs)
         messages = [SystemMessage(content=prompt), HumanMessage(content=user_query)]
         try:
             total_start = time.monotonic()
@@ -71,7 +74,6 @@ class AgentReplyNode:
 
         stage = state.get(StateFields.REPLY_STAGE.value)
         payload = state.get(StateFields.REPLY_PAYLOAD.value) or {}
-        agent_cfg = self.registry.get_config(self.agent_module)
         context_vars = build_context_vars(context)
         # written by proactive_suggestion_gate(loan_advisor only),other agents always get "无"
         proactive_hint = state.get(StateFields.PROACTIVE_HINT.value) or "无"
@@ -81,20 +83,21 @@ class AgentReplyNode:
             content = payload["text"]
         elif stage == ReplyStage.CLARIFY.value:
             content = await self._gen_with_prompt(
-                agent_cfg.clarify_prompt, user_query, context_vars,
+                self.prompt_hub.get_text(f"{self.agent_module_key}_clarify"), user_query, context_vars,
                 fallback="抱歉，我没太理解您的需求，可以再具体描述一下吗？", stage="clarify")
         elif stage == ReplyStage.DIRECT.value:
             content = await self._gen_with_prompt(
-                agent_cfg.direct_prompt, user_query, context_vars,
+                self.prompt_hub.get_text(f"{self.agent_module_key}_direct"), user_query, context_vars,
                 fallback="抱歉，我暂时无法处理您的问题，请稍后再试。", stage="direct")
         elif stage == ReplyStage.PARAM_ERROR.value:
-            param_error_role = agent_cfg.param_error_prompt.format(error_msg=payload["error_msg"])
+            param_error_role = self.prompt_hub.render_text(
+                f"{self.agent_module_key}_param_error", error_msg=payload["error_msg"])
             content = await self._gen_with_prompt(
                 param_error_role, user_query, {**context_vars, "tool_facts": payload["tool_facts_text"]},
                 fallback=f"抱歉，参数似乎有误：{payload['error_msg']}，请您重新提供正确的信息。", stage="param_error")
         elif stage == ReplyStage.FINAL.value:
             content = await self._gen_with_prompt(
-                agent_cfg.res_prompt, user_query,
+                self.prompt_hub.get_text(f"{self.agent_module_key}_res"), user_query,
                 {**context_vars, "tool_facts": payload["tool_facts_text"], "proactive_hint": proactive_hint},
                 fallback="抱歉，我暂时无法生成回复，请稍后再试。", stage="final")
         else:
