@@ -63,7 +63,6 @@ class LoanAdvisorAgent:
                            llm_client=self.llm_client,
                            registry=self.registry,
                            tool_executor=self.tool_executor,
-                           seq_generator=self.seq_generator,
                            tool_selector=self.tool_selector,
                            classifier=self.classifier,
                            skill_executor=self.skill_executor,
@@ -75,12 +74,7 @@ class LoanAdvisorAgent:
                            loan_advisor_response_node,
                            llm_client=self.llm_client,
                            registry=self.registry,
-                           tool_executor=self.tool_executor,
-                           seq_generator=self.seq_generator,
-                           tool_selector=self.tool_selector,
-                           classifier=self.classifier,
-                           skill_executor=self.skill_executor,
-                           skill_selector=self.skill_selector
+                           seq_generator=self.seq_generator
                        )
         )
         graph.add_edge(AgentNodeName.LOAN_ADVISOR_DECISION.value, AgentNodeName.LOAN_ADVISOR_RESPONSE.value)

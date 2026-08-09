@@ -9,7 +9,8 @@ from config.global_constant.constants import RegistryModules
 from config.registry import ConfigRegistry
 from modules.agent.constants import StateFields, AgentName
 from modules.agent.multi_agent_state import RiskAssessmentState
-from modules.agent.nodes.agent_node_executor import AgentNodeExecutor
+from modules.agent.nodes.agent_decision_node import AgentDecisionNode
+from modules.agent.nodes.agent_reply_node import AgentReplyNode
 from modules.module_services.chat_models import RobustLLM
 from modules.module_services.classifier.risk_assessment_classifier import RiskAssessmentClassifier
 from modules.skills.skill_executor import SkillExecutor
@@ -21,28 +22,40 @@ from utils.serialize_utils.seq_generator import SequenceGenerator
 logger = logging.getLogger(__name__)
 
 
-def _build_executor(
+def _build_decision_node(
         registry: ConfigRegistry,
         llm_client: RobustLLM,
         tool_executor: ToolExecutor,
-        seq_generator: SequenceGenerator,
         tool_selector: ToolSelector,
         classifier: RiskAssessmentClassifier,
         skill_executor: SkillExecutor,
         skill_selector: SkillRegistry
-) -> AgentNodeExecutor:
-    return AgentNodeExecutor(
+) -> AgentDecisionNode:
+    return AgentDecisionNode(
         agent_module=RegistryModules.RISK_ASSESSMENT,
         agent_name=AgentName.RISK_ASSESSMENT.value,
         registry=registry,
         llm_client=llm_client,
         tool_executor=tool_executor,
-        seq_generator=seq_generator,
         tool_selector=tool_selector,
-        post_process=_risk_post_process,
         classifier=classifier,
         skill_executor=skill_executor,
         skill_selector=skill_selector
+    )
+
+
+def _build_reply_node(
+        registry: ConfigRegistry,
+        llm_client: RobustLLM,
+        seq_generator: SequenceGenerator
+) -> AgentReplyNode:
+    return AgentReplyNode(
+        agent_module=RegistryModules.RISK_ASSESSMENT,
+        agent_name=AgentName.RISK_ASSESSMENT.value,
+        registry=registry,
+        llm_client=llm_client,
+        seq_generator=seq_generator,
+        post_process=_risk_post_process
     )
 
 
@@ -52,15 +65,14 @@ async def risk_assessment_decision_node(
         registry: ConfigRegistry,
         llm_client: RobustLLM,
         tool_executor: ToolExecutor,
-        seq_generator: SequenceGenerator,
         tool_selector: ToolSelector,
         classifier: RiskAssessmentClassifier,
         skill_executor: SkillExecutor,
         skill_selector: SkillRegistry
 ) -> Dict[str, Any]:
-    executor = _build_executor(registry, llm_client, tool_executor, seq_generator, tool_selector,
-                                classifier, skill_executor, skill_selector)
-    return await executor.decide(state, config)
+    decision_node = _build_decision_node(registry, llm_client, tool_executor, tool_selector,
+                                         classifier, skill_executor, skill_selector)
+    return await decision_node.decide(state, config)
 
 
 async def risk_assessment_response_node(
@@ -68,16 +80,10 @@ async def risk_assessment_response_node(
         config: RunnableConfig,
         registry: ConfigRegistry,
         llm_client: RobustLLM,
-        tool_executor: ToolExecutor,
-        seq_generator: SequenceGenerator,
-        tool_selector: ToolSelector,
-        classifier: RiskAssessmentClassifier,
-        skill_executor: SkillExecutor,
-        skill_selector: SkillRegistry
+        seq_generator: SequenceGenerator
 ) -> Dict[str, Any]:
-    executor = _build_executor(registry, llm_client, tool_executor, seq_generator, tool_selector,
-                                classifier, skill_executor, skill_selector)
-    return await executor.reply(state, config)
+    reply_node = _build_reply_node(registry, llm_client, seq_generator)
+    return await reply_node.reply(state, config)
 
 
 def _detect_severe_risk(query: str, profile: str) -> bool:

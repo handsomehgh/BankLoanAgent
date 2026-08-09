@@ -48,7 +48,6 @@ class RiskAssessmentAgent:
                                registry=self.registry,
                                llm_client=self.llm_client,
                                tool_executor=self.tool_executor,
-                               seq_generator=self.seq_generator,
                                tool_selector=self.tool_selector,
                                classifier=self.classifier,
                                skill_executor=self.skill_executor,
@@ -57,12 +56,7 @@ class RiskAssessmentAgent:
                        partial(risk_assessment_response_node,
                                registry=self.registry,
                                llm_client=self.llm_client,
-                               tool_executor=self.tool_executor,
-                               seq_generator=self.seq_generator,
-                               tool_selector=self.tool_selector,
-                               classifier=self.classifier,
-                               skill_executor=self.skill_executor,
-                               skill_selector=self.skill_selector))
+                               seq_generator=self.seq_generator))
 
         graph.add_edge(AgentNodeName.RISK_ASSESSMENT_DECISION.value, AgentNodeName.RISK_ASSESSMENT_RESPONSE.value)
         graph.set_entry_point(AgentNodeName.RISK_ASSESSMENT_DECISION.value)

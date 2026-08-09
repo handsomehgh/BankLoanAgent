@@ -49,7 +49,6 @@ class AfterLoanAgent:
                     registry=self.registry,
                     llm_client=self.llm_client,
                     tool_executor=self.tool_executor,
-                    seq_generator=self.seq_generator,
                     tool_selector=self.tool_selector,
                     classifier=self.classifier,
                     skill_executor=self.skill_executor,
@@ -60,12 +59,7 @@ class AfterLoanAgent:
             partial(after_loan_response_node,
                     registry=self.registry,
                     llm_client=self.llm_client,
-                    tool_executor=self.tool_executor,
-                    seq_generator=self.seq_generator,
-                    tool_selector=self.tool_selector,
-                    classifier=self.classifier,
-                    skill_executor=self.skill_executor,
-                    skill_selector=self.skill_selector
+                    seq_generator=self.seq_generator
                     ))
 
         graph.add_edge(AgentNodeName.AFTER_LOAN_DECISION.value, AgentNodeName.AFTER_LOAN_RESPONSE.value)
