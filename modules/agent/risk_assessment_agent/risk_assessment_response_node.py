@@ -21,9 +21,7 @@ from utils.serialize_utils.seq_generator import SequenceGenerator
 logger = logging.getLogger(__name__)
 
 
-async def risk_assessment_response_node(
-        state: RiskAssessmentState,
-        config: RunnableConfig,
+def _build_executor(
         registry: ConfigRegistry,
         llm_client: RobustLLM,
         tool_executor: ToolExecutor,
@@ -32,8 +30,8 @@ async def risk_assessment_response_node(
         classifier: RiskAssessmentClassifier,
         skill_executor: SkillExecutor,
         skill_selector: SkillRegistry
-) -> Dict[str, Any]:
-    executor = AgentNodeExecutor(
+) -> AgentNodeExecutor:
+    return AgentNodeExecutor(
         agent_module=RegistryModules.RISK_ASSESSMENT,
         agent_name=AgentName.RISK_ASSESSMENT.value,
         registry=registry,
@@ -46,7 +44,40 @@ async def risk_assessment_response_node(
         skill_executor=skill_executor,
         skill_selector=skill_selector
     )
-    return await executor.execute(state, config)
+
+
+async def risk_assessment_decision_node(
+        state: RiskAssessmentState,
+        config: RunnableConfig,
+        registry: ConfigRegistry,
+        llm_client: RobustLLM,
+        tool_executor: ToolExecutor,
+        seq_generator: SequenceGenerator,
+        tool_selector: ToolSelector,
+        classifier: RiskAssessmentClassifier,
+        skill_executor: SkillExecutor,
+        skill_selector: SkillRegistry
+) -> Dict[str, Any]:
+    executor = _build_executor(registry, llm_client, tool_executor, seq_generator, tool_selector,
+                                classifier, skill_executor, skill_selector)
+    return await executor.decide(state, config)
+
+
+async def risk_assessment_response_node(
+        state: RiskAssessmentState,
+        config: RunnableConfig,
+        registry: ConfigRegistry,
+        llm_client: RobustLLM,
+        tool_executor: ToolExecutor,
+        seq_generator: SequenceGenerator,
+        tool_selector: ToolSelector,
+        classifier: RiskAssessmentClassifier,
+        skill_executor: SkillExecutor,
+        skill_selector: SkillRegistry
+) -> Dict[str, Any]:
+    executor = _build_executor(registry, llm_client, tool_executor, seq_generator, tool_selector,
+                                classifier, skill_executor, skill_selector)
+    return await executor.reply(state, config)
 
 
 def _detect_severe_risk(query: str, profile: str) -> bool:

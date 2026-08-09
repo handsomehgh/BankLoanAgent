@@ -14,7 +14,7 @@ from config.registry import ConfigRegistry
 from exceptions.exception import ToolExecutionError, CircuitBreakerOpenError, \
     ToolExecutionException
 from infra.circuit_breaker import CircuitBreaker
-from modules.agent.constants import StateFields
+from modules.agent.constants import StateFields, ReplyStage
 from modules.agent.multi_agent_state import AgentContext, AgentResponse
 from modules.memory.memory_utils.base_memory_utils import format_messages
 from modules.module_services.chat_models import RobustLLM
@@ -74,18 +74,8 @@ class AgentNodeExecutor:
 
         self._circuit_breakers: Dict[str, CircuitBreaker] = {}
 
-    async def execute(self, state: Dict[str, Any], config: RunnableConfig) -> Dict[str, Any]:
-        context: AgentContext = state.get(StateFields.AGENT_CONTEXT.value)
-        user_query = context.current_query
-        trace_id = context.trace_id
-        user_id = context.user_id
-        session_id = context.session_id
-
-        # 1. read agent config
-        agent_cfg = self.registry.get_config(self.agent_module)
-
-        # 2. build prompt
-        context_vars = {
+    def _build_context_vars(self, context: AgentContext) -> Dict[str, Any]:
+        return {
             "user_profile": context.user_profile_summary or "暂无相关信息",
             "compliance_rule": context.compliance_warnings or "暂无相关信息",
             "interaction_log": context.conversation_summary or "暂无相关信息",
@@ -93,9 +83,28 @@ class AgentNodeExecutor:
             "tool_conversation": context.sub_conversation or "暂无相关信息",
             "recent_conversation": context.recent_conversation or "暂无相关信息",
         }
+
+    @staticmethod
+    def _route_to(stage: ReplyStage, payload: Dict[str, Any], **extra) -> Dict[str, Any]:
+        """decide()统一走这个函数把交接信息写进state,交给reply()消费"""
+        return {
+            StateFields.REPLY_STAGE.value: stage.value,
+            StateFields.REPLY_PAYLOAD.value: payload,
+            **extra,
+        }
+
+    async def decide(self, state: Dict[str, Any], config: RunnableConfig) -> Dict[str, Any]:
+        """决策节点：意图分类+参数提取+工具调用,永不生成用户可见文本,只把结果路由给reply()"""
+        context: AgentContext = state.get(StateFields.AGENT_CONTEXT.value)
+        user_query = context.current_query
+        trace_id = context.trace_id
+
+        # 1. read agent config
+        agent_cfg = self.registry.get_config(self.agent_module)
+        context_vars = self._build_context_vars(context)
         messages = []
 
-        # 3. round 1: LLM chooses the tool name
+        # 2. round 1: LLM chooses the tool name
         stage = "judge"
         try:
             if agent_cfg.use_bert_classifier:
@@ -146,80 +155,18 @@ class AgentNodeExecutor:
                 agent_name=self.agent_name, stage=stage, error_type=type(e).__name__
             ).inc()
             logger.exception("[%s] First round LLM failed: %s", self.agent_name, e)
-            error_response = AIMessage(content="抱歉，我暂时无法处理您的问题，请稍后再试。")
-            assign_message_index(error_response, user_id, session_id, self.seq_generator)
-            return self._final_response(error_response, messages, context)
+            return self._route_to(ReplyStage.CANNED_FALLBACK, {"text": "抱歉，我暂时无法处理您的问题，请稍后再试。"})
 
-        # 4. the agent cannot directly respond by selecting a tool based on the user's request.
+        # 3. the agent cannot directly respond by selecting a tool based on the user's request.
         if tool_name.upper() == "CLARIFY":
-            stage = "clarify"
-            try:
-                # build clarify messages
-                format_kwargs = {
-                    **context_vars,
-                    "tool_facts": "暂无",
-                    "agent_role": agent_cfg.clarify_prompt
-                }
-                clarify_prompt = SYSTEM_PROMPT.format(**format_kwargs)
-                clarify_messages = [SystemMessage(content=clarify_prompt), HumanMessage(content=user_query)]
-
-                # call llm
-                clarify_response = await self.llm_client.ainvoke(clarify_messages, tool_choice="none")
-
-                # assign message index
-                assign_message_index(clarify_response, user_id, session_id, self.seq_generator)
-                logger.info("[%s] LLM clarify reply with: %s", self.agent_name, clarify_response.content.strip())
-
-                # return result
-                return self._final_response(clarify_response, messages, context)
-            except Exception as e:
-                agent_executor_errors_total.labels(
-                    agent_name=self.agent_name, stage=stage, error_type=type(e).__name__
-                ).inc()
-                logger.exception("[%s] LLM clarify reply failed: %s", self.agent_name, e)
-                clarify_response = AIMessage(content="抱歉，我没太理解您的需求，可以再具体描述一下吗？")
-                assign_message_index(clarify_response, user_id, session_id, self.seq_generator)
-                return self._final_response(clarify_response, messages, context)
+            return self._route_to(ReplyStage.CLARIFY, {})
 
         if tool_name.upper() == "DIRECT_REPLY":
-            stage = "direct"
-            try:
-                # build direct messages
-                format_kwargs = {
-                    **context_vars,
-                    "tool_facts": "暂无",
-                    "agent_role": agent_cfg.agent_cfg.direct_prompt
-                }
-                direct_prompt = SYSTEM_PROMPT.format(**format_kwargs)
-                direct_messages = [SystemMessage(content=direct_prompt), HumanMessage(content=user_query)]
+            return self._route_to(ReplyStage.DIRECT, {})
 
-                # call llm
-                total_start = time.monotonic()
-                direct_res = await self.llm_client.ainvoke(direct_messages, tool_choice="none")
-                if hasattr(direct_res, "usage_metadata") and direct_res.usage_metadata:
-                    record_llm_metrics(provider=self.llm_client.provider,
-                                       total_tokens=direct_res.usage_metadata.get("total_tokens", 0),
-                                       duration_ms=(time.monotonic() - total_start) * 1000)
-                logger.info("[%s] LLM direct reply with: %s", self.agent_name, direct_res.content.strip()[:50])
-
-                # assign message index
-                assign_message_index(direct_res, user_id, session_id, self.seq_generator)
-
-                # return result
-                return self._final_response(direct_res, messages, context)
-            except Exception as e:
-                agent_executor_errors_total.labels(
-                    agent_name=self.agent_name, stage=stage, error_type=type(e).__name__
-                ).inc()
-                logger.exception("[%s] Second round LLM failed: %s", self.agent_name, e)
-                error_response = AIMessage(content="抱歉，我暂时无法处理您的问题，请稍后再试。")
-                assign_message_index(error_response, user_id, session_id, self.seq_generator)
-                return self._final_response(error_response, messages)
-
-        # 6. round 2: Obtain the full schema of the selected tool
+        # 4. round 2: Obtain the full schema of the selected tool
         stage = "execute"
         try:
-            # messages.append(first_response)
             # get tool
             full_tools = get_agent_tools(agent_cfg, self.tool_selector, self.agent_name)
             selected_tool = next((t for t in full_tools if t.name == tool_name), None)
@@ -251,98 +198,139 @@ class AgentNodeExecutor:
                 agent_name=self.agent_name, stage=stage, error_type=type(e).__name__
             ).inc()
             logger.exception("[%s] Second round LLM failed: %s", self.agent_name, e)
-            error_response = AIMessage(content="抱歉，我暂时无法处理您的问题，请稍后再试。")
-            assign_message_index(error_response, user_id, session_id, self.seq_generator)
-            return self._final_response(error_response, messages)
+            return self._route_to(ReplyStage.CANNED_FALLBACK, {"text": "抱歉，我暂时无法处理您的问题，请稍后再试。"})
 
-        # 7. handle tool call
-        if sec_response.tool_calls:
-            messages.append(sec_response)
-            for tool_call in sec_response.tool_calls:
-                if self.cb_config.enabled:
-                    if self.skill_selector and self.skill_selector.get(tool_call["name"]):
-                        logger.info(f"[%s] Start execute skill %s", self.agent_name, tool_call["name"])
-                        tool_result = await self._execute_skill_safe(
-                            skill_name=tool_call["name"],
-                            input_data=tool_call["args"],
-                            trace_id=trace_id,
-                            context=context
-                        )
-                    else:
-                        logger.info(f"[%s] Start execute tool %s", self.agent_name, tool_call["name"])
-                        tool_result = await self._execute_tool_safe(tool_call, trace_id, context)
-                else:
-                    tool_result = await asyncio.to_thread(
-                        self.tool_executor.execute,
-                        tool_name=tool_call["name"],
-                        args=tool_call["args"],
-                        caller_agent=self.agent_name,
-                        trace_id=trace_id,
-                        user_id=context.user_id,
-                        conversation_summary=context.conversation_summary,
-                        profile_summary=context.user_profile_summary,
-                    )
-
-                if not tool_result.success:
-                    error_response = await self._handle_tool_error(user_query, tool_call["name"], tool_result, user_id,
-                                                             session_id, context_vars, messages)
-                    messages = [m for m in messages if m != sec_response]
-                    if error_response:
-                        return self._final_response(error_response, messages, context)
-
-                if tool_result.success:
-                    suggested_reply = self._handle_tool_result(tool_call['name'], tool_result)
-                    if suggested_reply:
-                        tool_result.data['suggested_reply'] = suggested_reply
-
-                tool_msg = ToolMessage(
-                    content=tool_result.to_message_content(),
-                    tool_call_id=tool_call["id"],
-                    name=tool_call["name"],
-                )
-                messages.append(tool_msg)
-
-            # generate final reply
-            stage = "final"
-            try:
-                # build messages
-                current_tool_content = format_messages(messages)
-                format_kwargs = {
-                    **context_vars,
-                    "tool_facts": current_tool_content,
-                    "agent_role": agent_cfg.res_prompt
-                }
-                res_prompt = SYSTEM_PROMPT.format(**format_kwargs)
-                res_messages = [SystemMessage(content=res_prompt), HumanMessage(content=user_query)]
-
-                # call llm
-                total_start = time.monotonic()
-                final_response = await self.llm_client.ainvoke(res_messages, tool_choice="none")
-                if hasattr(final_response, "usage_metadata") and final_response.usage_metadata:
-                    record_llm_metrics(provider=self.llm_client.provider,
-                                       total_tokens=final_response.usage_metadata.get("total_tokens", 0),
-                                       duration_ms=(time.monotonic() - total_start) * 1000)
-                logger.info("[%s] Final reply with tools: %s", self.agent_name,
-                            final_response.content.strip()[:100])
-
-                # assign message index
-                assign_message_index(final_response, user_id, session_id, self.seq_generator)
-
-                # return result
-                return self._final_response(final_response, messages, context)
-            except Exception as e:
-                agent_executor_errors_total.labels(
-                    agent_name=self.agent_name, stage=stage, error_type=type(e).__name__
-                ).inc()
-                logger.exception("[%s] Final generation failed: %s", self.agent_name, e)
-                error_response = AIMessage(content="抱歉，我暂时无法生成回复，请稍后再试。")
-                assign_message_index(error_response, user_id, session_id, self.seq_generator)
-                return self._final_response(error_response, messages)
-        else:
+        # 5. handle tool call
+        if not sec_response.tool_calls:
             logger.info("[%s] LLM asks for more info: %s", self.agent_name,
                         sec_response.content.strip()[:100])
-            assign_message_index(sec_response, user_id, session_id, self.seq_generator)
-            return self._final_response(sec_response, messages, context)
+            return self._route_to(ReplyStage.PASSTHROUGH, {"text": sec_response.content})
+
+        messages.append(sec_response)
+        for tool_call in sec_response.tool_calls:
+            if self.cb_config.enabled:
+                if self.skill_selector and self.skill_selector.get(tool_call["name"]):
+                    logger.info(f"[%s] Start execute skill %s", self.agent_name, tool_call["name"])
+                    tool_result = await self._execute_skill_safe(
+                        skill_name=tool_call["name"],
+                        input_data=tool_call["args"],
+                        trace_id=trace_id,
+                        context=context
+                    )
+                else:
+                    logger.info(f"[%s] Start execute tool %s", self.agent_name, tool_call["name"])
+                    tool_result = await self._execute_tool_safe(tool_call, trace_id, context)
+            else:
+                tool_result = await asyncio.to_thread(
+                    self.tool_executor.execute,
+                    tool_name=tool_call["name"],
+                    args=tool_call["args"],
+                    caller_agent=self.agent_name,
+                    trace_id=trace_id,
+                    user_id=context.user_id,
+                    conversation_summary=context.conversation_summary,
+                    profile_summary=context.user_profile_summary,
+                )
+
+            if not tool_result.success:
+                return self._route_tool_error(tool_call["name"], tool_result, messages, sec_response)
+
+            suggested_reply = self._handle_tool_result(tool_call['name'], tool_result)
+            if suggested_reply:
+                tool_result.data['suggested_reply'] = suggested_reply
+
+            tool_msg = ToolMessage(
+                content=tool_result.to_message_content(),
+                tool_call_id=tool_call["id"],
+                name=tool_call["name"],
+            )
+            messages.append(tool_msg)
+
+        # all tool calls succeeded,leave the reply text generation entirely to reply()
+        tool_facts_text = format_messages(messages)
+        return self._route_to(
+            ReplyStage.FINAL,
+            {"tool_facts_text": tool_facts_text, "all_messages": messages},
+        )
+
+    def _route_tool_error(self, tool_name: str, tool_result: ToolResult, messages: list,
+                           sec_response: AIMessage) -> Dict[str, Any]:
+        """根据工具错误类型把差异化引导信息路由给reply(),decide()自身不生成任何用户可见文本"""
+        # 与原逻辑保持一致：出错时把本轮尚未确认成功的tool_call消息从messages中剔除
+        messages_before_error = [m for m in messages if m != sec_response]
+        if tool_result.error_type == ToolErrorType.PARAMETER_ERROR:
+            return self._route_to(
+                ReplyStage.PARAM_ERROR,
+                {
+                    "error_msg": tool_result.error or "",
+                    "tool_facts_text": format_messages(messages_before_error),
+                    "all_messages": messages_before_error,
+                },
+            )
+        fallback = self.tool_fallbacks.get(tool_name, {}).get("message", "该服务暂时不可用。")
+        return self._route_to(ReplyStage.CANNED_FALLBACK, {"text": fallback, "all_messages": messages_before_error})
+
+    async def _gen_with_prompt(self, agent_role: str, user_query: str, extra_vars: Dict[str, Any],
+                                fallback: str, stage: str, tool_choice: str = "none") -> str:
+        """reply()专用：拼prompt→调LLM→异常兜底,把原来clarify/direct/param_error/final四处重复逻辑抽成一处"""
+        format_kwargs = {"tool_facts": "暂无", **extra_vars, "agent_role": agent_role}
+        prompt = SYSTEM_PROMPT.format(**format_kwargs)
+        messages = [SystemMessage(content=prompt), HumanMessage(content=user_query)]
+        try:
+            total_start = time.monotonic()
+            response = await self.llm_client.ainvoke(messages, tool_choice=tool_choice)
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                record_llm_metrics(provider=self.llm_client.provider,
+                                   total_tokens=response.usage_metadata.get("total_tokens", 0),
+                                   duration_ms=(time.monotonic() - total_start) * 1000)
+            logger.info("[%s] LLM %s reply with: %s", self.agent_name, stage, response.content.strip()[:100])
+            return response.content.strip()
+        except Exception as e:
+            agent_executor_errors_total.labels(
+                agent_name=self.agent_name, stage=stage, error_type=type(e).__name__
+            ).inc()
+            logger.exception("[%s] LLM %s reply failed: %s", self.agent_name, stage, e)
+            return fallback
+
+    async def reply(self, state: Dict[str, Any], config: RunnableConfig) -> Dict[str, Any]:
+        """回复节点：唯一生成用户可见AIMessage的地方,读decide()留下的reply_stage/reply_payload完成生成"""
+        context: AgentContext = state.get(StateFields.AGENT_CONTEXT.value)
+        user_id = context.user_id
+        session_id = context.session_id
+        user_query = context.current_query
+
+        stage = state.get(StateFields.REPLY_STAGE.value)
+        payload = state.get(StateFields.REPLY_PAYLOAD.value) or {}
+        agent_cfg = self.registry.get_config(self.agent_module)
+        context_vars = self._build_context_vars(context)
+        all_messages = payload.get("all_messages", [])
+
+        if stage in (ReplyStage.CANNED_FALLBACK.value, ReplyStage.PASSTHROUGH.value):
+            content = payload["text"]
+        elif stage == ReplyStage.CLARIFY.value:
+            content = await self._gen_with_prompt(
+                agent_cfg.clarify_prompt, user_query, context_vars,
+                fallback="抱歉，我没太理解您的需求，可以再具体描述一下吗？", stage="clarify")
+        elif stage == ReplyStage.DIRECT.value:
+            content = await self._gen_with_prompt(
+                agent_cfg.direct_prompt, user_query, context_vars,
+                fallback="抱歉，我暂时无法处理您的问题，请稍后再试。", stage="direct")
+        elif stage == ReplyStage.PARAM_ERROR.value:
+            param_error_role = agent_cfg.param_error_prompt.format(error_msg=payload["error_msg"])
+            content = await self._gen_with_prompt(
+                param_error_role, user_query, {**context_vars, "tool_facts": payload["tool_facts_text"]},
+                fallback=f"抱歉，参数似乎有误：{payload['error_msg']}，请您重新提供正确的信息。", stage="param_error")
+        elif stage == ReplyStage.FINAL.value:
+            content = await self._gen_with_prompt(
+                agent_cfg.res_prompt, user_query, {**context_vars, "tool_facts": payload["tool_facts_text"]},
+                fallback="抱歉，我暂时无法生成回复，请稍后再试。", stage="final")
+        else:
+            logger.warning("[%s] unknown reply_stage=%s,fallback to generic message", self.agent_name, stage)
+            content = "抱歉，我暂时无法处理您的问题，请稍后再试。"
+
+        final_msg = AIMessage(content=content)
+        assign_message_index(final_msg, user_id, session_id, self.seq_generator)
+        return self._final_response(final_msg, all_messages, context)
 
     def _final_response(
             self,
@@ -366,34 +354,6 @@ class AgentNodeExecutor:
             if extra:
                 result.update(extra)
         return result
-
-    async def _handle_tool_error(self, user_query: str, tool_name: str, tool_result: ToolResult, user_id: str,
-                           session_id: str, context_vars: Dict[str, Any], all_messages: list) -> Optional[AIMessage]:
-        """根据工具错误类型生成差异化用户引导"""
-        error_type = tool_result.error_type
-        error_msg = tool_result.error or ""
-
-        if error_type == ToolErrorType.PARAMETER_ERROR:
-            agent_cfg = self.registry.get_config(self.agent_module)
-            param_error_role = agent_cfg.param_error_prompt.format(error_msg=error_msg)
-
-            current_tool_content = format_messages(all_messages)
-            system_prompt = SYSTEM_PROMPT.format({**context_vars,"tool_facts":current_tool_content},agent_role=param_error_role)
-            messages = [SystemMessage(content=system_prompt),
-                        HumanMessage(content=user_query)]
-
-            try:
-                response = await self.llm_client.ainvoke(messages, tool_choice="none")
-                reply = AIMessage(content=response.content.strip())
-            except Exception:
-                reply = AIMessage(content=f"抱歉，参数似乎有误：{error_msg}，请您重新提供正确的信息。")
-            assign_message_index(reply, user_id, session_id, self.seq_generator)
-            return reply
-        else:
-            fallback = self.tool_fallbacks.get(tool_name, {}).get("message", "该服务暂时不可用。")
-            reply = AIMessage(content=fallback)
-            assign_message_index(reply, user_id, session_id, self.seq_generator)
-            return reply
 
     def _get_cb(self, tool_name: str) -> CircuitBreaker:
         if tool_name not in self._circuit_breakers:

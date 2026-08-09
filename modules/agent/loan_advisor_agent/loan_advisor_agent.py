@@ -17,7 +17,8 @@ from langgraph.graph import StateGraph
 
 from config.registry import ConfigRegistry
 from modules.agent.constants import AgentNodeName
-from modules.agent.loan_advisor_agent.loan_advisor_response_node import loan_advisor_response_node
+from modules.agent.loan_advisor_agent.loan_advisor_response_node import loan_advisor_response_node, \
+    loan_advisor_decision_node
 from modules.agent.multi_agent_state import LoanAdvisorState
 from modules.module_services.chat_models import RobustLLM
 from modules.module_services.classifier.loan_advisor_classifier import LoanAdvisorClassifier
@@ -54,8 +55,21 @@ class LoanAdvisorAgent:
         self.skill_selector = skill_selector
 
     def build_graph(self) -> StateGraph:
-        """build loanAdvisor subgraph"""
+        """build loanAdvisor subgraph:decision(意图分类+工具调用) -> response(唯一生成用户可见文本的节点)"""
         graph = StateGraph(LoanAdvisorState)
+        graph.add_node(AgentNodeName.LOAN_ADVISOR_DECISION.value,
+                       partial(
+                           loan_advisor_decision_node,
+                           llm_client=self.llm_client,
+                           registry=self.registry,
+                           tool_executor=self.tool_executor,
+                           seq_generator=self.seq_generator,
+                           tool_selector=self.tool_selector,
+                           classifier=self.classifier,
+                           skill_executor=self.skill_executor,
+                           skill_selector=self.skill_selector
+                       )
+        )
         graph.add_node(AgentNodeName.LOAN_ADVISOR_RESPONSE.value,
                        partial(
                            loan_advisor_response_node,
@@ -69,6 +83,7 @@ class LoanAdvisorAgent:
                            skill_selector=self.skill_selector
                        )
         )
-        graph.set_entry_point(AgentNodeName.LOAN_ADVISOR_RESPONSE.value)
+        graph.add_edge(AgentNodeName.LOAN_ADVISOR_DECISION.value, AgentNodeName.LOAN_ADVISOR_RESPONSE.value)
+        graph.set_entry_point(AgentNodeName.LOAN_ADVISOR_DECISION.value)
         graph.set_finish_point(AgentNodeName.LOAN_ADVISOR_RESPONSE.value)
         return graph.compile()

@@ -17,6 +17,10 @@ class AgentNodeName(str, Enum):
     SUPERVISOR_ROUTE_NODE = "supervisor_route_node"
     AFTER_LOAN_RESPONSE = "after_loan_response"
     RISK_ASSESSMENT_RESPONSE = "risk_assessment_response"
+    # decision node:intent judge + param extraction + tool execution,never emits user-visible text
+    LOAN_ADVISOR_DECISION = "loan_advisor_decision"
+    RISK_ASSESSMENT_DECISION = "risk_assessment_decision"
+    AFTER_LOAN_DECISION = "after_loan_decision"
 
     HUMAN_HANDOFF_NOTIFY = "human_handoff_notify"
     HUMAN_HANDOFF_INTERRUPT = "human_handoff_interrupt"
@@ -76,10 +80,21 @@ class StateFields(str, Enum):
     HANDOFF_SUMMARY = "handoff_summary"
     TRIGGER_HUMAN_HANDOFF = "trigger_handoff"
     SHOULD_SKIP_SUPERVISOR = "should_skip_supervisor"
+    REPLY_STAGE = "reply_stage"
+    REPLY_PAYLOAD = "reply_payload"
 
 class AgentContextFields(str, Enum):
     TRACE_ID = "trace_id"
     AUDIT_LOG = "audit_log"
+
+class ReplyStage(str, Enum):
+    """handoff signal from the decision node to the reply node,decides which prompt(if any) the reply node uses"""
+    CLARIFY = "clarify"
+    DIRECT = "direct"
+    FINAL = "final"
+    PARAM_ERROR = "param_error"
+    PASSTHROUGH = "passthrough"
+    CANNED_FALLBACK = "canned_fallback"
 
 class PromptKeys(str, Enum):
     CONVERSATION = "conversation"

@@ -107,6 +107,9 @@ class LoanAdvisorState(TypedDict):
     internal_messages: Annotated[List[BaseMessage],add_messages]
     tool_results: List[Dict[str,Any]]
     final_response: Optional[AgentResponse]
+    # handoff from decision node to reply node,see modules.agent.constants.ReplyStage
+    reply_stage: Optional[str]
+    reply_payload: Optional[Dict[str, Any]]
 
 class RiskAssessmentState(TypedDict):
     agent_context: AgentContext
@@ -115,9 +118,13 @@ class RiskAssessmentState(TypedDict):
     risk_level: Optional[str]
     trigger_human_handoff: bool
     final_response: Optional[AgentResponse]
+    reply_stage: Optional[str]
+    reply_payload: Optional[Dict[str, Any]]
 
 class AfterLoanState(TypedDict):
     agent_context: AgentContext
     internal_messages: Annotated[List[BaseMessage], add_messages]
     tool_results: List[Dict[str, Any]]
     final_response: Optional[AgentResponse]
+    reply_stage: Optional[str]
+    reply_payload: Optional[Dict[str, Any]]

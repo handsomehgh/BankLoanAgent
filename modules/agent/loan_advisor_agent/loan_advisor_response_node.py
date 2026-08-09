@@ -21,6 +21,47 @@ from utils.serialize_utils.seq_generator import SequenceGenerator
 logger = logging.getLogger(__name__)
 
 
+def _build_executor(
+        registry: ConfigRegistry,
+        llm_client: RobustLLM,
+        tool_executor: ToolExecutor,
+        seq_generator: SequenceGenerator,
+        tool_selector: ToolSelector,
+        classifier: LoanAdvisorClassifier,
+        skill_executor: SkillExecutor,
+        skill_selector: SkillRegistry
+) -> AgentNodeExecutor:
+    return AgentNodeExecutor(
+        agent_module=RegistryModules.LOAN_ADVISOR,
+        agent_name=AgentName.LOAN_ADVISOR.value,
+        registry=registry,
+        llm_client=llm_client,
+        tool_executor=tool_executor,
+        seq_generator=seq_generator,
+        tool_selector=tool_selector,
+        classifier=classifier,
+        skill_executor=skill_executor,
+        skill_selector=skill_selector
+    )
+
+
+async def loan_advisor_decision_node(
+        state: LoanAdvisorState,
+        config: RunnableConfig,
+        registry: ConfigRegistry,
+        llm_client: RobustLLM,
+        tool_executor: ToolExecutor,
+        seq_generator: SequenceGenerator,
+        tool_selector: ToolSelector,
+        classifier: LoanAdvisorClassifier,
+        skill_executor: SkillExecutor,
+        skill_selector: SkillRegistry
+) -> Dict[str, Any]:
+    executor = _build_executor(registry, llm_client, tool_executor, seq_generator, tool_selector,
+                                classifier, skill_executor, skill_selector)
+    return await executor.decide(state, config)
+
+
 async def loan_advisor_response_node(
         state: LoanAdvisorState,
         config: RunnableConfig,
@@ -33,16 +74,6 @@ async def loan_advisor_response_node(
         skill_executor: SkillExecutor,
         skill_selector: SkillRegistry
 ) -> Dict[str, Any]:
-    executor = AgentNodeExecutor(
-        agent_module=RegistryModules.LOAN_ADVISOR,
-        agent_name=AgentName.LOAN_ADVISOR.value,
-        registry=registry,
-        llm_client=llm_client,
-        tool_executor=tool_executor,
-        seq_generator=seq_generator,
-        tool_selector=tool_selector,
-        classifier=classifier,
-        skill_executor=skill_executor,
-        skill_selector=skill_selector
-    )
-    return await executor.execute(state, config)
+    executor = _build_executor(registry, llm_client, tool_executor, seq_generator, tool_selector,
+                                classifier, skill_executor, skill_selector)
+    return await executor.reply(state, config)
