@@ -29,6 +29,8 @@ class IntentDataset(Dataset):
         self.labels = []
         with open(data_file, "r", encoding="utf-8") as f:
             for line in f:
+                if not line.strip():
+                    continue
                 item = json.loads(line)
                 text_a = item.get("text_a", None)
                 text_b = item.get("text_b", None)
@@ -65,11 +67,11 @@ class IntentDataset(Dataset):
         }
 
 
-def load_data(train_path, val_path, tokenizer, max_length, batch_size):
+def load_data(train_path, val_path, tokenizer, max_length, batch_size, eval_batch_size):
     train_dataset = IntentDataset(train_path, tokenizer, max_length)
     val_dataset = IntentDataset(val_path, tokenizer, max_length)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=eval_batch_size, shuffle=False)
     return train_loader, val_loader, train_dataset.labels
 
 
@@ -142,7 +144,7 @@ def main(args):
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     train_loader, val_loader, train_labels = load_data(args.train_path, args.val_path, tokenizer, args.max_length,
-                                                       args.batch_size)
+                                                       args.batch_size, args.eval_batch_size)
 
     # class_weight = compute_class_weight(
     #     class_weight="balance",
@@ -191,10 +193,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="上下文完整性 BERT 二分类训练")
     parser.add_argument("--train_path", type=str, default="context_train.jsonl", help="训练集文件路径")
     parser.add_argument("--val_path", type=str, default="context_val.jsonl", help="验证集文件路径")
-    parser.add_argument("--model_name", type=str, default="chinese-roberta-wwm-ext", help="预训练模型名称")
+    parser.add_argument("--model_name", type=str, default="hfl/chinese-roberta-wwm-ext", help="预训练模型名称")
     parser.add_argument("--output_path", type=str, default="./context_classifier_model", help="模型保存路径")
     parser.add_argument("--max_length", type=int, default=512, help="最大输入长度")
     parser.add_argument("--batch_size", type=int, default=16, help="批次大小")
+    parser.add_argument("--eval_batch_size", type=int, default=32, help="验证批次大小")
     parser.add_argument("--epochs", type=int, default=5, help="训练轮数")
     parser.add_argument("--learning_rate", type=float, default=2e-5, help="学习率")
     parser.add_argument("--early_stopping_patience", type=int, default=2, help="早停耐心值")

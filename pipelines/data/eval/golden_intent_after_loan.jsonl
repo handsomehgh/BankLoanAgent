@@ -1,12 +1,12 @@
 {"query": "提前还10万，缩短期限和减少月供哪个更省利息？", "expected": "prepayment_evaluation_skill"}
-{"query": "我打算一次性全部结清，违约金要多少？", "expected": "calculate_prepayment"}
+{"query": "我打算一次性全部结清，违约金要多少？", "expected": "prepayment_evaluation_skill"}
 {"query": "最近周转困难，帮我办一下贷款展期", "expected": "extension_management_skill"}
 {"query": "我这种情况符合展期的申请条件吗？", "expected": "check_extension_eligibility"}
 {"query": "展期12个月之后我的月供会变成多少？", "expected": "calculate_extension_plan"}
 {"query": "我的贷款逾期了，帮我处理一下", "expected": "overdue_handling_skill"}
-{"query": "逾期15天会产生多少罚息？", "expected": "calculate_overdue_penalty"}
+{"query": "逾期15天会产生多少罚息？", "expected": "overdue_handling_skill"}
 {"query": "我想把等额本金改成等额本息，帮我办", "expected": "repayment_method_switch_skill"}
-{"query": "切换成等额本息之后每月能少还多少？", "expected": "calculate_repayment_method_switch"}
+{"query": "切换成等额本息之后每月能少还多少？", "expected": "repayment_method_switch_skill"}
 {"query": "帮我重新生成一份剩余期限的还款计划", "expected": "generate_repayment_schedule"}
 {"query": "贷款已经结清了，帮我开个结清证明", "expected": "generate_settlement_certificate"}
 {"query": "剩余本金60万，利率3.8%，现在月供是多少？", "expected": "calculate_monthly_payment"}
@@ -14,4 +14,4 @@
 {"query": "还款压力好大，喘不过气了", "expected": "DIRECT_REPLY"}
 {"query": "好的我知道了", "expected": "DIRECT_REPLY"}
 {"query": "就……随便问问吧", "expected": "CLARIFY"}
-{"query": "50万", "expected": "calculate_prepayment", "recent_conversation": "助手: 您想提前还多少呢？\n用户: 我想提前还一部分房贷\n助手: 好的，请告诉我您计划提前还款的金额"}
+{"query": "50万", "expected": "prepayment_evaluation_skill", "recent_conversation": "助手: 您想提前还多少呢？\n用户: 我想提前还一部分房贷\n助手: 好的，请告诉我您计划提前还款的金额"}

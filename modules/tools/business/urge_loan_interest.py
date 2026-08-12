@@ -17,7 +17,8 @@ class UrgeLoanInterestInput(BaseModel):
 
 @tool(
     "urge_loan_interest",
-    description="",
+    description="催促加急处理已登记的贷款意向。根据用户ID和贷款类型将意向标记为加急，仅当意向状态为待处理/处理中时可催促。"
+                "返回 signal（urged 已加急/not_found 无意向/status_blocked 状态不允许催促）及说明，供LLM据此生成回复。",
     args_schema=UrgeLoanInterestInput,
     extras={"version": "1.0.0", "tags": [AgentName.LOAN_ADVISOR.value]}
 )

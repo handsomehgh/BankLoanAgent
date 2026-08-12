@@ -53,6 +53,15 @@ AGENT_FILES = {
 BUSINESS_AGENTS = [RouteTarget.LOAN_ADVISOR.value, RouteTarget.RISK_ASSESSMENT.value,
                    RouteTarget.AFTER_LOAN.value]
 
+# 弱边界等价族：after 三组"单工具 vs 综合技能"已合并为 skill 标签（skill 是单工具的功能超集），
+# golden set 保留细粒度意图真值，预测为归属 skill 时按等价正确计分。
+# 注意：与 test/unit/test_prompt_eval_offline.py 中的同名映射保持同步。
+LABEL_EQUIVALENCE = {
+    "calculate_prepayment": "prepayment_evaluation_skill",
+    "calculate_overdue_penalty": "overdue_handling_skill",
+    "calculate_repayment_method_switch": "repayment_method_switch_skill",
+}
+
 SYSTEM_PROMPT_DEFAULTS = {
     "user_profile": "暂无相关信息",
     "compliance_rule": "暂无相关信息",
@@ -121,7 +130,7 @@ async def eval_intent(hub: PromptHub, llm: RobustLLM, agent_key: str) -> Dict:
     samples = load_golden_set(AGENT_FILES[agent_key])
     # judge 提示词文本自带标签定义，tools_metadata 置空不影响标签空间
     judge_role = hub.render_text(f"{agent_key}_judge", tools_metadata="")
-    hits, details = 0, []
+    hits, strict_hits, details = 0, 0, []
     for item in samples:
         format_kwargs = {
             **SYSTEM_PROMPT_DEFAULTS,
@@ -136,16 +145,21 @@ async def eval_intent(hub: PromptHub, llm: RobustLLM, agent_key: str) -> Dict:
         except Exception as e:
             logger.warning("[%s] 评估样本调用失败: %s", agent_key, e)
             predicted = "LLM_error"
-        ok = predicted == item["expected"]
+        strict_ok = predicted == item["expected"]
+        equivalent_ok = (not strict_ok) and LABEL_EQUIVALENCE.get(item["expected"]) == predicted
+        ok = strict_ok or equivalent_ok
         hits += int(ok)
+        strict_hits += int(strict_ok)
         details.append({"query": item["query"], "expected": item["expected"],
-                        "predicted": predicted, "correct": ok})
+                        "predicted": predicted, "correct": ok,
+                        "strict": strict_ok, "equivalent": equivalent_ok})
     return {
         "task": f"intent_classification_{agent_key}",
         "prompt_name": f"{agent_key}_judge",
         "prompt_version": hub.version_of(f"{agent_key}_judge"),
-        "total": len(samples), "hits": hits,
+        "total": len(samples), "hits": hits, "strict_hits": strict_hits,
         "accuracy": round(hits / len(samples), 4) if samples else 0.0,
+        "strict_accuracy": round(strict_hits / len(samples), 4) if samples else 0.0,
         "details": details,
     }
 
@@ -175,12 +189,15 @@ async def run(args):
     print("\n" + "=" * 72)
     print(" 提示词回归评估报告（golden set 驱动）")
     print("=" * 72)
-    print(f"{'任务':<36}{'提示词版本':<12}{'准确率':<10}{'命中'}")
+    print(f"{'任务':<36}{'提示词版本':<12}{'准确率':<10}{'严格准确率':<12}{'命中'}")
     for r in results:
-        print(f"{r['task']:<36}{r['prompt_version']:<12}{r['accuracy']:<10.4f}{r['hits']}/{r['total']}")
+        strict_col = f"{r['strict_accuracy']:<12.4f}" if "strict_accuracy" in r else f"{'-':<12}"
+        print(f"{r['task']:<36}{r['prompt_version']:<12}{r['accuracy']:<10.4f}{strict_col}{r['hits']}/{r['total']}")
         for d in r["details"]:
             if not d["correct"]:
                 print(f"    错例: {d['query'][:40]}  期望={d['expected']}  预测={d['predicted']}")
+            elif d.get("equivalent"):
+                print(f"    等价命中: {d['query'][:40]}  期望={d['expected']}  预测={d['predicted']}")
     print("=" * 72)
 
     report = {

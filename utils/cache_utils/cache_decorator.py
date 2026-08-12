@@ -55,7 +55,6 @@ def _build_cache_key(args: Tuple,kwargs: Dict,ignore_args: Optional[List[int]] =
 
 def custom_cached(
         namespace: Optional[str] = None,
-        cache_manager: Optional[CacheManager] = None,
         ttl: Optional[int] = None,
         null_ttl: int = 60,
         converter: Optional[Callable[[Any],Any]] = None,

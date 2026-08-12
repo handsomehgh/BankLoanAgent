@@ -22,6 +22,13 @@ AGENT_FILES = {
 }
 # judge 提示词中不会以 **tool** 形式列出的固定标签
 FIXED_LABELS = {"DIRECT_REPLY", "CLARIFY"}
+# 弱边界等价族：after 三组单工具已合并为归属 skill 标签，golden set 保留细粒度意图真值。
+# 注意：与 pipelines/evaluator/eval_prompt_routing.py 中的同名映射保持同步。
+LABEL_EQUIVALENCE = {
+    "calculate_prepayment": "prepayment_evaluation_skill",
+    "calculate_overdue_penalty": "overdue_handling_skill",
+    "calculate_repayment_method_switch": "repayment_method_switch_skill",
+}
 # system_prompt 必须保留的全部槽位（decision/reply 节点渲染时都会传入）
 SYSTEM_PROMPT_SLOTS = {
     "user_profile", "compliance_rule", "interaction_log", "business_knowledge",
@@ -54,8 +61,9 @@ def _load_golden(file_name: str):
 
 @pytest.mark.parametrize("agent_key,file_name", list(AGENT_FILES.items()))
 def test_golden_labels_exist_in_judge_prompt(agent_key, file_name):
-    """golden set 的每个标签必须出现在对应 judge 提示词的标签空间里,
-    否则说明提示词改动删掉了标签或 golden set 过期,在线评估必然全错"""
+    """golden set 的每个标签必须出现在对应 judge 提示词的标签空间里，
+    或属于已合并的等价族（细粒度单工具 -> 归属 skill），
+    否则说明提示词改动删掉了标签或 golden set 过期，在线评估必然全错"""
     prompts = _load_agent_library()
     judge_text = prompts[f"{agent_key}_judge"]["text"]
     label_space = _extract_tool_labels(judge_text) | FIXED_LABELS
@@ -63,8 +71,10 @@ def test_golden_labels_exist_in_judge_prompt(agent_key, file_name):
     samples = _load_golden(file_name)
     assert len(samples) >= 10, f"{file_name} 样本量不足，golden set 疑似被截断"
     for item in samples:
-        assert item["expected"] in label_space, (
-            f"{file_name} 标签 [{item['expected']}] 不在 {agent_key}_judge 标签空间中，"
+        expected = item["expected"]
+        equivalent = LABEL_EQUIVALENCE.get(expected)
+        assert expected in label_space or (equivalent and equivalent in label_space), (
+            f"{file_name} 标签 [{expected}] 不在 {agent_key}_judge 标签空间中，"
             f"提示词与 golden set 已不同步"
         )
 
@@ -78,6 +88,8 @@ def test_judge_prompts_declare_all_tools_registered_in_dataset():
         judge_text = prompts[f"{agent_key}_judge"]["text"]
         declared = _extract_tool_labels(judge_text) | FIXED_LABELS
         covered = {item["expected"] for item in _load_golden(file_name)}
+        # 等价族的细粒度样本视为对其归属 skill 标签的覆盖
+        covered |= {LABEL_EQUIVALENCE[label] for label in covered if label in LABEL_EQUIVALENCE}
         missing = declared - covered
         if missing:
             gaps.append(f"{agent_key}: 缺样本标签 {sorted(missing)}")

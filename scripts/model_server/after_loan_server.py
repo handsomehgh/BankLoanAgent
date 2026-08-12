@@ -19,14 +19,12 @@ ID2LABEL = {
     3: "extension_management_skill",
     4: "overdue_handling_skill",
     5: "repayment_method_switch_skill",
-    6: "calculate_prepayment",
-    7: "check_extension_eligibility",
-    8: "calculate_extension_plan",
-    9: "calculate_overdue_penalty",
-    10: "calculate_repayment_method_switch",
-    11: "generate_repayment_schedule",
-    12: "generate_settlement_certificate",
-    13: "general_search_knowledge"
+    6: "check_extension_eligibility",
+    7: "calculate_extension_plan",
+    8: "generate_repayment_schedule",
+    9: "generate_settlement_certificate",
+    10: "calculate_monthly_payment",
+    11: "general_search_knowledge"
   }
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
